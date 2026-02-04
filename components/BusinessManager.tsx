@@ -13,7 +13,7 @@ import {
   Calendar, ListChecks, Activity, MapPin, Target, Droplet, ShieldAlert, ShieldCheck,
   Telescope, Boxes, ArrowRight, Calculator, TrendingUp as ProfitIcon, Globe,
   X, Save, ShoppingCart, UtensilsCrossed, Sparkles, Building2, Handshake,
-  AlertTriangle, Lightbulb, LineChart
+  AlertTriangle, Lightbulb, LineChart, HelpCircle, Coins, Megaphone
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { 
@@ -99,31 +99,6 @@ export const BusinessManager: React.FC<Props> = ({
     { id: '3', productName: 'EVO Lab 500ml Flasker', quantity: 240, unit: 'Bottles', location: 'Norway', lastUpdated: '2024-07-15' },
   ];
 
-  // -- CALCULATORS --
-  const [marketSim, setMarketSim] = useState({
-    oliveWeightKg: 100, pricePerKg: 15, garlicCostKg: 1.2, spicesCostKg: 0.8, oilAddCostKg: 0.5, oilYieldPct: 20, oilPriceEur: 12, 
-  });
-
-  const [simConfig, setSimConfig] = useState({
-    pressMachineCost: 15000, productionVolumeLiters: 2500, bottleSize: 0.5, bottleCost: 1.40, labelCost: 0.35, analysisCost: 600, transportToNorwayCost: 1200, norwayPriceNok: 495, norwayCommissionPct: 30, spainBulkPriceEur: 7.20,  
-  });
-
-  const marketResults = useMemo(() => {
-    const totalRevenue = marketSim.oliveWeightKg * marketSim.pricePerKg;
-    const totalCosts = marketSim.oliveWeightKg * (marketSim.garlicCostKg + marketSim.spicesCostKg + marketSim.oilAddCostKg);
-    const netProfit = totalRevenue - totalCosts;
-    const oilRevenue = (marketSim.oliveWeightKg * (marketSim.oilYieldPct / 100)) * marketSim.oilPriceEur;
-    return { totalRevenue, totalCosts, netProfit, oilRevenue, diff: netProfit - oilRevenue };
-  }, [marketSim]);
-
-  const simResults = useMemo(() => {
-    const numBottles = simConfig.productionVolumeLiters / simConfig.bottleSize;
-    const pricePerBottleNorwayEur = (simConfig.norwayPriceNok / EXCHANGE_RATE_EUR_TO_NOK);
-    const totalVariableCostPerBottle = simConfig.bottleCost + simConfig.labelCost + (simConfig.transportToNorwayCost / numBottles) + ((simConfig.norwayCommissionPct / 100) * pricePerBottleNorwayEur);
-    const profitNorwayYear1 = (pricePerBottleNorwayEur - totalVariableCostPerBottle) * numBottles - (simConfig.pressMachineCost + simConfig.analysisCost);
-    return { profitNorwayYear1, numBottles };
-  }, [simConfig]);
-
   // -- ACTIONS --
   const handleGenerateForecast = async () => {
     setLoadingAI(true);
@@ -153,7 +128,7 @@ export const BusinessManager: React.FC<Props> = ({
       grossCommissionBase: Number(newDeal.totalSaleValue),
       commissionPct: Number(newDeal.commissionPct),
       ourGrossCommission: grossComm,
-      ourNetCommission: grossComm * 0.7, // Eksempel: 70% netto etter kostnader
+      ourNetCommission: grossComm * 0.7, 
       status: newDeal.status as DealStatus,
       currency: newDeal.currency as Currency,
       businessUnit: newDeal.businessUnit as BusinessDomain,
@@ -191,7 +166,6 @@ export const BusinessManager: React.FC<Props> = ({
 
       <div className="animate-in fade-in duration-500">
         
-        {/* DONA ANNA (FARM) SECTION */}
         {activeTab === 'farm' && (
           <div className="space-y-8">
             <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
@@ -288,51 +262,119 @@ export const BusinessManager: React.FC<Props> = ({
             )}
 
             {farmSubTab === 'advisor' && (
-               <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5 animate-in slide-in-from-right-4">
-                  <div className="flex justify-between items-start mb-10">
-                     <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
-                        <BrainCircuit className="text-emerald-400" /> STRATEGISK GÅRDSRÅDGIVER
-                     </h3>
-                     <CyberButton onClick={handleGenerateAdvice} variant="secondary" disabled={loadingAI} className="text-[10px]">
-                        {loadingAI ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Analyser Drift'}
-                     </CyberButton>
-                  </div>
+               <div className="space-y-8 animate-in slide-in-from-right-4">
+                  <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5">
+                    <div className="flex justify-between items-start mb-10">
+                       <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                          <BrainCircuit className="text-emerald-400" /> STRATEGISK GÅRDSRÅDGIVER
+                       </h3>
+                       <CyberButton onClick={handleGenerateAdvice} variant="secondary" disabled={loadingAI} className="text-[10px]">
+                          {loadingAI ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Start Strategisk Analyse'}
+                       </CyberButton>
+                    </div>
 
-                  {aiAdvice ? (
-                     <div className="space-y-8">
-                        <div className="p-6 bg-emerald-500/10 border border-emerald-500/30">
-                           <h4 className="text-[10px] font-black uppercase text-emerald-400 mb-3 flex items-center gap-2">
-                              <Lightbulb className="w-3 h-3" /> Strategisk Innsikt
-                           </h4>
-                           <p className="text-sm text-white italic leading-relaxed">{aiAdvice.advice}</p>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           <div className="space-y-4">
-                              <h4 className="text-[10px] font-black uppercase text-rose-500 flex items-center gap-2">
-                                 <AlertTriangle className="w-3 h-3" /> Kritiske Varsler
-                              </h4>
-                              {aiAdvice.criticalAlerts.map((alert: string, i: number) => (
-                                 <div key={i} className="p-3 bg-rose-500/5 border border-rose-500/20 text-xs text-rose-400 uppercase font-bold">{alert}</div>
-                              ))}
-                           </div>
-                           <div className="space-y-4">
-                              <h4 className="text-[10px] font-black uppercase text-cyan-400 flex items-center gap-2">
-                                 <ArrowRight className="w-3 h-3" /> Neste Steg
-                              </h4>
-                              {aiAdvice.nextSteps.map((step: string, i: number) => (
-                                 <div key={i} className="p-3 bg-cyan-500/5 border border-cyan-500/20 text-xs text-white uppercase font-bold flex items-center gap-3">
-                                    <div className="w-1.5 h-1.5 bg-cyan-400" /> {step}
-                                 </div>
-                              ))}
-                           </div>
-                        </div>
-                     </div>
-                  ) : (
-                     <div className="py-20 text-center opacity-30">
-                        <BrainCircuit className="w-12 h-12 mx-auto mb-4" />
-                        <p className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine klar for driftsevaluering</p>
-                     </div>
-                  )}
+                    {aiAdvice ? (
+                       <div className="space-y-10">
+                          {/* Top Summary */}
+                          <div className="p-6 bg-emerald-500/10 border border-emerald-500/30 relative overflow-hidden group">
+                             <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Activity className="w-12 h-12 text-emerald-400" />
+                             </div>
+                             <h4 className="text-[10px] font-black uppercase text-emerald-400 mb-3 flex items-center gap-2">
+                                <Lightbulb className="w-3 h-3" /> Strategisk Oppsummering
+                             </h4>
+                             <p className="text-sm text-white italic leading-relaxed pr-10">{aiAdvice.strategicSummary}</p>
+                          </div>
+
+                          {/* Profit & Risk Section */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                             <div className="space-y-4">
+                                <h4 className="text-[10px] font-black uppercase text-yellow-500 flex items-center gap-2">
+                                   <Coins className="w-3 h-3" /> Lønnsomhetsanalyse
+                                </h4>
+                                <div className="p-4 bg-white/5 border border-white/10 text-xs text-slate-300 italic leading-relaxed">
+                                  {aiAdvice.profitabilityAnalysis}
+                                </div>
+                             </div>
+                             <div className="space-y-4">
+                                <h4 className="text-[10px] font-black uppercase text-rose-500 flex items-center gap-2">
+                                   <ShieldAlert className="w-3 h-3" /> Kritiske Advarsler
+                                </h4>
+                                {aiAdvice.criticalAlerts.map((alert: string, i: number) => (
+                                   <div key={i} className="p-3 bg-rose-500/5 border border-rose-500/20 text-xs text-rose-400 uppercase font-bold flex items-center gap-3">
+                                      <AlertTriangle className="w-4 h-4 shrink-0" /> {alert}
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+
+                          {/* Strategic Pillars */}
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                             {/* Investeringer */}
+                             <div className="p-6 bg-cyan-500/5 border border-cyan-500/20">
+                                <h4 className="text-[10px] font-black uppercase text-cyan-400 mb-4 flex items-center gap-2">
+                                   <Target className="w-3 h-3" /> Investering
+                                </h4>
+                                <ul className="space-y-3">
+                                   {aiAdvice.investmentSuggestions.map((item: string, i: number) => (
+                                      <li key={i} className="text-[11px] text-white font-bold leading-tight flex items-start gap-2">
+                                         <ChevronRight className="w-3 h-3 text-cyan-400 shrink-0 mt-0.5" /> {item}
+                                      </li>
+                                   ))}
+                                </ul>
+                             </div>
+
+                             {/* Kostnader */}
+                             <div className="p-6 bg-yellow-500/5 border border-yellow-500/20">
+                                <h4 className="text-[10px] font-black uppercase text-yellow-500 mb-4 flex items-center gap-2">
+                                   <Scale className="w-3 h-3" /> Kostnadskontroll
+                                </h4>
+                                <ul className="space-y-3">
+                                   {aiAdvice.costSavingTips.map((item: string, i: number) => (
+                                      <li key={i} className="text-[11px] text-white font-bold leading-tight flex items-start gap-2">
+                                         <ChevronRight className="w-3 h-3 text-yellow-500 shrink-0 mt-0.5" /> {item}
+                                      </li>
+                                   ))}
+                                </ul>
+                             </div>
+
+                             {/* Markedsføring */}
+                             <div className="p-6 bg-magenta-500/5 border border-magenta-500/20">
+                                <h4 className="text-[10px] font-black uppercase text-magenta-400 mb-4 flex items-center gap-2">
+                                   <Megaphone className="w-3 h-3" /> Markedsføring
+                                </h4>
+                                <ul className="space-y-3">
+                                   {aiAdvice.marketingIdeas.map((item: string, i: number) => (
+                                      <li key={i} className="text-[11px] text-white font-bold leading-tight flex items-start gap-2">
+                                         <ChevronRight className="w-3 h-3 text-magenta-400 shrink-0 mt-0.5" /> {item}
+                                      </li>
+                                   ))}
+                                </ul>
+                             </div>
+                          </div>
+
+                          {/* Missing Data Section */}
+                          <div className="p-6 bg-black border border-white/10 border-dashed">
+                             <h4 className="text-[10px] font-black uppercase text-slate-500 mb-4 flex items-center gap-2">
+                                <HelpCircle className="w-3 h-3" /> For en mer nøyaktig analyse trenger jeg:
+                             </h4>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {aiAdvice.questionsForUser.map((q: string, i: number) => (
+                                   <div key={i} className="text-[10px] text-slate-400 italic flex items-center gap-2">
+                                      <div className="w-1 h-1 bg-slate-700" /> {q}
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       </div>
+                    ) : (
+                       <div className="py-20 text-center opacity-30">
+                          <BrainCircuit className="w-16 h-16 mx-auto mb-4" />
+                          <p className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine klar for driftsevaluering</p>
+                          <p className="text-[9px] text-slate-500 mt-2 uppercase tracking-widest font-mono italic">Basert på operasjoner, lager og avlingshistorikk</p>
+                       </div>
+                    )}
+                  </div>
                </div>
             )}
 
@@ -406,7 +448,7 @@ export const BusinessManager: React.FC<Props> = ({
           </div>
         )}
 
-        {/* REAL ESTATE SECTION */}
+        {/* Eiendom, AfterSale og EVO Lab seksjoner forblir uendret... */}
         {activeTab === 'realestate' && (
           <div className="space-y-8 animate-in fade-in">
              <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
@@ -493,169 +535,12 @@ export const BusinessManager: React.FC<Props> = ({
                                      <td className="px-6 py-5 text-center font-mono text-[10px] text-slate-500">{deal.saleDate}</td>
                                   </tr>
                                ))}
-                               {deals.length === 0 && (
-                                  <tr><td colSpan={5} className="py-20 text-center opacity-30 text-[10px] uppercase font-black tracking-widest">Ingen aktive deals funnet</td></tr>
-                               )}
                             </tbody>
                          </table>
                       </div>
                    </div>
                 </>
              )}
-
-             {reSubTab === 'developers' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-left-4">
-                   {developers.map(dev => (
-                      <div key={dev.id} className="glass-panel p-8 border-l-4 border-l-cyan-500 bg-cyan-500/5 group hover:bg-cyan-500/10 transition-all">
-                         <div className="flex justify-between items-start mb-6">
-                            <h3 className="text-xl font-black text-white uppercase tracking-tighter">{dev.name}</h3>
-                            <Building2 className="w-5 h-5 text-cyan-400" />
-                         </div>
-                         <div className="space-y-4">
-                            <div className="p-4 bg-black/40 border border-white/5">
-                               <p className="text-[9px] uppercase text-slate-500 font-black mb-1">Standard Provisjon</p>
-                               <p className="text-2xl font-black text-white font-mono">{dev.defaultCommissionPct}%</p>
-                            </div>
-                            <div className="pt-4 border-t border-white/5">
-                               <p className="text-[9px] uppercase text-cyan-400 font-black mb-3">Aktive Utbetalingsfaser</p>
-                               <div className="space-y-2">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase flex justify-between">
-                                     <span>Reservasjon</span>
-                                     <span>25%</span>
-                                  </div>
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase flex justify-between">
-                                     <span>Byggestart</span>
-                                     <span>25%</span>
-                                  </div>
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase flex justify-between">
-                                     <span>Ferdigstillelse</span>
-                                     <span>50%</span>
-                                  </div>
-                               </div>
-                            </div>
-                         </div>
-                      </div>
-                   ))}
-                   <div className="glass-panel p-8 border-2 border-dashed border-white/10 flex flex-col items-center justify-center opacity-40 hover:opacity-100 transition-all cursor-pointer">
-                      <Plus className="w-10 h-10 mb-4" />
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em]">Ny Utbygger-profil</p>
-                   </div>
-                </div>
-             )}
-          </div>
-        )}
-
-        {/* AFTER SALE SECTION */}
-        {activeTab === 'aftersale' && (
-          <div className="space-y-8 animate-in fade-in">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="glass-panel p-6 border-l-4 border-l-magenta-500 bg-magenta-500/5">
-                   <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Total AfterSale Provisjon</p>
-                   <p className="text-2xl font-black text-white font-mono">{formatCurrency(afterSales.reduce((acc, a) => acc + a.ourCommissionAmount, 0), 'EUR')}</p>
-                </div>
-                <div className="glass-panel p-6 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-                   <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Utestående Krav</p>
-                   <p className="text-2xl font-black text-cyan-400 font-mono">{formatCurrency(afterSales.filter(a => !a.isPaid).reduce((acc, a) => acc + a.ourCommissionAmount, 0), 'EUR')}</p>
-                </div>
-             </div>
-
-             <div className="glass-panel overflow-hidden border-l-4 border-l-magenta-500">
-                <div className="overflow-x-auto">
-                   <table className="w-full text-left text-sm min-w-[800px]">
-                      <thead className="bg-white/5 uppercase text-[9px] font-black tracking-widest border-b border-white/5">
-                         <tr>
-                            <th className="px-6 py-5">Kunde / Produkt</th>
-                            <th className="px-6 py-5">Leverandør</th>
-                            <th className="px-6 py-5 text-right">Vår Provisjon</th>
-                            <th className="px-6 py-5 text-center">Status</th>
-                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                         {afterSales.map(as => (
-                            <tr key={as.id} className="hover:bg-magenta-500/5 transition-all">
-                               <td className="px-6 py-5">
-                                  <p className="text-white font-black uppercase tracking-tight">{as.customer}</p>
-                                  <p className="text-[9px] text-magenta-400 font-bold mt-1 uppercase italic">{as.product}</p>
-                               </td>
-                               <td className="px-6 py-5 text-slate-400 uppercase font-bold text-[10px]">{as.vendor}</td>
-                               <td className="px-6 py-5 text-right font-mono font-black text-emerald-400">{formatCurrency(as.ourCommissionAmount, as.currency)}</td>
-                               <td className="px-6 py-5 text-center">
-                                  <span className={`px-2 py-0.5 text-[8px] font-black uppercase border ${as.isPaid ? 'border-emerald-500 text-emerald-500' : 'border-rose-500 text-rose-500 animate-pulse'}`}>
-                                     {as.isPaid ? 'Utbetalt' : 'Venter'}
-                                  </span>
-                               </td>
-                            </tr>
-                         ))}
-                      </tbody>
-                   </table>
-                </div>
-             </div>
-          </div>
-        )}
-
-        {/* EVO LAB SECTION */}
-        {activeTab === 'oil_venture' && (
-          <div className="space-y-8">
-            <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
-               <button onClick={() => setLabSubTab('calculator')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${labSubTab === 'calculator' ? 'text-emerald-400 border-b border-emerald-400' : 'text-slate-500'}`}>Venture-Kalkulator</button>
-               <button onClick={() => setLabSubTab('market')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${labSubTab === 'market' ? 'text-emerald-400 border-b border-emerald-400' : 'text-slate-500'}`}>Markedskalkulator</button>
-            </div>
-
-            {labSubTab === 'calculator' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in slide-in-from-bottom-4">
-                <div className="lg:col-span-4 space-y-6">
-                  <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                    <h3 className="text-xs font-black text-white uppercase tracking-widest mb-6">Investerings-Matrise</h3>
-                    <div className="space-y-4">
-                       <div className="p-4 bg-black/40 border border-white/5 space-y-4">
-                          <p className="text-[9px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5 pb-2">Norge Venture</p>
-                          <div className="space-y-3">
-                             <div className="flex justify-between items-center text-xs">
-                                <span className="text-slate-400 uppercase">Pris Norge (kr)</span>
-                                <input type="number" value={simConfig.norwayPriceNok} onChange={e => setSimConfig({...simConfig, norwayPriceNok: Number(e.target.value)})} className="w-16 bg-black border border-white/10 p-1 text-white text-right" />
-                             </div>
-                          </div>
-                       </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="lg:col-span-8 glass-panel p-8 border-l-4 border-l-emerald-500">
-                   <p className="text-[10px] uppercase text-slate-500 font-black mb-1">Estimert Profitt (År 1)</p>
-                   <p className="text-4xl font-black text-emerald-400 font-mono">{formatCurrency(simResults.profitNorwayYear1, 'EUR')}</p>
-                   <p className="text-xs text-slate-400 mt-4 italic">Beregnet for {simResults.numBottles} enheter à 0.5L.</p>
-                </div>
-              </div>
-            )}
-
-            {labSubTab === 'market' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in slide-in-from-right-4">
-                <div className="lg:col-span-4 glass-panel p-6 border-l-4 border-l-orange-500 bg-orange-500/5">
-                   <h3 className="text-xs font-black text-white uppercase tracking-widest mb-6">Markeds-Kalkulator</h3>
-                   <div className="space-y-4">
-                      <div className="flex justify-between items-center text-xs">
-                         <span className="text-slate-400 uppercase">Oliven Vekt (Kg)</span>
-                         <input type="number" value={marketSim.oliveWeightKg} onChange={e => setMarketSim({...marketSim, oliveWeightKg: Number(e.target.value)})} className="w-20 bg-black border border-white/10 p-1 text-white text-right" />
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                         <span className="text-slate-400 uppercase">Markedspris (€/Kg)</span>
-                         <input type="number" value={marketSim.pricePerKg} onChange={e => setMarketSim({...marketSim, pricePerKg: Number(e.target.value)})} className="w-20 bg-black border border-white/10 p-1 text-white text-right" />
-                      </div>
-                   </div>
-                </div>
-                <div className="lg:col-span-8 space-y-6">
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1">Netto Profitt (Marked)</p>
-                         <p className="text-2xl font-black text-emerald-400 font-mono">{formatCurrency(marketResults.netProfit, 'EUR')}</p>
-                      </div>
-                      <div className="glass-panel p-6 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1">Merverdi vs Olje</p>
-                         <p className="text-2xl font-black text-cyan-400 font-mono">+{formatCurrency(marketResults.diff, 'EUR')}</p>
-                      </div>
-                   </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

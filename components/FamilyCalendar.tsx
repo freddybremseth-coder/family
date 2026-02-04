@@ -178,6 +178,18 @@ export const FamilyCalendar: React.FC<Props> = ({
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.family_name}</label>
+                    <div className="relative">
+                       <Home className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-400" />
+                       <input 
+                         value={userConfig.familyName} 
+                         onChange={e => setUserConfig({...userConfig, familyName: e.target.value.toUpperCase()})} 
+                         className="w-full bg-black border border-white/10 pl-12 pr-6 py-4 text-white text-sm outline-none focus:border-cyan-500 transition-all font-mono" 
+                         placeholder="F.eks BREMSETH"
+                       />
+                    </div>
+                 </div>
+                 <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.language}</label>
                     <select 
                        value={userConfig.language} 
@@ -198,6 +210,17 @@ export const FamilyCalendar: React.FC<Props> = ({
                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-400" />
                        <input value={userConfig.location} onChange={e => setUserConfig({...userConfig, location: e.target.value})} className="w-full bg-black border border-white/10 pl-12 pr-6 py-4 text-white text-sm outline-none" />
                     </div>
+                 </div>
+                 <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.currency_preference}</label>
+                    <select 
+                       value={userConfig.preferredCurrency} 
+                       onChange={e => setUserConfig({...userConfig, preferredCurrency: e.target.value as Currency})}
+                       className="w-full bg-black border border-white/10 p-4 text-white text-sm outline-none focus:border-cyan-500 transition-all font-mono"
+                    >
+                       <option value="EUR">EUR (€)</option>
+                       <option value="NOK">NOK (kr)</option>
+                    </select>
                  </div>
               </div>
            </div>

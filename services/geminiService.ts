@@ -55,23 +55,39 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
 
 /**
  * AI Strategic Advice for Farm.
+ * Oppgradert for å dekke lønnsomhet, investering og markedsføring.
  */
 export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: FarmProfile, tasks: FarmTask[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Analyser Dona Anna-gården strategisk. Profil: ${JSON.stringify(profile)}. Operasjoner: ${JSON.stringify(ops)}. Svar på norsk.`,
+    contents: `Du er en ekspert på landbruksøkonomi og strategisk ledelse for olivenproduksjon i Spania. 
+    Analyser Dona Anna-gården basert på følgende data:
+    Profil: ${JSON.stringify(profile)}
+    Operasjoner: ${JSON.stringify(ops)}
+    
+    Fokusområder:
+    1. Lønnsomhet: Hvordan maksimere marginene?
+    2. Investeringer: Hva bør prioriteres (vanning, maskiner, solceller)?
+    3. Kostnader: Hvor lekker det penger?
+    4. Markedsføring: Hvordan skille seg ut i det norske/internasjonale markedet?
+    5. Datamangler: Hvilken informasjon mangler du for å gi enda bedre råd?
+    
+    Svar på norsk i cyberpunk-stil.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          advice: { type: Type.STRING },
+          strategicSummary: { type: Type.STRING },
+          profitabilityAnalysis: { type: Type.STRING },
+          investmentSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+          costSavingTips: { type: Type.ARRAY, items: { type: Type.STRING } },
+          marketingIdeas: { type: Type.ARRAY, items: { type: Type.STRING } },
           criticalAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-          nextSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
-          investmentAnalysis: { type: Type.STRING }
+          questionsForUser: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Informasjon AI-en trenger for bedre analyse" }
         },
-        required: ['advice', 'criticalAlerts', 'nextSteps', 'investmentAnalysis']
+        required: ['strategicSummary', 'profitabilityAnalysis', 'investmentSuggestions', 'costSavingTips', 'marketingIdeas', 'criticalAlerts', 'questionsForUser']
       }
     }
   });

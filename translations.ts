@@ -38,6 +38,7 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "API Konfigurasjon",
     api_help_text: "For å aktivere AI-funksjoner (OCR, Prognoser, Rådgivning), må en Gemini API-nøkkel være konfigurert i systemmiljøet.",
     api_link_text: "Hent nøkkel her: ai.google.dev",
+    family_name: "Familienavn",
   },
   en: {
     dashboard: "Dashboard",
@@ -75,6 +76,7 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "API Configuration",
     api_help_text: "To enable AI features (OCR, Forecasts, Advice), a Gemini API key must be configured in the system environment.",
     api_link_text: "Get key here: ai.google.dev",
+    family_name: "Family Name",
   },
   es: {
     dashboard: "Panel",
@@ -112,6 +114,7 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "Configuración de API",
     api_help_text: "Para activar funciones de IA (OCR, Pronósticos, Asesoría), se debe configurar una clave API de Gemini en el entorno del sistema.",
     api_link_text: "Obtenga la clave aquí: ai.google.dev",
+    family_name: "Nombre de la Familia",
   },
   ru: {
     dashboard: "Панель управления",
@@ -149,6 +152,7 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "Конфигурация API",
     api_help_text: "Для активации функций ИИ (OCR, прогнозы, консультации) в системной среде должен быть настроен ключ API Gemini.",
     api_link_text: "Получите ключ здесь: ai.google.dev",
+    family_name: "Фамилия",
   },
   fr: {
     dashboard: "Tableau de bord",
@@ -186,6 +190,7 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "Configuration de l'API",
     api_help_text: "Pour activer les fonctionnalités d'IA (OCR, prévisions, conseils), une clé API Gemini doit être configurée dans l'environnement système.",
     api_link_text: "Obtenez la clé ici : ai.google.dev",
+    family_name: "Nom de Famille",
   },
   de: {
     dashboard: "Dashboard",
@@ -223,5 +228,6 @@ export const translations: Record<Language, any> = {
     api_key_instruction: "API-Konfiguration",
     api_help_text: "Um KI-Funktionen (OCR, Prognosen, Beratung) zu aktivieren, muss ein Gemini-API-Schlüssel in der Systemumgebung konfiguriert sein.",
     api_link_text: "Schlüssel hier abrufen: ai.google.dev",
+    family_name: "Familienname",
   },
 };

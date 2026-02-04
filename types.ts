@@ -5,6 +5,11 @@ export enum TransactionType {
   TRANSFER = 'TRANSFER'
 }
 
+export enum UserRole {
+  USER = 'USER',
+  SUPER_ADMIN = 'SUPER_ADMIN'
+}
+
 export type Currency = 'NOK' | 'EUR' | 'BTC' | 'ETH' | 'SOL';
 export type Language = 'no' | 'en' | 'ru' | 'es' | 'fr' | 'de';
 export type PaymentMethod = 'Bank' | 'Kontant' | 'On-Chain';
@@ -12,10 +17,24 @@ export type PaymentMethod = 'Bank' | 'Kontant' | 'On-Chain';
 export type BusinessDomain = 'Soleada' | 'Pinosoecolife' | 'ZenEcoHomes' | 'AfterSale' | 'DonaAnna' | 'Private' | 'Crypto';
 
 export interface UserConfig {
+  familyName: string;
   location: string;
   timezone: string;
   preferredCurrency: Currency;
   language: Language;
+  role: UserRole;
+  subscriptionStatus: 'Active' | 'Lifetime' | 'Expired';
+}
+
+export interface SaaSUser {
+  id: string;
+  email: string;
+  familyName: string;
+  plan: 'Monthly' | 'Annual' | 'Lifetime';
+  status: 'Paid' | 'Pending' | 'Churned';
+  joinedDate: string;
+  lastActive: string;
+  revenue: number;
 }
 
 export interface LocalEvent {
