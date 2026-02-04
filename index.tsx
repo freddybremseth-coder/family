@@ -16,7 +16,7 @@ import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { NAVIGATION } from './constants';
 import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission, FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole } from './types';
 import { translations } from './translations';
-import { Home, Globe, LogOut, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { Home, Globe, LogOut, ShieldCheck, Loader2, AlertCircle, Key } from 'lucide-react';
 
 const App = () => {
   const [session, setSession] = useState<any>(null);
@@ -39,6 +39,9 @@ const App = () => {
   });
 
   const t = translations[userConfig.language];
+
+  // Sjekk om Gemini API-nøkkel er tilgjengelig
+  const isAiConfigured = !!process.env.API_KEY;
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -85,7 +88,6 @@ const App = () => {
 
   const handleLogin = async (credentials: { email: string, password?: string }) => {
     if (!isSupabaseConfigured()) {
-      // Demo-innlogging hvis Supabase mangler
       if (credentials.email === 'freddy.bremseth@gmail.com' && credentials.password === 'AllFamily1!') {
         setSession({ user: { email: credentials.email } });
         handleRoleAssignment({ email: credentials.email });
@@ -243,6 +245,11 @@ const App = () => {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
+      {!isAiConfigured && (
+        <div className="fixed top-0 left-0 right-0 z-[300] bg-yellow-500 text-black text-[9px] font-black uppercase tracking-[0.2em] py-1 px-4 flex items-center justify-center gap-2">
+          <Key className="w-3 h-3" /> Gemini API_KEY mangler i Vercel - AI-funksjoner er deaktivert
+        </div>
+      )}
       <nav className="w-full md:w-64 glass-panel border-r border-cyan-500/30 p-6 space-y-8 z-10">
         <div className="flex items-center gap-3 mb-10 group cursor-pointer">
           <div className="relative w-12 h-12 bg-black border-2 border-cyan-500 flex items-center justify-center shadow-[0_0_15px_#00f3ff] overflow-hidden">

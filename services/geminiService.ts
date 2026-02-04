@@ -4,8 +4,15 @@ import { Asset, FarmOperation, Bill, FamilyMember, FarmProfile, FarmTask, Crypto
 
 /**
  * Helper to get a fresh AI instance using the current environment key.
+ * Variabelen API_KEY må være satt i Vercel Environment Variables.
  */
-const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAi = () => {
+  const key = process.env.API_KEY;
+  if (!key) {
+    console.error("Gemini API_KEY mangler i miljøvariabler!");
+  }
+  return new GoogleGenAI({ apiKey: key || '' });
+};
 
 /**
  * Fetches local holidays, fiestas, and events using Google Search.
@@ -55,7 +62,6 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
 
 /**
  * AI Strategic Advice for Farm.
- * Oppgradert for å dekke lønnsomhet, investering og markedsføring.
  */
 export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: FarmProfile, tasks: FarmTask[]) => {
   const ai = getAi();
@@ -85,36 +91,9 @@ export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: Farm
           costSavingTips: { type: Type.ARRAY, items: { type: Type.STRING } },
           marketingIdeas: { type: Type.ARRAY, items: { type: Type.STRING } },
           criticalAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-          questionsForUser: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Informasjon AI-en trenger for bedre analyse" }
+          questionsForUser: { type: Type.ARRAY, items: { type: Type.STRING } }
         },
         required: ['strategicSummary', 'profitabilityAnalysis', 'investmentSuggestions', 'costSavingTips', 'marketingIdeas', 'criticalAlerts', 'questionsForUser']
-      }
-    }
-  });
-  return JSON.parse(response.text || '{}');
-};
-
-/**
- * AI Yield Forecast.
- */
-export const getFarmYieldForecast = async (profile: FarmProfile) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `Lag en avlingsprognose for 2026 for Dona Anna basert på: ${JSON.stringify(profile)}. Bruk Google Search for Alicante klima-trender.`,
-    config: {
-      tools: [{ googleSearch: {} }],
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          forecastLiters: { type: Type.NUMBER },
-          confidenceInterval: { type: Type.STRING },
-          climaticContext: { type: Type.STRING },
-          treeHealthAnalysis: { type: Type.STRING },
-          projectedGrowthPct: { type: Type.NUMBER }
-        },
-        required: ['forecastLiters', 'confidenceInterval', 'climaticContext', 'treeHealthAnalysis', 'projectedGrowthPct']
       }
     }
   });
@@ -296,7 +275,87 @@ export const estimateAssetGrowth = async (type: string, loc: string) => {
   return JSON.parse(response.text || '{}');
 };
 
-export const analyzeBankStatement = async (b64: string) => ({});
-export const getInvestmentStrategyAdvice = async (stats: any, assets: Asset[]) => ({});
-export const analyzeOliveBusinessScenario = async (data: any) => ({});
-export const getCryptoMarketIntelligence = async (portfolio: CryptoAsset[]) => ({ text: "", sources: [] });
+export const getFarmYieldForecast = async (profile: FarmProfile) => {
+  const ai = getAi();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: `Lag en avlingsprognose for 2026 for Dona Anna basert på: ${JSON.stringify(profile)}. Bruk Google Search for Alicante klima-trender.`,
+    config: {
+      tools: [{ googleSearch: {} }],
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          forecastLiters: { type: Type.NUMBER },
+          confidenceInterval: { type: Type.STRING },
+          climaticContext: { type: Type.STRING },
+          treeHealthAnalysis: { type: Type.STRING },
+          projectedGrowthPct: { type: Type.NUMBER }
+        },
+        required: ['forecastLiters', 'confidenceInterval', 'climaticContext', 'treeHealthAnalysis', 'projectedGrowthPct']
+      }
+    }
+  });
+  return JSON.parse(response.text || '{}');
+};
+
+/**
+ * Fix: Added missing analyzeBankStatement function used in BankManager.tsx.
+ */
+export const analyzeBankStatement = async (b64: string) => {
+  const ai = getAi();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: [
+      { inlineData: { mimeType: 'image/jpeg', data: b64 } },
+      { text: "Analyser denne bankutskriften eller kontooversikten. Hent ut nåværende saldo og de siste transaksjonene." }
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          balance: { type: Type.NUMBER },
+          currency: { type: Type.STRING },
+          transactions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING },
+                description: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] }
+              },
+              required: ['date', 'description', 'amount', 'type']
+            }
+          }
+        },
+        required: ['balance', 'transactions']
+      }
+    }
+  });
+  return JSON.parse(response.text || '{"balance": 0, "transactions": []}');
+};
+
+/**
+ * Task: Expert copywriter service for Zen Eco Homes guide generation.
+ */
+export const generateZenEcoGuide = async () => {
+  const ai = getAi();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: `Du er en ekspert på det spanske boligmarkedet og en topp tekstforfatter for "Zen Eco Homes". Vi selger trygghet, kvalitet og livsstil til nordmenn. 
+    Jeg trenger at du genererer følgende 4 deler:
+    
+    DEL 1: 5 forslag til fengende titler (Titlene må love en løsning på usikkerhet, f.eks "Veien til trygg boligdrøm...").
+    DEL 2: Innholdsfortegnelse og Struktur (5-7 hovedkapitler fra "Drømmen" til "Nøkkeloverlevering").
+    DEL 3: Selve innholdet (Kapittel for kapittel med underoverskrifter, "Pro-tips" bokser, "Sjekkliste for visning", og seksjon om "Hvorfor Nybygg/Eco?").
+    DEL 4: Salgstekst til nettsiden (Hook, 3 punktlister med hva de lærer, og en tydelig Call to Action).
+    Svar på norsk.`,
+    config: {
+      thinkingConfig: { thinkingBudget: 4000 }
+    }
+  });
+  return response.text;
+};

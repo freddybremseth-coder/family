@@ -13,12 +13,14 @@ import {
   Calendar, ListChecks, Activity, MapPin, Target, Droplet, ShieldAlert, ShieldCheck,
   Telescope, Boxes, ArrowRight, Calculator, TrendingUp as ProfitIcon, Globe,
   X, Save, ShoppingCart, UtensilsCrossed, Sparkles, Building2, Handshake,
-  AlertTriangle, Lightbulb, LineChart, HelpCircle, Coins, Megaphone
+  AlertTriangle, Lightbulb, LineChart, HelpCircle, Coins, Megaphone,
+  BookOpen, Rocket, Wand2, Quote
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { 
   getFarmStrategicAdvice, 
-  getFarmYieldForecast
+  getFarmYieldForecast,
+  generateZenEcoGuide
 } from '../services/geminiService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Line, ComposedChart, BarChart, Bar } from 'recharts';
 import { EXCHANGE_RATE_EUR_TO_NOK, FARM_CATEGORIES_ARRAY } from '../constants';
@@ -51,14 +53,14 @@ export const BusinessManager: React.FC<Props> = ({
   developers, setDevelopers,
   transactions
 }) => {
-  const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture'>('farm');
+  const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture' | 'marketing'>('farm');
   const [farmSubTab, setFarmSubTab] = useState<'ops' | 'inventory' | 'profile' | 'forecast' | 'advisor'>('ops');
-  const [labSubTab, setLabSubTab] = useState<'calculator' | 'market'>('calculator');
   const [reSubTab, setReSubTab] = useState<'deals' | 'developers'>('deals');
   
   // -- AI DATA STATES --
   const [aiForecast, setAiForecast] = useState<any>(null);
   const [aiAdvice, setAiAdvice] = useState<any>(null);
+  const [zenGuide, setZenGuide] = useState<string | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
 
   // -- FORMS --
@@ -74,7 +76,6 @@ export const BusinessManager: React.FC<Props> = ({
     saleDate: new Date().toISOString().split('T')[0]
   });
 
-  // -- DATA PLACEHOLDERS (FARM) --
   const farmProfile: FarmProfile = {
     totalTrees: 1500,
     batches: [
@@ -99,7 +100,6 @@ export const BusinessManager: React.FC<Props> = ({
     { id: '3', productName: 'EVO Lab 500ml Flasker', quantity: 240, unit: 'Bottles', location: 'Norway', lastUpdated: '2024-07-15' },
   ];
 
-  // -- ACTIONS --
   const handleGenerateForecast = async () => {
     setLoadingAI(true);
     try {
@@ -113,6 +113,14 @@ export const BusinessManager: React.FC<Props> = ({
     try {
       const data = await getFarmStrategicAdvice(farmOps, farmProfile, []);
       setAiAdvice(data);
+    } catch (e) { console.error(e); } finally { setLoadingAI(false); }
+  };
+
+  const handleGenerateZenGuide = async () => {
+    setLoadingAI(true);
+    try {
+      const text = await generateZenEcoGuide();
+      setZenGuide(text || "Kunne ikke generere guide.");
     } catch (e) { console.error(e); } finally { setLoadingAI(false); }
   };
 
@@ -142,11 +150,10 @@ export const BusinessManager: React.FC<Props> = ({
 
   return (
     <div className="space-y-6">
-      {/* MODULE NAVIGATION */}
       <div className="flex gap-2 border-b border-white/10 pb-4 overflow-x-auto no-scrollbar">
         {[
           { id: 'farm', label: 'Dona Anna (Gård)', icon: <Sprout className="w-4 h-4" />, color: 'text-yellow-400' },
-          { id: 'oil_venture', label: 'EVO Lab (Venture)', icon: <FlaskConical className="w-4 h-4" />, color: 'text-emerald-400' },
+          { id: 'marketing', label: 'Zen Eco (Marketing)', icon: <Rocket className="w-4 h-4" />, color: 'text-emerald-400' },
           { id: 'realestate', label: 'Eiendom (Salg)', icon: <Building2 className="w-4 h-4" />, color: 'text-cyan-400' },
           { id: 'aftersale', label: 'AfterSale (Service)', icon: <Handshake className="w-4 h-4" />, color: 'text-magenta-400' },
         ].map(tab => (
@@ -275,7 +282,6 @@ export const BusinessManager: React.FC<Props> = ({
 
                     {aiAdvice ? (
                        <div className="space-y-10">
-                          {/* Top Summary */}
                           <div className="p-6 bg-emerald-500/10 border border-emerald-500/30 relative overflow-hidden group">
                              <div className="absolute top-0 right-0 p-4 opacity-10">
                                 <Activity className="w-12 h-12 text-emerald-400" />
@@ -286,7 +292,6 @@ export const BusinessManager: React.FC<Props> = ({
                              <p className="text-sm text-white italic leading-relaxed pr-10">{aiAdvice.strategicSummary}</p>
                           </div>
 
-                          {/* Profit & Risk Section */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                              <div className="space-y-4">
                                 <h4 className="text-[10px] font-black uppercase text-yellow-500 flex items-center gap-2">
@@ -308,9 +313,7 @@ export const BusinessManager: React.FC<Props> = ({
                              </div>
                           </div>
 
-                          {/* Strategic Pillars */}
                           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                             {/* Investeringer */}
                              <div className="p-6 bg-cyan-500/5 border border-cyan-500/20">
                                 <h4 className="text-[10px] font-black uppercase text-cyan-400 mb-4 flex items-center gap-2">
                                    <Target className="w-3 h-3" /> Investering
@@ -324,7 +327,6 @@ export const BusinessManager: React.FC<Props> = ({
                                 </ul>
                              </div>
 
-                             {/* Kostnader */}
                              <div className="p-6 bg-yellow-500/5 border border-yellow-500/20">
                                 <h4 className="text-[10px] font-black uppercase text-yellow-500 mb-4 flex items-center gap-2">
                                    <Scale className="w-3 h-3" /> Kostnadskontroll
@@ -338,7 +340,6 @@ export const BusinessManager: React.FC<Props> = ({
                                 </ul>
                              </div>
 
-                             {/* Markedsføring */}
                              <div className="p-6 bg-magenta-500/5 border border-magenta-500/20">
                                 <h4 className="text-[10px] font-black uppercase text-magenta-400 mb-4 flex items-center gap-2">
                                    <Megaphone className="w-3 h-3" /> Markedsføring
@@ -352,103 +353,57 @@ export const BusinessManager: React.FC<Props> = ({
                                 </ul>
                              </div>
                           </div>
-
-                          {/* Missing Data Section */}
-                          <div className="p-6 bg-black border border-white/10 border-dashed">
-                             <h4 className="text-[10px] font-black uppercase text-slate-500 mb-4 flex items-center gap-2">
-                                <HelpCircle className="w-3 h-3" /> For en mer nøyaktig analyse trenger jeg:
-                             </h4>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {aiAdvice.questionsForUser.map((q: string, i: number) => (
-                                   <div key={i} className="text-[10px] text-slate-400 italic flex items-center gap-2">
-                                      <div className="w-1 h-1 bg-slate-700" /> {q}
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
                        </div>
                     ) : (
                        <div className="py-20 text-center opacity-30">
                           <BrainCircuit className="w-16 h-16 mx-auto mb-4" />
                           <p className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine klar for driftsevaluering</p>
-                          <p className="text-[9px] text-slate-500 mt-2 uppercase tracking-widest font-mono italic">Basert på operasjoner, lager og avlingshistorikk</p>
                        </div>
                     )}
                   </div>
                </div>
             )}
-
-            {farmSubTab === 'inventory' && (
-              <div className="glass-panel p-8 border-l-4 border-l-emerald-500 animate-in slide-in-from-left-4">
-                 <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-2">
-                    <Boxes className="text-emerald-400 w-5 h-5" /> Lagerbeholdning & Asset-sporing
-                 </h3>
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {inventory.map(item => (
-                      <div key={item.id} className="p-6 bg-black/40 border border-white/10 hover:border-emerald-500/50 transition-all">
-                         <div className="flex justify-between items-start mb-4">
-                            <p className="text-sm font-black text-white uppercase tracking-tight leading-tight">{item.productName}</p>
-                            <Package className="w-4 h-4 text-emerald-500" />
-                         </div>
-                         <div className="flex items-end justify-between">
-                            <div>
-                               <p className="text-2xl font-black text-white font-mono">{item.quantity} <span className="text-[10px] uppercase text-slate-500">{item.unit}</span></p>
-                               <p className="text-[8px] text-slate-500 font-mono mt-1 uppercase">Sist oppdatert: {item.lastUpdated}</p>
-                            </div>
-                            <span className="text-[9px] font-black uppercase px-2 py-0.5 border border-white/20 text-slate-400">{item.location}</span>
-                         </div>
-                      </div>
-                    ))}
-                 </div>
-              </div>
-            )}
-
-            {farmSubTab === 'profile' && (
-              <div className="glass-panel p-8 border-l-4 border-l-yellow-500 animate-in slide-in-from-right-4">
-                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                    <div className="lg:col-span-2 space-y-8">
-                       <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
-                          <MapPin className="text-yellow-400 w-5 h-5" /> Gårdskart & Trekatalog
-                       </h3>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {farmProfile.batches.map((batch, i) => (
-                            <div key={i} className="p-5 bg-white/5 border border-white/10">
-                               <div className="flex justify-between mb-4">
-                                  <span className="text-[10px] font-black text-yellow-500 uppercase">{batch.variety}</span>
-                                  <Leaf className={`w-4 h-4 ${batch.irrigated ? 'text-cyan-400' : 'text-orange-500'}`} />
-                               </div>
-                               <div className="flex items-end justify-between">
-                                  <div>
-                                     <p className="text-2xl font-black text-white font-mono">{batch.count}</p>
-                                     <p className="text-[9px] text-slate-500 uppercase">Trær // Alder: {batch.age} år</p>
-                                  </div>
-                                  <span className="text-[8px] font-black uppercase px-2 py-1 bg-black/40 border border-white/5">
-                                     {batch.irrigated ? 'Vanning OK' : 'Tørrdyrking'}
-                                  </span>
-                               </div>
-                            </div>
-                          ))}
-                       </div>
-                    </div>
-                    <div className="space-y-6">
-                       <div className="p-6 bg-black/40 border border-yellow-500/20">
-                          <h4 className="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Klimasituasjon</h4>
-                          <div className="flex items-center gap-4 text-white">
-                             <Droplets className="w-8 h-8 text-cyan-500" />
-                             <div>
-                                <p className="text-sm font-bold">Kilde: {farmProfile.irrigationSource}</p>
-                                <p className="text-[9px] text-slate-500 uppercase italic">Alicante / Region Biar</p>
-                             </div>
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Eiendom, AfterSale og EVO Lab seksjoner forblir uendret... */}
+        {activeTab === 'marketing' && (
+          <div className="space-y-8 animate-in slide-in-from-bottom-4">
+             <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5">
+                <div className="flex justify-between items-start mb-10">
+                   <div>
+                      <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-3">
+                         <Rocket className="text-emerald-400 w-6 h-6" /> Zen Eco Marketing Toolkit
+                      </h3>
+                      <p className="text-[10px] text-slate-500 uppercase mt-2 font-mono tracking-widest italic">AI-drevet innholdsproduksjon for det spanske boligmarkedet</p>
+                   </div>
+                   <CyberButton onClick={handleGenerateZenGuide} disabled={loadingAI} variant="primary" className="py-4 px-8">
+                      {loadingAI ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Wand2 className="w-4 h-4 mr-2" />}
+                      {loadingAI ? 'Genererer profesjonelt innhold...' : 'Generer Salgsguide'}
+                   </CyberButton>
+                </div>
+
+                {zenGuide ? (
+                  <div className="prose prose-invert max-w-none">
+                     <div className="p-8 bg-black/60 border border-emerald-500/20 font-serif leading-relaxed text-slate-200 whitespace-pre-wrap selection:bg-emerald-500 selection:text-black">
+                        <div className="flex justify-end mb-6">
+                           <button onClick={() => navigator.clipboard.writeText(zenGuide)} className="text-[9px] font-black uppercase text-emerald-400 hover:text-white transition-all flex items-center gap-2 border border-emerald-500/20 px-3 py-1">
+                              Kopier tekst
+                           </button>
+                        </div>
+                        {zenGuide}
+                     </div>
+                  </div>
+                ) : (
+                  <div className="py-32 text-center opacity-20 flex flex-col items-center">
+                     <BookOpen className="w-16 h-16 mb-6" />
+                     <p className="text-xs font-black uppercase tracking-[0.4em]">Klar for å bygge din autoritet i markedet</p>
+                     <p className="text-[10px] mt-4 max-w-sm italic">Klikk knappen over for å generere titler, innholdsfortegnelse, kapittelutkast og salgstekster optimalisert for nordmenn.</p>
+                  </div>
+                )}
+             </div>
+          </div>
+        )}
+
         {activeTab === 'realestate' && (
           <div className="space-y-8 animate-in fade-in">
              <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
