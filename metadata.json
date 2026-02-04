@@ -1,0 +1,7 @@
+{
+  "name": "NeonLedger: Cyberpunk Family Finance",
+  "description": "A high-end neon cyberpunk family economy app featuring receipt OCR, smart budgeting, and accrual accounting for real estate transactions.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
