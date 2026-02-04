@@ -14,7 +14,7 @@ import {
   Telescope, Boxes, ArrowRight, Calculator, TrendingUp as ProfitIcon, Globe,
   X, Save, ShoppingCart, UtensilsCrossed, Sparkles, Building2, Handshake,
   AlertTriangle, Lightbulb, LineChart, HelpCircle, Coins, Megaphone,
-  BookOpen, Rocket, Wand2, Quote
+  BookOpen, Rocket, Wand2, Quote, FileSignature, Loader2
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { 
@@ -93,12 +93,6 @@ export const BusinessManager: React.FC<Props> = ({
       { year: 2025, liters: 1370 },
     ]
   };
-
-  const inventory: InventoryItem[] = [
-    { id: '1', productName: 'Premium Gordal EVOO', quantity: 450, unit: 'Liters', location: 'Spain', lastUpdated: '2024-07-10' },
-    { id: '2', productName: 'Heritage Blend (150yr)', quantity: 45, unit: 'Liters', location: 'Spain', lastUpdated: '2024-07-10' },
-    { id: '3', productName: 'EVO Lab 500ml Flasker', quantity: 240, unit: 'Bottles', location: 'Norway', lastUpdated: '2024-07-15' },
-  ];
 
   const handleGenerateForecast = async () => {
     setLoadingAI(true);
@@ -369,35 +363,76 @@ export const BusinessManager: React.FC<Props> = ({
         {activeTab === 'marketing' && (
           <div className="space-y-8 animate-in slide-in-from-bottom-4">
              <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                <div className="flex justify-between items-start mb-10">
+                <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-12">
                    <div>
-                      <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-3">
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest flex items-center gap-3">
                          <Rocket className="text-emerald-400 w-6 h-6" /> Zen Eco Marketing Toolkit
                       </h3>
-                      <p className="text-[10px] text-slate-500 uppercase mt-2 font-mono tracking-widest italic">AI-drevet innholdsproduksjon for det spanske boligmarkedet</p>
+                      <p className="text-[11px] text-slate-500 uppercase mt-2 font-mono tracking-widest italic leading-relaxed">
+                        Strategisk innholdsproduksjon for "Zen Eco Homes" — trygghet, kvalitet og spansk livsstil for nordmenn.
+                      </p>
                    </div>
-                   <CyberButton onClick={handleGenerateZenGuide} disabled={loadingAI} variant="primary" className="py-4 px-8">
-                      {loadingAI ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                      {loadingAI ? 'Genererer profesjonelt innhold...' : 'Generer Salgsguide'}
+                   <CyberButton onClick={handleGenerateZenGuide} disabled={loadingAI} variant="primary" className="py-5 px-10 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                      {/* Fixed Loader2 compilation error by adding it to lucide-react imports */}
+                      {loadingAI ? <Loader2 className="w-5 h-5 animate-spin mr-3" /> : <Sparkles className="w-5 h-5 mr-3" />}
+                      {loadingAI ? 'Genererer profesjonell guide...' : 'Generer Full Salgsguide'}
                    </CyberButton>
                 </div>
 
                 {zenGuide ? (
-                  <div className="prose prose-invert max-w-none">
-                     <div className="p-8 bg-black/60 border border-emerald-500/20 font-serif leading-relaxed text-slate-200 whitespace-pre-wrap selection:bg-emerald-500 selection:text-black">
-                        <div className="flex justify-end mb-6">
-                           <button onClick={() => navigator.clipboard.writeText(zenGuide)} className="text-[9px] font-black uppercase text-emerald-400 hover:text-white transition-all flex items-center gap-2 border border-emerald-500/20 px-3 py-1">
-                              Kopier tekst
-                           </button>
+                  <div className="grid grid-cols-1 gap-12">
+                     <div className="space-y-12">
+                        {/* Rendrer guiden i seksjoner basert på DEL 1, DEL 2 osv */}
+                        <div className="p-8 bg-black/60 border border-emerald-500/20 relative overflow-hidden">
+                           <div className="absolute top-0 right-0 p-3 bg-emerald-500/10 text-[9px] font-black uppercase text-emerald-400 tracking-widest border-b border-l border-emerald-500/20">
+                             Generated Asset
+                           </div>
+                           <div className="flex justify-between items-center mb-10 pb-4 border-b border-white/10">
+                              <h4 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                                 <FileSignature className="text-emerald-400 w-5 h-5" /> Zen Eco Homes Salgsmateriell
+                              </h4>
+                              <button onClick={() => navigator.clipboard.writeText(zenGuide)} className="text-[9px] font-black uppercase text-slate-400 hover:text-emerald-400 transition-all border border-white/10 px-4 py-2 hover:bg-white/5">
+                                 Kopier alt innhold
+                              </button>
+                           </div>
+                           
+                           {/* Guide Content Render */}
+                           <div className="prose prose-invert max-w-none font-sans text-slate-200 leading-relaxed whitespace-pre-wrap selection:bg-emerald-500 selection:text-black">
+                              {zenGuide}
+                           </div>
                         </div>
-                        {zenGuide}
+
+                        {/* CTA / Next Steps */}
+                        <div className="p-6 bg-emerald-500/5 border-l-4 border-l-emerald-500 flex flex-col md:flex-row items-center justify-between gap-6">
+                           <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                                 <Check className="text-emerald-400" />
+                              </div>
+                              <p className="text-sm font-bold text-white uppercase tracking-tight">Guiden er klar for distribusjon.</p>
+                           </div>
+                           <CyberButton variant="ghost" onClick={handleGenerateZenGuide} className="text-[10px]">Oppdater/Regenerer</CyberButton>
+                        </div>
                      </div>
                   </div>
                 ) : (
-                  <div className="py-32 text-center opacity-20 flex flex-col items-center">
-                     <BookOpen className="w-16 h-16 mb-6" />
-                     <p className="text-xs font-black uppercase tracking-[0.4em]">Klar for å bygge din autoritet i markedet</p>
-                     <p className="text-[10px] mt-4 max-w-sm italic">Klikk knappen over for å generere titler, innholdsfortegnelse, kapittelutkast og salgstekster optimalisert for nordmenn.</p>
+                  <div className="py-40 text-center flex flex-col items-center justify-center relative">
+                     <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
+                        <Building2 className="w-96 h-96 text-emerald-400" />
+                     </div>
+                     <div className="relative z-10 space-y-6">
+                        <BookOpen className="w-20 h-20 mx-auto text-emerald-500/20 mb-8 animate-pulse" />
+                        <h4 className="text-xl font-black text-white uppercase tracking-[0.4em]">Klar for Innholdsproduksjon</h4>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed italic uppercase font-mono">
+                          Ved å aktivere AI-motoren vil vi generere:
+                          <br />1. Eksklusive titler
+                          <br />2. Komplett kapittelstruktur
+                          <br />3. Profesjonelle innholdsutkast
+                          <br />4. Salgstekst med høy konverteringsgrad
+                        </p>
+                        <div className="pt-10">
+                           <CyberButton onClick={handleGenerateZenGuide} variant="primary" className="px-20 py-4">Start Neural Writing</CyberButton>
+                        </div>
+                     </div>
                   </div>
                 )}
              </div>

@@ -13,10 +13,13 @@ import { BankManager } from './components/BankManager';
 import { AssetManager } from './components/AssetManager';
 import { FamilyCalendar } from './components/FamilyCalendar';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
+import { SettingsManager } from './components/SettingsManager';
+import { ResidentsManager } from './components/ResidentsManager';
 import { NAVIGATION } from './constants';
 import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission, FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole } from './types';
 import { translations } from './translations';
 import { Home, Globe, LogOut, ShieldCheck, Loader2, AlertCircle, Key } from 'lucide-react';
+import { isAiAvailable } from './services/geminiService';
 
 const App = () => {
   const [session, setSession] = useState<any>(null);
@@ -27,6 +30,7 @@ const App = () => {
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>([]);
   const [weeklyMenu, setWeeklyMenu] = useState<any[]>([]);
   const [scannedReceipts, setScannedReceipts] = useState<ScannedReceipt[]>([]);
+  const [aiConfigured, setAiConfigured] = useState(isAiAvailable());
 
   const [userConfig, setUserConfig] = useState<UserConfig>({
     familyName: 'LEDGER',
@@ -40,13 +44,9 @@ const App = () => {
 
   const t = translations[userConfig.language] || translations['no'];
 
-  // Robust sjekk for miljøvariabler
-  const isAiConfigured = typeof process !== 'undefined' && process.env && !!process.env.API_KEY;
-
   useEffect(() => {
     try {
       if (!isSupabaseConfigured()) {
-        console.warn("Supabase is not configured. Using local demo mode.");
         setLoading(false);
         return;
       }
@@ -56,7 +56,6 @@ const App = () => {
         if (session?.user) handleRoleAssignment(session.user);
         setLoading(false);
       }).catch(err => {
-        console.error("Supabase Session Error:", err);
         setLoading(false);
       });
 
@@ -67,7 +66,6 @@ const App = () => {
 
       return () => subscription?.unsubscribe();
     } catch (e) {
-      console.error("Initialization error:", e);
       setLoading(false);
     }
   }, []);
@@ -96,7 +94,7 @@ const App = () => {
         setSession({ user: { email: credentials.email } });
         handleRoleAssignment({ email: credentials.email });
       } else {
-        alert("Demo-modus: Bruk admin-epost for å logge inn uten Supabase.");
+        alert("Demo-modus: Bruk admin-epost for å logge inn.");
       }
       return;
     }
@@ -182,16 +180,27 @@ const App = () => {
       case 'familyplan': return (
         <FamilyCalendar
           familyMembers={familyMembers}
-          setFamilyMembers={setFamilyMembers}
           calendarEvents={calendarEvents}
           setCalendarEvents={setCalendarEvents}
           tasks={tasks}
           setTasks={setTasks}
-          assets={assets}
           userConfig={userConfig}
-          setUserConfig={setUserConfig}
           localEvents={localEvents}
           setLocalEvents={setLocalEvents}
+        />
+      );
+      case 'members': return (
+        <ResidentsManager 
+          familyMembers={familyMembers} 
+          setFamilyMembers={setFamilyMembers} 
+          lang={userConfig.language}
+        />
+      );
+      case 'settings': return (
+        <SettingsManager 
+          userConfig={userConfig} 
+          setUserConfig={setUserConfig} 
+          onApiUpdate={() => setAiConfigured(isAiAvailable())}
         />
       );
       case 'bank': return (
@@ -250,10 +259,13 @@ const App = () => {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-black text-slate-200">
-      {!isAiConfigured && (
-        <div className="fixed top-0 left-0 right-0 z-[300] bg-yellow-500 text-black text-[9px] font-black uppercase tracking-[0.2em] py-1 px-4 flex items-center justify-center gap-2">
-          <Key className="w-3 h-3" /> AI Engine Offline (API_KEY missing)
-        </div>
+      {!aiConfigured && (
+        <button 
+          onClick={() => setActiveTab('settings')}
+          className="fixed top-0 left-0 right-0 z-[300] bg-yellow-500 text-black text-[9px] font-black uppercase tracking-[0.2em] py-1 px-4 flex items-center justify-center gap-2 hover:bg-yellow-400 transition-all"
+        >
+          <Key className="w-3 h-3" /> AI Engine Offline (Klikk her for å konfigurere API-nøkkel)
+        </button>
       )}
       <nav className="w-full md:w-64 glass-panel border-r border-cyan-500/30 p-6 space-y-8 z-10">
         <div className="flex items-center gap-3 mb-10 group cursor-pointer" onClick={() => setActiveTab('dashboard')}>

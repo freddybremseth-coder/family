@@ -9,7 +9,9 @@ import {
   Briefcase,
   Banknote,
   Landmark,
-  CalendarDays // New icon for Family Plan
+  CalendarDays,
+  Users,
+  Settings
 } from 'lucide-react';
 import { FarmCategory } from './types'; 
 
@@ -33,7 +35,9 @@ export const NAVIGATION = [
   { id: 'receipts', label: 'Kvitteringer', icon: <Receipt className="w-5 h-5" /> },
   { id: 'trends', label: 'Regninger', icon: <TrendingUp className="w-5 h-5" /> },
   { id: 'shopping', label: 'Handleliste', icon: <ShoppingCart className="w-5 h-5" /> },
-  { id: 'familyplan', label: 'Familieplan', icon: <CalendarDays className="w-5 h-5" /> }, // New: Family Plan
+  { id: 'familyplan', label: 'Familieplan', icon: <CalendarDays className="w-5 h-5" /> },
+  { id: 'members', label: 'Beboere', icon: <Users className="w-5 h-5" /> },
+  { id: 'settings', label: 'Innstillinger', icon: <Settings className="w-5 h-5" /> },
 ];
 
 export const GROCERY_STORES = ['Mercadona', 'Carrefour', 'Lidl', 'Aldi', 'Family Cash', 'Markedet (Benidorm)'] as const;

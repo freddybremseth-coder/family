@@ -3,15 +3,28 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Asset, FarmOperation, Bill, FamilyMember, FarmProfile, FarmTask, CryptoAsset } from "../types";
 
 /**
- * Helper to get a fresh AI instance using the current environment key.
- * Variabelen API_KEY må være satt i Vercel Environment Variables.
+ * Helper to get a fresh AI instance.
+ * Prioriterer nøkkel lagret i localStorage (BYOK) over systemets miljøvariabler.
  */
 const getAi = () => {
-  const key = process.env.API_KEY;
-  if (!key) {
-    console.error("Gemini API_KEY mangler i miljøvariabler!");
+  const userKey = localStorage.getItem('user_gemini_api_key');
+  const envKey = process.env.API_KEY;
+  const finalKey = userKey || envKey;
+
+  if (!finalKey || finalKey === 'undefined') {
+    console.error("Gemini API_KEY mangler! Legg den inn i Innstillinger.");
   }
-  return new GoogleGenAI({ apiKey: key || '' });
+  return new GoogleGenAI({ apiKey: finalKey || '' });
+};
+
+/**
+ * Sjekker om AI er konfigurert enten via system eller bruker.
+ */
+export const isAiAvailable = () => {
+  const userKey = localStorage.getItem('user_gemini_api_key');
+  const envKey = process.env.API_KEY;
+  const finalKey = userKey || envKey;
+  return !!finalKey && finalKey !== 'undefined' && finalKey !== '';
 };
 
 /**
@@ -77,7 +90,6 @@ export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: Farm
     2. Investeringer: Hva bør prioriteres (vanning, maskiner, solceller)?
     3. Kostnader: Hvor lekker det penger?
     4. Markedsføring: Hvordan skille seg ut i det norske/internasjonale markedet?
-    5. Datamangler: Hvilken informasjon mangler du for å gi enda bedre råd?
     
     Svar på norsk i cyberpunk-stil.`,
     config: {
@@ -299,9 +311,6 @@ export const getFarmYieldForecast = async (profile: FarmProfile) => {
   return JSON.parse(response.text || '{}');
 };
 
-/**
- * Fix: Added missing analyzeBankStatement function used in BankManager.tsx.
- */
 export const analyzeBankStatement = async (b64: string) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
@@ -338,9 +347,6 @@ export const analyzeBankStatement = async (b64: string) => {
   return JSON.parse(response.text || '{"balance": 0, "transactions": []}');
 };
 
-/**
- * Task: Expert copywriter service for Zen Eco Homes guide generation.
- */
 export const generateZenEcoGuide = async () => {
   const ai = getAi();
   const response = await ai.models.generateContent({
@@ -349,9 +355,9 @@ export const generateZenEcoGuide = async () => {
     Jeg trenger at du genererer følgende 4 deler:
     
     DEL 1: 5 forslag til fengende titler (Titlene må love en løsning på usikkerhet, f.eks "Veien til trygg boligdrøm...").
-    DEL 2: Innholdsfortegnelse og Struktur (5-7 hovedkapitler fra "Drømmen" til "Nøkkeloverlevering").
-    DEL 3: Selve innholdet (Kapittel for kapittel med underoverskrifter, "Pro-tips" bokser, "Sjekkliste for visning", og seksjon om "Hvorfor Nybygg/Eco?").
-    DEL 4: Salgstekst til nettsiden (Hook, 3 punktlister med hva de lærer, og en tydelig Call to Action).
+    DEL 2: Innholdsfortegnelse og Struktur (5-7 hovedkapitler).
+    DEL 3: Selve innholdet (Kapittel for kapittel).
+    DEL 4: Salgstekst til nettsiden.
     Svar på norsk.`,
     config: {
       thinkingConfig: { thinkingBudget: 4000 }
