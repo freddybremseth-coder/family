@@ -38,33 +38,38 @@ const App = () => {
     subscriptionStatus: 'Active'
   });
 
-  const t = translations[userConfig.language];
+  const t = translations[userConfig.language] || translations['no'];
 
-  // Sjekk om Gemini API-nøkkel er tilgjengelig
-  const isAiConfigured = !!process.env.API_KEY;
+  // Robust sjekk for miljøvariabler
+  const isAiConfigured = typeof process !== 'undefined' && process.env && !!process.env.API_KEY;
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      console.warn("Supabase is not configured. Using local demo mode.");
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn("Supabase is not configured. Using local demo mode.");
+        setLoading(false);
+        return;
+      }
+
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        if (session?.user) handleRoleAssignment(session.user);
+        setLoading(false);
+      }).catch(err => {
+        console.error("Supabase Session Error:", err);
+        setLoading(false);
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+        if (session?.user) handleRoleAssignment(session.user);
+      });
+
+      return () => subscription?.unsubscribe();
+    } catch (e) {
+      console.error("Initialization error:", e);
       setLoading(false);
-      return;
     }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) handleRoleAssignment(session.user);
-      setLoading(false);
-    }).catch(err => {
-      console.error("Supabase Session Error:", err);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) handleRoleAssignment(session.user);
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   const handleRoleAssignment = (user: any) => {
@@ -75,7 +80,6 @@ const App = () => {
         role: UserRole.SUPER_ADMIN,
         subscriptionStatus: 'Lifetime'
       }));
-      if (activeTab === 'dashboard') setActiveTab('superadmin');
     } else {
       setUserConfig(prev => ({
         ...prev,
@@ -224,34 +228,35 @@ const App = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <Loader2 className="w-12 h-12 text-cyan-500 animate-spin" />
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 text-cyan-500 animate-spin mb-4" />
+        <p className="text-[10px] text-cyan-500 font-black uppercase tracking-[0.4em]">Initializing Core...</p>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <>
+      <div className="min-h-screen bg-black">
         {!isSupabaseConfigured() && (
           <div className="fixed top-0 left-0 right-0 z-[200] bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 flex items-center justify-center gap-2">
-            <AlertCircle className="w-3 h-3" /> Supabase ikke konfigurert - kjører i lokal demo-modus
+            <AlertCircle className="w-3 h-3" /> Supabase demo-modus
           </div>
         )}
         <LandingPage onLogin={handleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({...userConfig, language: l})} />
-      </>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col md:flex-row min-h-screen bg-black text-slate-200">
       {!isAiConfigured && (
         <div className="fixed top-0 left-0 right-0 z-[300] bg-yellow-500 text-black text-[9px] font-black uppercase tracking-[0.2em] py-1 px-4 flex items-center justify-center gap-2">
-          <Key className="w-3 h-3" /> Gemini API_KEY mangler i Vercel - AI-funksjoner er deaktivert
+          <Key className="w-3 h-3" /> AI Engine Offline (API_KEY missing)
         </div>
       )}
       <nav className="w-full md:w-64 glass-panel border-r border-cyan-500/30 p-6 space-y-8 z-10">
-        <div className="flex items-center gap-3 mb-10 group cursor-pointer">
+        <div className="flex items-center gap-3 mb-10 group cursor-pointer" onClick={() => setActiveTab('dashboard')}>
           <div className="relative w-12 h-12 bg-black border-2 border-cyan-500 flex items-center justify-center shadow-[0_0_15px_#00f3ff] overflow-hidden">
             <Home className="text-cyan-400 w-8 h-8 group-hover:scale-110 transition-transform" />
             <div className="absolute bottom-0 right-0 bg-cyan-500 text-black text-[8px] font-black px-1 uppercase tracking-tighter">CB</div>
