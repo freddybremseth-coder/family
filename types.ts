@@ -188,6 +188,7 @@ export interface FarmProfile {
   batches: TreeBatch[];
   irrigationSource: string;
   location: string;
+  country: string;
   yieldHistory: { year: number; liters: number }[];
 }
 

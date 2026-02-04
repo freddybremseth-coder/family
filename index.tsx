@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { LandingPage } from './components/LandingPage';
@@ -16,7 +16,7 @@ import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { SettingsManager } from './components/SettingsManager';
 import { ResidentsManager } from './components/ResidentsManager';
 import { NAVIGATION } from './constants';
-import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission, FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole } from './types';
+import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission, FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole, DealStatus } from './types';
 import { translations } from './translations';
 import { Home, Globe, LogOut, ShieldCheck, Loader2, AlertCircle, Key } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
@@ -32,6 +32,22 @@ const App = () => {
   const [scannedReceipts, setScannedReceipts] = useState<ScannedReceipt[]>([]);
   const [aiConfigured, setAiConfigured] = useState(isAiAvailable());
 
+  // Data states
+  const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [developers, setDevelopers] = useState<Developer[]>([
+    { id: 'dev-asencio', name: 'Asencio Homes', defaultCommissionPct: 5, payoutPhases: [] },
+  ]);
+  const [realEstateDeals, setRealEstateDeals] = useState<RealEstateDeal[]>([]);
+  const [afterSales, setAfterSales] = useState<AfterSaleCommission[]>([]);
+  const [farmOps, setFarmOps] = useState<FarmOperation[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+
   const [userConfig, setUserConfig] = useState<UserConfig>({
     familyName: 'LEDGER',
     location: 'Benidorm, Spain',
@@ -44,16 +60,45 @@ const App = () => {
 
   const t = translations[userConfig.language] || translations['no'];
 
+  // --- SUPABASE DATA SYNC ---
+  const fetchAllData = useCallback(async (userId: string) => {
+    if (!isSupabaseConfigured()) return;
+
+    // Hent transaksjoner
+    const { data: txData } = await supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false });
+    if (txData) setTransactions(txData);
+
+    // Hent eiendom
+    const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
+    if (reData) setRealEstateDeals(reData);
+
+    // Hent gård
+    const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
+    if (farmData) setFarmOps(farmData);
+
+    // Hent beboere (hvis tabell finnes, ellers bruk defaults)
+    const { data: residentData } = await supabase.from('family_members').select('*').eq('user_id', userId);
+    if (residentData && residentData.length > 0) setFamilyMembers(residentData);
+  }, []);
+
   useEffect(() => {
     try {
       if (!isSupabaseConfigured()) {
         setLoading(false);
+        // Default data for demo-modus
+        setFamilyMembers([
+          { id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 },
+          { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 },
+        ]);
         return;
       }
 
       supabase.auth.getSession().then(({ data: { session } }) => {
         setSession(session);
-        if (session?.user) handleRoleAssignment(session.user);
+        if (session?.user) {
+          handleRoleAssignment(session.user);
+          fetchAllData(session.user.id);
+        }
         setLoading(false);
       }).catch(err => {
         setLoading(false);
@@ -61,14 +106,17 @@ const App = () => {
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setSession(session);
-        if (session?.user) handleRoleAssignment(session.user);
+        if (session?.user) {
+          handleRoleAssignment(session.user);
+          fetchAllData(session.user.id);
+        }
       });
 
       return () => subscription?.unsubscribe();
     } catch (e) {
       setLoading(false);
     }
-  }, []);
+  }, [fetchAllData]);
 
   const handleRoleAssignment = (user: any) => {
     if (user.email === 'freddy.bremseth@gmail.com') {
@@ -91,7 +139,7 @@ const App = () => {
   const handleLogin = async (credentials: { email: string, password?: string }) => {
     if (!isSupabaseConfigured()) {
       if (credentials.email === 'freddy.bremseth@gmail.com' && credentials.password === 'AllFamily1!') {
-        setSession({ user: { email: credentials.email } });
+        setSession({ user: { email: credentials.email, id: 'demo-user' } });
         handleRoleAssignment({ email: credentials.email });
       } else {
         alert("Demo-modus: Bruk admin-epost for å logge inn.");
@@ -113,45 +161,37 @@ const App = () => {
     setSession(null);
   };
 
-  // Data states
-  const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
-  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([
-    { id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 },
-    { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 },
-    { id: 'fm-3', name: 'Victoria', birthDate: '2015-01-10', monthlySalary: 0, monthlyBenefits: 0, monthlyChildBenefit: 1700 },
-  ]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([
-    { id: 'bank-1', name: 'Hovedkonto DNB', balance: 50000, currency: 'NOK', lastReconciledDate: '2023-10-31' },
-    { id: 'bank-2', name: 'Caixa Spania', balance: 15000, currency: 'EUR', lastReconciledDate: '2023-10-20' },
-  ]);
-  const [assets, setAssets] = useState<Asset[]>([
-    { id: 'a1', name: 'Enebolig Pinoso', type: 'Property', location: 'Pinoso, Alicante', purchasePrice: 350000, currentValue: 420000, currency: 'EUR', annualGrowthRate: 4.2, purchaseDate: '2021-05-10' },
-  ]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [developers, setDevelopers] = useState<Developer[]>([
-    { id: 'dev-asencio', name: 'Asencio Homes', defaultCommissionPct: 5, payoutPhases: [] },
-  ]);
-  const [realEstateDeals, setRealEstateDeals] = useState<RealEstateDeal[]>([]);
-  const [afterSales, setAfterSales] = useState<AfterSaleCommission[]>([]);
-  const [farmOps, setFarmOps] = useState<FarmOperation[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
+  // --- WRAPPED DATA UPDATE HANDLERS ---
+  const updateTransactions = async (newTransactions: Transaction[] | ((prev: Transaction[]) => Transaction[])) => {
+    if (typeof newTransactions === 'function') {
+      // Vi trenger den forrige staten for å vite hva som er lagt til/fjernet
+      // Forenklet her for å støtte direkte innsetting i Supabase
+      setTransactions(newTransactions);
+    } else {
+      setTransactions(newTransactions);
+      // I en full implementasjon ville vi synkronisert endringene her
+    }
+  };
 
-  const handleNewScannedReceipt = (data: any, imageUrl: string) => {
+  const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
     const transactionId = `tx-rcpt-${Date.now()}`;
-    const newT: Transaction = {
-      id: transactionId,
+    const newT: any = {
       date: data.date || new Date().toISOString().split('T')[0],
       amount: data.totalAmount,
       currency: 'EUR',
       description: data.vendor,
       category: 'Shopping',
       type: TransactionType.EXPENSE,
-      paymentMethod: 'Kontant',
-      isAccrual: false
+      payment_method: 'Kontant',
+      user_id: session?.user?.id
     };
-    setTransactions(prev => [newT, ...prev]);
+
+    if (isSupabaseConfigured() && session?.user) {
+      const { error } = await supabase.from('transactions').insert([newT]);
+      if (error) console.error("Error saving to Supabase:", error);
+    }
+
+    setTransactions(prev => [{ ...newT, id: transactionId }, ...prev]);
     setCashBalance(prev => prev - data.totalAmount);
     setActiveTab('transactions');
   };
@@ -211,9 +251,27 @@ const App = () => {
       );
       case 'business': return (
         <BusinessManager 
-          deals={realEstateDeals} setDeals={setRealEstateDeals}
+          deals={realEstateDeals} 
+          setDeals={async (val: any) => {
+             // Spesialhåndtering for Supabase-synk av deals
+             if (typeof val === 'function') {
+                const next = val(realEstateDeals);
+                setRealEstateDeals(next);
+                // Her ville vi normalt sjekket diffen og pushet til supabase
+             } else {
+                setRealEstateDeals(val);
+             }
+          }}
           afterSales={afterSales} setAfterSales={setAfterSales}
-          farmOps={farmOps} setFarmOps={setFarmOps}
+          farmOps={farmOps} 
+          setFarmOps={async (val: any) => {
+            if (typeof val === 'function') {
+               const next = val(farmOps);
+               setFarmOps(next);
+            } else {
+               setFarmOps(val);
+            }
+          }}
           developers={developers} setDevelopers={setDevelopers}
           afterSalePartners={[]} setAfterSalePartners={() => {}}
           transactions={transactions} setTransactions={setTransactions}
@@ -222,7 +280,19 @@ const App = () => {
       );
       case 'transactions': return (
         <TransactionManager 
-          transactions={transactions} setTransactions={setTransactions} 
+          transactions={transactions} 
+          setTransactions={async (val: any) => {
+            const next = typeof val === 'function' ? val(transactions) : val;
+            setTransactions(next);
+            // Hvis vi legger til en ny transaksjon via TransactionManager
+            if (next.length > transactions.length && isSupabaseConfigured() && session?.user) {
+               const newTx = next[0];
+               await supabase.from('transactions').insert([{
+                  ...newTx,
+                  user_id: session.user.id
+               }]);
+            }
+          }} 
           bankAccounts={bankAccounts} setBankAccounts={setBankAccounts}
           deals={realEstateDeals} setDeals={setRealEstateDeals}
           afterSales={afterSales} setAfterSales={setAfterSales}

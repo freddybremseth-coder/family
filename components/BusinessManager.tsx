@@ -14,7 +14,8 @@ import {
   Telescope, Boxes, ArrowRight, Calculator, TrendingUp as ProfitIcon, Globe,
   X, Save, ShoppingCart, UtensilsCrossed, Sparkles, Building2, Handshake,
   AlertTriangle, Lightbulb, LineChart, HelpCircle, Coins, Megaphone,
-  BookOpen, Rocket, Wand2, Quote, FileSignature, Loader2
+  BookOpen, Rocket, Wand2, Quote, FileSignature, Loader2, Flag,
+  Trophy, ArrowRightLeft, Thermometer
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { 
@@ -22,7 +23,7 @@ import {
   getFarmYieldForecast,
   generateZenEcoGuide
 } from '../services/geminiService';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Line, ComposedChart, BarChart, Bar } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Line, ComposedChart, BarChart, Bar, Cell } from 'recharts';
 import { EXCHANGE_RATE_EUR_TO_NOK, FARM_CATEGORIES_ARRAY } from '../constants';
 
 interface Props {
@@ -54,7 +55,7 @@ export const BusinessManager: React.FC<Props> = ({
   transactions
 }) => {
   const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture' | 'marketing'>('farm');
-  const [farmSubTab, setFarmSubTab] = useState<'ops' | 'inventory' | 'profile' | 'forecast' | 'advisor'>('ops');
+  const [farmSubTab, setFarmSubTab] = useState<'ops' | 'inventory' | 'profile' | 'forecast' | 'advisor' | 'simulator'>('ops');
   const [reSubTab, setReSubTab] = useState<'deals' | 'developers'>('deals');
   
   // -- AI DATA STATES --
@@ -62,6 +63,56 @@ export const BusinessManager: React.FC<Props> = ({
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [zenGuide, setZenGuide] = useState<string | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
+
+  // -- SIMULATOR STATE --
+  const [simConfig, setSimConfig] = useState({
+    quantityKilos: 500,
+    tableOlivePrice: 15,
+    oilYieldPct: 18,
+    oilMarketPrice: 9,
+    processingCostPerKilo: 4.50, // Krydder, hvitløk, glass, olje til lake
+    laborCostPerKilo: 2.00
+  });
+
+  const simResults = useMemo(() => {
+    // Scenario A: Bordoliven
+    const totalCostTable = (simConfig.processingCostPerKilo + simConfig.laborCostPerKilo) * simConfig.quantityKilos;
+    const totalRevenueTable = simConfig.tableOlivePrice * simConfig.quantityKilos;
+    const profitTable = totalRevenueTable - totalCostTable;
+
+    // Scenario B: Olje
+    const totalLiters = simConfig.quantityKilos * (simConfig.oilYieldPct / 100);
+    const totalRevenueOil = totalLiters * simConfig.oilMarketPrice;
+    const millingCost = simConfig.quantityKilos * 0.30; // Typisk 0.30 EUR per kilo for pressing
+    const profitOil = totalRevenueOil - millingCost;
+
+    return {
+      table: { revenue: totalRevenueTable, cost: totalCostTable, profit: profitTable },
+      oil: { revenue: totalRevenueOil, cost: millingCost, profit: profitOil, liters: totalLiters },
+      difference: profitTable - profitOil,
+      winner: profitTable > profitOil ? 'Bordoliven' : 'Olje'
+    };
+  }, [simConfig]);
+
+  // -- FARM PROFILE STATE --
+  const [currentFarmProfile, setCurrentFarmProfile] = useState<FarmProfile>({
+    totalTrees: 1500,
+    batches: [
+      { variety: 'Gordal (Bordoliven)', count: 250, age: 7, irrigated: true },
+      { variety: 'Genovesa (Olje)', count: 250, age: 7, irrigated: true },
+      { variety: 'Heritage Antikke', count: 20, age: 150, irrigated: false },
+      { variety: 'Mixed Arbequina/Hojiblanca', count: 980, age: 15, irrigated: false },
+    ],
+    irrigationSource: 'Pozo (Brønn) + Dryppvanning',
+    location: 'Biar, Alicante',
+    country: 'Spania',
+    yieldHistory: [
+      { year: 2022, liters: 1400 },
+      { year: 2023, liters: 1700 }, 
+      { year: 2024, liters: 3000 },
+      { year: 2025, liters: 1370 },
+    ]
+  });
 
   // -- FORMS --
   const [showAddDealForm, setShowAddDealForm] = useState(false);
@@ -76,28 +127,10 @@ export const BusinessManager: React.FC<Props> = ({
     saleDate: new Date().toISOString().split('T')[0]
   });
 
-  const farmProfile: FarmProfile = {
-    totalTrees: 1500,
-    batches: [
-      { variety: 'Gordal (Bordoliven)', count: 250, age: 7, irrigated: true },
-      { variety: 'Genovesa (Olje)', count: 250, age: 7, irrigated: true },
-      { variety: 'Heritage Antikke', count: 20, age: 150, irrigated: false },
-      { variety: 'Mixed Arbequina/Hojiblanca', count: 980, age: 15, irrigated: false },
-    ],
-    irrigationSource: 'Pozo (Brønn) + Dryppvanning',
-    location: 'Biar, Alicante',
-    yieldHistory: [
-      { year: 2022, liters: 1400 },
-      { year: 2023, liters: 1700 }, 
-      { year: 2024, liters: 3000 },
-      { year: 2025, liters: 1370 },
-    ]
-  };
-
   const handleGenerateForecast = async () => {
     setLoadingAI(true);
     try {
-      const data = await getFarmYieldForecast(farmProfile);
+      const data = await getFarmYieldForecast(currentFarmProfile);
       setAiForecast(data);
     } catch (e) { console.error(e); } finally { setLoadingAI(false); }
   };
@@ -105,7 +138,7 @@ export const BusinessManager: React.FC<Props> = ({
   const handleGenerateAdvice = async () => {
     setLoadingAI(true);
     try {
-      const data = await getFarmStrategicAdvice(farmOps, farmProfile, []);
+      const data = await getFarmStrategicAdvice(farmOps, currentFarmProfile, []);
       setAiAdvice(data);
     } catch (e) { console.error(e); } finally { setLoadingAI(false); }
   };
@@ -174,6 +207,7 @@ export const BusinessManager: React.FC<Props> = ({
                  {id: 'ops', label: 'Operasjoner'},
                  {id: 'inventory', label: 'Lagerstyring'},
                  {id: 'profile', label: 'Gårdsprofil'},
+                 {id: 'simulator', label: 'Venture Simulator'},
                  {id: 'forecast', label: 'AI Prognose'},
                  {id: 'advisor', label: 'AI Rådgiver'}
                ].map(st => (
@@ -213,15 +247,254 @@ export const BusinessManager: React.FC<Props> = ({
                    <div className="space-y-4">
                       <div className="flex justify-between items-center border-b border-white/5 pb-2">
                          <span className="text-xs text-slate-400 uppercase">Aktive Trær</span>
-                         <span className="text-lg font-black text-white font-mono">{farmProfile.totalTrees}</span>
+                         <span className="text-lg font-black text-white font-mono">{currentFarmProfile.totalTrees}</span>
                       </div>
-                      <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-center border-b border-white/5 pb-2">
                          <span className="text-xs text-slate-400 uppercase">Siste Avling</span>
                          <span className="text-lg font-black text-white font-mono">1 370 L</span>
+                      </div>
+                      <div className="flex flex-col gap-1 pt-2">
+                         <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase font-bold tracking-widest">
+                            <MapPin className="w-3 h-3 text-orange-500" /> {currentFarmProfile.location}
+                         </div>
+                         <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase font-bold tracking-widest">
+                            <Flag className="w-3 h-3 text-orange-500" /> {currentFarmProfile.country}
+                         </div>
                       </div>
                    </div>
                 </div>
               </div>
+            )}
+
+            {farmSubTab === 'simulator' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-4">
+                <div className="glass-panel p-8 border-l-4 border-l-yellow-500 bg-yellow-500/5">
+                   <div className="mb-10">
+                      <h3 className="text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
+                        <Calculator className="text-yellow-400" /> Dona Anna Venture Simulator
+                      </h3>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-mono italic">Sammenlign profittmarginer for Bordoliven vs. Oljeproduksjon</p>
+                   </div>
+
+                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                      {/* INPUT FIELDS */}
+                      <div className="lg:col-span-4 space-y-6">
+                         <div className="space-y-2">
+                            <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Kvanta Oliven (KG)</label>
+                            <input 
+                               type="number"
+                               value={simConfig.quantityKilos} 
+                               onChange={e => setSimConfig({...simConfig, quantityKilos: Number(e.target.value)})}
+                               className="w-full bg-black border border-white/10 p-3 text-white text-sm outline-none focus:border-yellow-500 transition-all font-mono"
+                            />
+                         </div>
+
+                         <div className="p-4 bg-black/40 border border-white/5 space-y-6">
+                            <h4 className="text-[10px] font-black uppercase text-yellow-500 border-b border-white/10 pb-2">Bordoliven Parametere</h4>
+                            <div className="space-y-4">
+                               <div className="space-y-1">
+                                  <label className="text-[8px] uppercase font-black text-slate-600">Salgspris pr KG (€)</label>
+                                  <input 
+                                     type="number"
+                                     value={simConfig.tableOlivePrice} 
+                                     onChange={e => setSimConfig({...simConfig, tableOlivePrice: Number(e.target.value)})}
+                                     className="w-full bg-black border border-white/5 p-2 text-white text-xs outline-none focus:border-yellow-500"
+                                  />
+                               </div>
+                               <div className="space-y-1">
+                                  <label className="text-[8px] uppercase font-black text-slate-600">Prosessering / Glass pr KG (€)</label>
+                                  <input 
+                                     type="number"
+                                     value={simConfig.processingCostPerKilo} 
+                                     onChange={e => setSimConfig({...simConfig, processingCostPerKilo: Number(e.target.value)})}
+                                     className="w-full bg-black border border-white/5 p-2 text-white text-xs outline-none focus:border-yellow-500"
+                                  />
+                               </div>
+                            </div>
+                         </div>
+
+                         <div className="p-4 bg-black/40 border border-white/5 space-y-6">
+                            <h4 className="text-[10px] font-black uppercase text-cyan-400 border-b border-white/10 pb-2">Olje Parametere</h4>
+                            <div className="space-y-4">
+                               <div className="space-y-1">
+                                  <label className="text-[8px] uppercase font-black text-slate-600">Oljeutbytte (%)</label>
+                                  <input 
+                                     type="number"
+                                     value={simConfig.oilYieldPct} 
+                                     onChange={e => setSimConfig({...simConfig, oilYieldPct: Number(e.target.value)})}
+                                     className="w-full bg-black border border-white/5 p-2 text-white text-xs outline-none focus:border-cyan-500"
+                                  />
+                               </div>
+                               <div className="space-y-1">
+                                  <label className="text-[8px] uppercase font-black text-slate-600">Markedspris Olje pr L (€)</label>
+                                  <input 
+                                     type="number"
+                                     value={simConfig.oilMarketPrice} 
+                                     onChange={e => setSimConfig({...simConfig, oilMarketPrice: Number(e.target.value)})}
+                                     className="w-full bg-black border border-white/5 p-2 text-white text-xs outline-none focus:border-cyan-500"
+                                  />
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+
+                      {/* RESULTS */}
+                      <div className="lg:col-span-8 space-y-8">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* TABLE OLIVES CARD */}
+                            <div className={`p-8 border-2 transition-all ${simResults.winner === 'Bordoliven' ? 'border-yellow-500 bg-yellow-500/10 shadow-[0_0_30px_rgba(234,179,8,0.2)]' : 'border-white/10 bg-black'}`}>
+                               <div className="flex justify-between items-start mb-6">
+                                  <h4 className="text-lg font-black text-white uppercase">Bordoliven</h4>
+                                  <ShoppingCart className={`${simResults.winner === 'Bordoliven' ? 'text-yellow-400' : 'text-slate-700'}`} />
+                               </div>
+                               <div className="space-y-4 mb-8">
+                                  <div className="flex justify-between font-mono text-xs">
+                                     <span className="text-slate-500">Omsetning</span>
+                                     <span className="text-white font-bold">{formatCurrency(simResults.table.revenue, 'EUR')}</span>
+                                  </div>
+                                  <div className="flex justify-between font-mono text-xs">
+                                     <span className="text-slate-500">Direkte Kostnader</span>
+                                     <span className="text-rose-500">{formatCurrency(simResults.table.cost, 'EUR')}</span>
+                                  </div>
+                               </div>
+                               <div className="pt-4 border-t border-white/10 text-center">
+                                  <p className="text-[9px] uppercase text-slate-500 font-black tracking-widest mb-1">Estimert Profitt</p>
+                                  <p className="text-3xl font-black text-yellow-400 font-mono">{formatCurrency(simResults.table.profit, 'EUR')}</p>
+                               </div>
+                            </div>
+
+                            {/* OIL CARD */}
+                            <div className={`p-8 border-2 transition-all ${simResults.winner === 'Olje' ? 'border-cyan-500 bg-cyan-500/10 shadow-[0_0_30px_rgba(0,243,255,0.2)]' : 'border-white/10 bg-black'}`}>
+                               <div className="flex justify-between items-start mb-6">
+                                  <h4 className="text-lg font-black text-white uppercase">Oljeutvinning</h4>
+                                  <Droplets className={`${simResults.winner === 'Olje' ? 'text-cyan-400' : 'text-slate-700'}`} />
+                               </div>
+                               <div className="space-y-4 mb-8">
+                                  <div className="flex justify-between font-mono text-xs">
+                                     <span className="text-slate-500">Omsetning ({simResults.oil.liters.toFixed(1)} L)</span>
+                                     <span className="text-white font-bold">{formatCurrency(simResults.oil.revenue, 'EUR')}</span>
+                                  </div>
+                                  <div className="flex justify-between font-mono text-xs">
+                                     <span className="text-slate-500">Møllekostnad</span>
+                                     <span className="text-rose-500">{formatCurrency(simResults.oil.cost, 'EUR')}</span>
+                                  </div>
+                               </div>
+                               <div className="pt-4 border-t border-white/10 text-center">
+                                  <p className="text-[9px] uppercase text-slate-500 font-black tracking-widest mb-1">Estimert Profitt</p>
+                                  <p className="text-3xl font-black text-cyan-400 font-mono">{formatCurrency(simResults.oil.profit, 'EUR')}</p>
+                               </div>
+                            </div>
+                         </div>
+
+                         {/* SUMMARY ANALYSIS */}
+                         <div className="p-8 glass-panel border-l-4 border-l-emerald-500 bg-emerald-500/5 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-5">
+                               <Trophy className="w-24 h-24 text-emerald-400" />
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-black uppercase text-emerald-500 tracking-[0.3em] mb-2">Simulerings-Resultat</p>
+                               <h3 className="text-2xl font-black text-white uppercase tracking-tighter">
+                                 Strategisk Valg: <span className="text-emerald-400 italic underline">{simResults.winner}</span>
+                               </h3>
+                               <p className="text-xs text-slate-400 italic mt-2 max-w-lg">
+                                 Ved å velge <span className="text-white font-bold">{simResults.winner}</span> øker du profitten med <span className="text-emerald-400 font-bold">{formatCurrency(Math.abs(simResults.difference), 'EUR')}</span> på dette partiet sammenlignet med det andre alternativet.
+                               </p>
+                            </div>
+                            <div className="text-center p-6 bg-black border border-emerald-500/20 min-w-[200px]">
+                               <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">ROI Differanse</p>
+                               <p className="text-2xl font-black text-emerald-400 font-mono">+{formatCurrency(Math.abs(simResults.difference), 'EUR')}</p>
+                            </div>
+                         </div>
+                         
+                         {/* PRO-TIP */}
+                         <div className="p-6 bg-black border border-white/10 flex items-start gap-4">
+                            <Lightbulb className="text-yellow-400 w-8 h-8 shrink-0 mt-1" />
+                            <div>
+                               <p className="text-[10px] font-black uppercase text-white tracking-widest mb-1">Venture Innsikt:</p>
+                               <p className="text-[11px] text-slate-400 italic leading-relaxed">
+                                 Bordoliven krever mer manuelt arbeid (håndplukking vs. risting), noe som øker labor costs. Simulator-tallene bør justeres for å inkludere tid brukt på marinering og pakking i glass for å få et 100% nøyaktig bilde.
+                               </p>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+              </div>
+            )}
+
+            {farmSubTab === 'profile' && (
+              <div className="glass-panel p-8 border-l-4 border-l-yellow-500 bg-yellow-500/5 animate-in slide-in-from-top-4">
+                <div className="flex justify-between items-start mb-10">
+                   <div>
+                      <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                        <Settings2 className="text-yellow-400" /> Gårdskonfigurasjon (Dona Anna)
+                      </h3>
+                      <p className="text-[10px] text-slate-500 uppercase mt-1">Administrer grunnleggende gårdsdata og lokasjon</p>
+                   </div>
+                   <div className="p-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500">
+                      <Save className="w-5 h-5" />
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                         <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2">
+                            <MapPin className="w-3 h-3 text-yellow-500" /> Lokasjon / By
+                         </label>
+                         <input 
+                            value={currentFarmProfile.location} 
+                            onChange={e => setCurrentFarmProfile({...currentFarmProfile, location: e.target.value})}
+                            className="w-full bg-black border border-white/10 p-3 text-white text-xs focus:border-yellow-500 outline-none transition-all font-mono"
+                            placeholder="F.eks. Biar, Alicante"
+                         />
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2">
+                            <Flag className="w-3 h-3 text-yellow-500" /> Land
+                         </label>
+                         <input 
+                            value={currentFarmProfile.country} 
+                            onChange={e => setCurrentFarmProfile({...currentFarmProfile, country: e.target.value})}
+                            className="w-full bg-black border border-white/10 p-3 text-white text-xs focus:border-yellow-500 outline-none transition-all font-mono"
+                            placeholder="F.eks. Spania"
+                         />
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2">
+                            <Droplet className="w-3 h-3 text-cyan-400" /> Vanningskilde
+                         </label>
+                         <input 
+                            value={currentFarmProfile.irrigationSource} 
+                            onChange={e => setCurrentFarmProfile({...currentFarmProfile, irrigationSource: e.target.value})}
+                            className="w-full bg-black border border-white/10 p-3 text-white text-xs focus:border-cyan-500 outline-none transition-all font-mono"
+                         />
+                      </div>
+                   </div>
+
+                   <div className="space-y-6">
+                      <div className="p-6 bg-black/40 border border-white/5 space-y-4">
+                         <h4 className="text-[10px] font-black uppercase text-yellow-500 flex items-center gap-2">
+                            <Activity className="w-3 h-3" /> Oversikt
+                         </h4>
+                         <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                            <span className="text-[10px] text-slate-400 uppercase">Totalt Antall Trær</span>
+                            <span className="text-lg font-black text-white font-mono">{currentFarmProfile.totalTrees}</span>
+                         </div>
+                         <p className="text-[9px] text-slate-500 italic leading-relaxed">
+                            Dataene lagres lokalt i denne sesjonen. For permanent lagring, vennligst koble til din sentrale database via Super Admin-panelet.
+                         </p>
+                      </div>
+                   </div>
+                </div>
+              </div>
+            )}
+
+            {farmSubTab === 'inventory' && (
+               <div className="glass-panel p-20 text-center border-2 border-dashed border-white/5 opacity-30 animate-in fade-in">
+                  <Boxes className="w-16 h-16 mx-auto mb-6" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.4em]">Lagersystem for olje og utstyr kommer snart</p>
+               </div>
             )}
 
             {farmSubTab === 'forecast' && (
