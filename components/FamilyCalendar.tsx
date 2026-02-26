@@ -2,10 +2,10 @@
 import React, { useState, useMemo } from 'react';
 import { FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig } from '../types';
 import { translations } from '../translations';
-import { 
-  CalendarDays, Calendar as CalendarIcon, MapPin, ChevronRight, Activity, 
-  Clock, ShieldAlert, Zap, Plus, Trash2, CheckCircle, Circle, User, 
-  AlertTriangle, Filter, X, Save
+import { MEMBER_COLORS } from '../constants';
+import {
+  CalendarDays, Plus, Trash2, CheckCircle, Circle, User,
+  X, Save, ChevronLeft, ChevronRight, AlertCircle
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 
@@ -20,301 +20,486 @@ interface Props {
   setLocalEvents: React.Dispatch<React.SetStateAction<LocalEvent[]>>;
 }
 
-export const FamilyCalendar: React.FC<Props> = ({ 
-  familyMembers, 
+const WEEKDAYS_NO = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
+const WEEKDAYS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const PRIORITY_CONFIG = {
+  Low:    { label: 'Lav',     color: 'bg-emerald-100 text-emerald-700', dot: '#10B981' },
+  Medium: { label: 'Middels', color: 'bg-amber-100 text-amber-700',     dot: '#F59E0B' },
+  High:   { label: 'Høy',     color: 'bg-red-100 text-red-700',         dot: '#EF4444' },
+};
+
+export const FamilyCalendar: React.FC<Props> = ({
+  familyMembers,
   calendarEvents,
   setCalendarEvents,
   tasks,
   setTasks,
-  userConfig, 
-  localEvents, 
+  userConfig,
+  localEvents,
 }) => {
+  const [year, setYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [showEventForm, setShowEventForm] = useState(false);
   const t = translations[userConfig.language];
 
   const [newTask, setNewTask] = useState<Partial<Task>>({
-    description: '',
-    priority: 'Medium',
-    assignedToId: familyMembers[0]?.id || '',
-    isComplete: false
+    description: '', priority: 'Medium',
+    assignedToId: familyMembers[0]?.id || '', isComplete: false,
   });
 
+  const [newEvent, setNewEvent] = useState<Partial<CalendarEvent>>({
+    description: '', type: 'Social',
+    assignedToId: familyMembers[0]?.id || '',
+  });
+
+  const getMemberColor = (id: string) => {
+    const idx = familyMembers.findIndex(m => m.id === id);
+    return MEMBER_COLORS[idx % MEMBER_COLORS.length] || '#4F46E5';
+  };
+
+  const getMemberName = (id: string) =>
+    familyMembers.find(m => m.id === id)?.name || 'Alle';
+
   const handleAddTask = () => {
-    if (!newTask.description) return;
-    const task: Task = {
+    if (!newTask.description?.trim()) return;
+    setTasks(prev => [...prev, {
       id: `task-${Date.now()}`,
       date: selectedDate,
-      description: newTask.description,
+      description: newTask.description!.trim(),
       assignedToId: newTask.assignedToId || '',
       priority: newTask.priority as 'Low' | 'Medium' | 'High',
-      isComplete: false
-    };
-    setTasks(prev => [...prev, task]);
+      isComplete: false,
+    }]);
     setNewTask({ ...newTask, description: '' });
     setShowTaskForm(false);
   };
 
-  const toggleTaskComplete = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, isComplete: !t.isComplete } : t));
+  const handleAddEvent = () => {
+    if (!newEvent.description?.trim()) return;
+    setCalendarEvents(prev => [...prev, {
+      id: `event-${Date.now()}`,
+      date: selectedDate,
+      description: newEvent.description!.trim(),
+      assignedToId: newEvent.assignedToId || '',
+      type: newEvent.type as any,
+    }]);
+    setNewEvent({ ...newEvent, description: '' });
+    setShowEventForm(false);
   };
 
-  const deleteTask = (id: string) => {
+  const toggleTask = (id: string) =>
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, isComplete: !t.isComplete } : t));
+
+  const deleteTask = (id: string) =>
     setTasks(prev => prev.filter(t => t.id !== id));
+
+  const deleteEvent = (id: string) =>
+    setCalendarEvents(prev => prev.filter(e => e.id !== id));
+
+  const prevMonth = () => {
+    if (selectedMonth === 0) { setSelectedMonth(11); setYear(y => y - 1); }
+    else setSelectedMonth(m => m - 1);
+  };
+
+  const nextMonth = () => {
+    if (selectedMonth === 11) { setSelectedMonth(0); setYear(y => y + 1); }
+    else setSelectedMonth(m => m + 1);
   };
 
   const calendarGrid = useMemo(() => {
-    const year = new Date().getFullYear();
-    const firstDayOfMonth = new Date(year, selectedMonth, 1).getDay();
+    const firstDay = new Date(year, selectedMonth, 1).getDay();
     const daysInMonth = new Date(year, selectedMonth + 1, 0).getDate();
-    const days = [];
-    const padding = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
-    
+    const padding = firstDay === 0 ? 6 : firstDay - 1;
+    const days: any[] = [];
+
     for (let i = 0; i < padding; i++) days.push(null);
-    
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = `${year}-${String(selectedMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const dayTasks = tasks.filter(t => t.date === dateStr);
-      const dayEvents = [...calendarEvents, ...localEvents].filter(e => e.date === dateStr);
-      days.push({ day: i, dateStr, tasks: dayTasks, events: dayEvents });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      days.push({
+        day: d,
+        dateStr,
+        tasks: tasks.filter(t => t.date === dateStr),
+        events: [...calendarEvents, ...localEvents].filter(e => e.date === dateStr),
+      });
     }
     return days;
-  }, [selectedMonth, tasks, calendarEvents, localEvents]);
+  }, [selectedMonth, year, tasks, calendarEvents, localEvents]);
 
-  const selectedDayData = useMemo(() => {
-    return {
-      tasks: tasks.filter(t => t.date === selectedDate),
-      events: [...calendarEvents, ...localEvents].filter(e => e.date === selectedDate)
-    };
-  }, [selectedDate, tasks, calendarEvents, localEvents]);
+  const selectedDayData = useMemo(() => ({
+    tasks: tasks.filter(t => t.date === selectedDate),
+    events: [...calendarEvents, ...localEvents].filter(e => e.date === selectedDate),
+  }), [selectedDate, tasks, calendarEvents, localEvents]);
 
-  const priorityColors = {
-    Low: 'bg-cyan-500',
-    Medium: 'bg-yellow-500',
-    High: 'bg-rose-500'
-  };
+  const todayStr = new Date().toISOString().split('T')[0];
+  const monthName = new Date(year, selectedMonth).toLocaleString(
+    userConfig.language === 'no' ? 'no-NO' : 'en-US', { month: 'long', year: 'numeric' }
+  );
+
+  const completedCount = tasks.filter(t => t.isComplete).length;
+  const totalCount = tasks.length;
+  const highPriorityPending = tasks.filter(t => t.priority === 'High' && !t.isComplete);
+
+  const weekdays = userConfig.language === 'no' ? WEEKDAYS_NO : WEEKDAYS_EN;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        
-        {/* KALENDER-HOVEDDEL */}
-        <div className="lg:col-span-8 space-y-12">
-          <div className="glass-panel p-8 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-            <div className="flex justify-between items-center mb-8">
-               <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
-                <CalendarIcon className="text-cyan-400 w-5 h-5" /> {t.familyplan}
-               </h3>
-               <div className="flex gap-4">
-                  <select 
-                    value={selectedMonth} 
-                    onChange={e => setSelectedMonth(Number(e.target.value))} 
-                    className="bg-black border border-white/10 text-cyan-400 text-[10px] font-black uppercase px-4 py-2 outline-none focus:border-cyan-500 transition-all"
-                  >
-                    {Array.from({length: 12}).map((_, i) => (
-                      <option key={i} value={i}>{new Date(0, i).toLocaleString(userConfig.language === 'no' ? 'no-NO' : 'en-US', {month: 'long'})}</option>
-                    ))}
-                  </select>
-               </div>
+    <div className="space-y-6 animate-fade-in">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* LEFT: Calendar + day detail */}
+        <div className="lg:col-span-2 space-y-6">
+
+          {/* Calendar card */}
+          <div className="card p-6">
+            {/* Month navigation */}
+            <div className="flex items-center justify-between mb-6">
+              <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 transition-colors text-slate-500">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <h3 className="font-bold text-slate-800 capitalize">{monthName}</h3>
+              <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 transition-colors text-slate-500">
+                <ChevronRight className="w-5 h-5" />
+              </button>
             </div>
-            
-            <div className="grid grid-cols-7 gap-1">
-              {['M', 'T', 'O', 'T', 'F', 'L', 'S'].map(d => (
-                <div key={d} className="text-center text-[9px] font-black text-slate-600 uppercase mb-4 py-2 border-b border-white/5">{d}</div>
+
+            {/* Weekday headers */}
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {weekdays.map(d => (
+                <div key={d} className="text-center text-xs font-semibold text-slate-400 py-1">{d}</div>
               ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 gap-1">
               {calendarGrid.map((day, i) => (
-                <div 
-                  key={i} 
+                <button
+                  key={i}
+                  disabled={!day}
                   onClick={() => day && setSelectedDate(day.dateStr)}
-                  className={`min-h-[80px] border border-white/5 p-2 flex flex-col relative group cursor-pointer transition-all ${
-                    day?.dateStr === selectedDate ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-black/20 hover:bg-white/5'
-                  } ${!day ? 'opacity-0 pointer-events-none' : ''}`}
+                  className={`
+                    min-h-[52px] p-1.5 rounded-xl flex flex-col items-center transition-all
+                    ${!day ? 'pointer-events-none opacity-0' : ''}
+                    ${day?.dateStr === selectedDate ? 'bg-indigo-600 text-white shadow-md' : ''}
+                    ${day?.dateStr === todayStr && day?.dateStr !== selectedDate ? 'bg-indigo-50 text-indigo-700 font-bold' : ''}
+                    ${day && day.dateStr !== selectedDate && day.dateStr !== todayStr ? 'hover:bg-slate-100 text-slate-700' : ''}
+                  `}
                 >
                   {day && (
                     <>
-                      <span className={`text-[10px] font-black ${day.dateStr === selectedDate ? 'text-cyan-400' : 'text-slate-700'}`}>
+                      <span className={`text-xs font-semibold ${day.dateStr === selectedDate ? 'text-white' : ''}`}>
                         {day.day}
                       </span>
-                      
-                      {/* OPPGAVE-INDIKATORER I KALENDEREN */}
-                      <div className="mt-auto flex flex-wrap gap-1">
-                        {day.tasks.map((task, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`w-1.5 h-1.5 rounded-full ${priorityColors[task.priority]} ${task.isComplete ? 'opacity-20' : 'shadow-[0_0_5px_currentColor]'}`} 
-                            title={task.description}
+                      <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
+                        {day.tasks.slice(0, 3).map((task: Task, idx: number) => (
+                          <div
+                            key={idx}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: day.dateStr === selectedDate ? 'white' : PRIORITY_CONFIG[task.priority].dot }}
                           />
                         ))}
-                        {day.events.length > 0 && (
-                          <div className="w-1.5 h-1.5 bg-white opacity-40 rounded-full" />
-                        )}
+                        {day.events.slice(0, 2).map((_: any, idx: number) => (
+                          <div
+                            key={`e-${idx}`}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: day.dateStr === selectedDate ? 'rgba(255,255,255,0.6)' : '#6366F1' }}
+                          />
+                        ))}
                       </div>
                     </>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </div>
 
-          {/* DAGSVISNING / OPPGAVELISTE */}
-          <div className="glass-panel p-8 border-l-4 border-l-yellow-500 bg-yellow-500/5">
-             <div className="flex justify-between items-center mb-10">
-                <div>
-                   <h3 className="text-xl font-black text-white uppercase tracking-tighter">
-                      Plan for {new Date(selectedDate).toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { day: 'numeric', month: 'long' })}
-                   </h3>
-                   <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Sentrale husholdningsoppgaver</p>
-                </div>
-                <button 
-                  onClick={() => setShowTaskForm(!showTaskForm)}
-                  className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest hover:bg-yellow-400 transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)]"
-                >
-                   {showTaskForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />} {showTaskForm ? 'Lukk' : 'Ny Oppgave'}
-                </button>
-             </div>
-
-             {showTaskForm && (
-                <div className="mb-10 p-6 bg-black/40 border border-yellow-500/20 animate-in slide-in-from-top-4">
-                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-                      <div className="md:col-span-5 space-y-2">
-                         <label className="text-[9px] uppercase font-black text-slate-500">Oppgavebeskrivelse</label>
-                         <input 
-                            value={newTask.description}
-                            onChange={e => setNewTask({...newTask, description: e.target.value})}
-                            className="w-full bg-black border border-white/10 p-3 text-white text-xs outline-none focus:border-yellow-500 transition-all"
-                            placeholder="Hva må gjøres?"
-                         />
-                      </div>
-                      <div className="md:col-span-3 space-y-2">
-                         <label className="text-[9px] uppercase font-black text-slate-500">Prioritet</label>
-                         <select 
-                            value={newTask.priority}
-                            onChange={e => setNewTask({...newTask, priority: e.target.value as any})}
-                            className="w-full bg-black border border-white/10 p-3 text-white text-[10px] font-black uppercase outline-none focus:border-yellow-500"
-                         >
-                            <option value="Low">Lav</option>
-                            <option value="Medium">Middels</option>
-                            <option value="High">Høy</option>
-                         </select>
-                      </div>
-                      <div className="md:col-span-3 space-y-2">
-                         <label className="text-[9px] uppercase font-black text-slate-500">Ansvarlig</label>
-                         <select 
-                            value={newTask.assignedToId}
-                            onChange={e => setNewTask({...newTask, assignedToId: e.target.value})}
-                            className="w-full bg-black border border-white/10 p-3 text-white text-[10px] font-black uppercase outline-none focus:border-yellow-500"
-                         >
-                            {familyMembers.map(m => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                         </select>
-                      </div>
-                      <div className="md:col-span-1">
-                         <button onClick={handleAddTask} className="w-full aspect-square bg-yellow-500 flex items-center justify-center hover:bg-yellow-400 transition-all">
-                            <Save className="w-5 h-5 text-black" />
-                         </button>
-                      </div>
-                   </div>
-                </div>
-             )}
-
-             <div className="space-y-4">
-                {selectedDayData.tasks.length === 0 && (
-                   <div className="py-12 text-center border border-dashed border-white/5 opacity-30">
-                      <p className="text-[10px] font-black uppercase tracking-widest">Ingen oppgaver for denne dagen</p>
-                   </div>
+          {/* Day detail */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="section-title">
+                  <CalendarDays className="w-5 h-5 text-indigo-500" />
+                  {new Date(selectedDate).toLocaleDateString(
+                    userConfig.language === 'no' ? 'no-NO' : 'en-US',
+                    { weekday: 'long', day: 'numeric', month: 'long' }
+                  )}
+                </h3>
+                {selectedDate === todayStr && (
+                  <span className="badge badge-primary text-xs mt-1">I dag</span>
                 )}
-                {selectedDayData.tasks.map(task => {
-                   const member = familyMembers.find(m => m.id === task.assignedToId);
-                   return (
-                      <div 
-                        key={task.id} 
-                        className={`p-4 border transition-all flex items-center justify-between group ${
-                          task.isComplete ? 'bg-black/40 border-white/5 opacity-50' : 'bg-white/5 border-white/10 hover:border-yellow-500/30'
-                        }`}
-                      >
-                         <div className="flex items-center gap-6">
-                            <button 
-                              onClick={() => toggleTaskComplete(task.id)}
-                              className={`transition-all ${task.isComplete ? 'text-emerald-500' : 'text-slate-600 hover:text-yellow-500'}`}
-                            >
-                               {task.isComplete ? <CheckCircle className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
-                            </button>
-                            <div>
-                               <div className="flex items-center gap-3">
-                                  <h4 className={`text-sm font-black uppercase tracking-tight ${task.isComplete ? 'line-through' : 'text-white'}`}>
-                                     {task.description}
-                                  </h4>
-                                  <span className={`px-2 py-0.5 text-[8px] font-black uppercase ${priorityColors[task.priority]} text-black`}>
-                                     {task.priority}
-                                  </span>
-                               </div>
-                               <div className="flex items-center gap-2 mt-1">
-                                  <User className="w-3 h-3 text-slate-500" />
-                                  <span className="text-[10px] font-mono text-slate-500 uppercase">{member?.name || 'Ufordelt'}</span>
-                               </div>
-                            </div>
-                         </div>
-                         <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => deleteTask(task.id)} className="p-2 text-slate-500 hover:text-rose-500">
-                               <Trash2 className="w-4 h-4" />
-                            </button>
-                         </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowEventForm(!showEventForm); setShowTaskForm(false); }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Hendelse
+                </button>
+                <button
+                  onClick={() => { setShowTaskForm(!showTaskForm); setShowEventForm(false); }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Oppgave
+                </button>
+              </div>
+            </div>
+
+            {/* Event form */}
+            {showEventForm && (
+              <div className="mb-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl animate-fade-in">
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ny hendelse</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    value={newEvent.description}
+                    onChange={e => setNewEvent({ ...newEvent, description: e.target.value })}
+                    placeholder="Hva skjer?"
+                    className="input-field"
+                    onKeyDown={e => e.key === 'Enter' && handleAddEvent()}
+                  />
+                  <select
+                    value={newEvent.type}
+                    onChange={e => setNewEvent({ ...newEvent, type: e.target.value as any })}
+                    className="input-field"
+                  >
+                    {['Appointment', 'Meeting', 'Social', 'Travel'].map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={newEvent.assignedToId}
+                    onChange={e => setNewEvent({ ...newEvent, assignedToId: e.target.value })}
+                    className="input-field"
+                  >
+                    {familyMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <CyberButton onClick={handleAddEvent} variant="primary" className="flex-1 justify-center">
+                      <Save className="w-4 h-4" /> Lagre
+                    </CyberButton>
+                    <CyberButton onClick={() => setShowEventForm(false)} variant="ghost">
+                      <X className="w-4 h-4" />
+                    </CyberButton>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Task form */}
+            {showTaskForm && (
+              <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in">
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ny oppgave</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    value={newTask.description}
+                    onChange={e => setNewTask({ ...newTask, description: e.target.value })}
+                    placeholder="Hva må gjøres?"
+                    className="input-field md:col-span-2"
+                    onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+                  />
+                  <select
+                    value={newTask.priority}
+                    onChange={e => setNewTask({ ...newTask, priority: e.target.value as any })}
+                    className="input-field"
+                  >
+                    <option value="Low">Lav prioritet</option>
+                    <option value="Medium">Middels prioritet</option>
+                    <option value="High">Høy prioritet</option>
+                  </select>
+                  <select
+                    value={newTask.assignedToId}
+                    onChange={e => setNewTask({ ...newTask, assignedToId: e.target.value })}
+                    className="input-field"
+                  >
+                    {familyMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2 md:col-span-2">
+                    <CyberButton onClick={handleAddTask} variant="primary" className="flex-1 justify-center">
+                      <Save className="w-4 h-4" /> Legg til
+                    </CyberButton>
+                    <CyberButton onClick={() => setShowTaskForm(false)} variant="ghost">
+                      <X className="w-4 h-4" />
+                    </CyberButton>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Events for day */}
+            {selectedDayData.events.length > 0 && (
+              <div className="mb-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Hendelser</p>
+                {selectedDayData.events.map((event: any, i: number) => (
+                  <div key={event.id || i} className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-100 rounded-xl group">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: getMemberColor(event.assignedToId) }}
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{event.description}</p>
+                        <p className="text-xs text-slate-400">{getMemberName(event.assignedToId)} · {event.type}</p>
                       </div>
-                   );
-                })}
-             </div>
+                    </div>
+                    {event.id && (
+                      <button
+                        onClick={() => deleteEvent(event.id)}
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Tasks for day */}
+            {selectedDayData.tasks.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Oppgaver</p>
+                {selectedDayData.tasks.map(task => (
+                  <div
+                    key={task.id}
+                    className={`flex items-center justify-between p-3.5 rounded-xl border transition-all group ${
+                      task.isComplete ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleTask(task.id)}
+                        className={`transition-colors ${task.isComplete ? 'text-emerald-500' : 'text-slate-300 hover:text-indigo-500'}`}
+                      >
+                        {task.isComplete ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                      </button>
+                      <div>
+                        <p className={`text-sm font-medium ${task.isComplete ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                          {task.description}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: getMemberColor(task.assignedToId) }}
+                          />
+                          <span className="text-xs text-slate-400">{getMemberName(task.assignedToId)}</span>
+                          <span className={`badge text-xs ${PRIORITY_CONFIG[task.priority].color}`}>
+                            {PRIORITY_CONFIG[task.priority].label}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="p-1.5 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {selectedDayData.tasks.length === 0 && selectedDayData.events.length === 0 && (
+              <div className="empty-state py-12">
+                <CalendarDays className="w-10 h-10 text-slate-200 mb-3" />
+                <p className="font-medium text-slate-400">Ingen oppgaver eller hendelser</p>
+                <p className="text-sm text-slate-300 mt-1">Bruk knappene ovenfor for å legge til</p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* SIDEBAR - AKTIVITET OG STATS */}
-        <div className="lg:col-span-4 space-y-8">
-           <div className="glass-panel p-6 border-l-4 border-l-magenta-500 bg-magenta-500/5">
-              <h3 className="text-[10px] font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-magenta-400" /> Oppgaveoversikt
-              </h3>
-              <div className="space-y-6">
-                 <div>
-                    <p className="text-[9px] text-slate-500 uppercase font-black mb-3 tracking-widest">Kritiske Oppgaver (High)</p>
-                    <div className="space-y-3">
-                       {tasks.filter(t => t.priority === 'High' && !t.isComplete).slice(0, 3).map(task => (
-                          <div key={task.id} className="p-3 bg-rose-500/10 border border-rose-500/20 flex justify-between items-center">
-                             <span className="text-[10px] font-bold text-white uppercase">{task.description}</span>
-                             <span className="text-[8px] font-mono text-rose-500">{task.date.split('-').slice(1).join('/')}</span>
-                          </div>
-                       ))}
-                    </div>
-                 </div>
-                 
-                 <div className="pt-6 border-t border-white/5">
-                    <p className="text-[9px] text-slate-500 uppercase font-black mb-3 tracking-widest">Fullføringsgrad</p>
-                    <div className="flex justify-between items-end mb-2">
-                       <span className="text-[10px] text-white font-mono">
-                          {tasks.filter(t => t.isComplete).length} / {tasks.length}
-                       </span>
-                       <span className="text-sm font-black text-magenta-400">
-                          {tasks.length > 0 ? Math.round((tasks.filter(t => t.isComplete).length / tasks.length) * 100) : 0}%
-                       </span>
-                    </div>
-                    <div className="w-full h-1 bg-black overflow-hidden">
-                       <div 
-                         className="h-full bg-magenta-500 shadow-[0_0_10px_#ff00ff] transition-all duration-1000"
-                         style={{ width: `${tasks.length > 0 ? (tasks.filter(t => t.isComplete).length / tasks.length) * 100 : 0}%` }}
-                       />
-                    </div>
-                 </div>
-              </div>
-           </div>
+        {/* RIGHT: Stats sidebar */}
+        <div className="space-y-6">
 
-           <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-              <h3 className="text-[10px] font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-emerald-400" /> System Info
+          {/* Task completion */}
+          <div className="card p-5">
+            <h3 className="section-title text-base mb-5">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              Fullføring
+            </h3>
+            <div className="flex justify-between items-end mb-2">
+              <span className="text-sm text-slate-600">{completedCount} av {totalCount} fullført</span>
+              <span className="text-2xl font-bold text-indigo-600">
+                {totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%
+              </span>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%`,
+                  background: '#10B981',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* High priority tasks */}
+          {highPriorityPending.length > 0 && (
+            <div className="card p-5 border-red-100 bg-red-50">
+              <h3 className="section-title text-base mb-4">
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                Kritiske oppgaver
               </h3>
-              <p className="text-[10px] text-slate-400 italic leading-relaxed">
-                Trykk på en hvilken som helst dag i kalenderen for å fokusere på dens spesifikke oppgaver og hendelser. Oppgaver markert med farger i rutenettet gir en rask visuell status på dagens arbeidsmengde.
-              </p>
-           </div>
+              <div className="space-y-2">
+                {highPriorityPending.slice(0, 5).map(task => (
+                  <div
+                    key={task.id}
+                    className="p-3 bg-white border border-red-100 rounded-xl cursor-pointer hover:border-red-200 transition-colors"
+                    onClick={() => setSelectedDate(task.date)}
+                  >
+                    <p className="text-sm font-semibold text-slate-800 truncate">{task.description}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {getMemberName(task.assignedToId)} · {new Date(task.date).toLocaleDateString('no-NO', { day: 'numeric', month: 'short' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Family members */}
+          {familyMembers.length > 0 && (
+            <div className="card p-5">
+              <h3 className="section-title text-base mb-4">
+                <User className="w-4 h-4 text-indigo-500" />
+                Familiemedlemmer
+              </h3>
+              <div className="space-y-3">
+                {familyMembers.map((member, i) => {
+                  const memberTasks = tasks.filter(t => t.assignedToId === member.id);
+                  const done = memberTasks.filter(t => t.isComplete).length;
+                  return (
+                    <div key={member.id} className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                        style={{ background: MEMBER_COLORS[i % MEMBER_COLORS.length] }}
+                      >
+                        {member.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800">{member.name}</p>
+                        <p className="text-xs text-slate-400">{done}/{memberTasks.length} oppgaver</p>
+                      </div>
+                      {memberTasks.length > 0 && (
+                        <div className="progress-bar w-16">
+                          <div
+                            className="progress-fill"
+                            style={{ width: `${(done / memberTasks.length) * 100}%`, background: MEMBER_COLORS[i % MEMBER_COLORS.length] }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
