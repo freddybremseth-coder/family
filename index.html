@@ -15,16 +15,13 @@
             --accent-light: #FDE68A;
             --success: #10B981;
             --danger: #EF4444;
-            --bg: #F8FAFC;
+            --bg: #DDE3EE;
             --card: #FFFFFF;
-            /* Endret: Gjort hovedteksten bittelitt mørkere for maksimal kontrast */
-            --text: #0F172A; 
-            /* Endret: Gjort 'muted' tekst mye mørkere slik at småtekst og labels er lesbare */
-            --text-muted: #475569; 
-            /* Endret: Gjort standard kantlinjer mørkere for å skille elementer bedre */
-            --border: #CBD5E1; 
-            --shadow: 0 4px 24px rgba(79, 70, 229, 0.08);
-            --shadow-lg: 0 8px 40px rgba(79, 70, 229, 0.15);
+            --text: #0F172A;
+            --text-muted: #475569;
+            --border: #C1C9D9;
+            --shadow: 0 4px 24px rgba(15, 23, 42, 0.10);
+            --shadow-lg: 0 8px 40px rgba(15, 23, 42, 0.18);
         }
 
         * { box-sizing: border-box; }
@@ -185,15 +182,15 @@
         .badge-warning { background: #FEF3C7; color: #92400E; }
         .badge-danger { background: #FEE2E2; color: #991B1B; }
 
-        /* Inputs - Endret for bedre kontrast */
+        /* Inputs */
         input, textarea, select {
             font-family: 'Inter', sans-serif;
         }
 
         .input-field {
             width: 100%;
-            background: #FFFFFF;
-            border: 1.5px solid #94A3B8; /* Tydeligere kant */
+            background: #F8FAFC;
+            border: 1.5px solid var(--border);
             border-radius: 10px;
             padding: 10px 14px;
             font-size: 14px;
@@ -205,11 +202,11 @@
         .input-field:focus {
             border-color: var(--primary);
             background: white;
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
         }
 
         .input-field::placeholder {
-            color: #475569; /* Mørkere hint-tekst */
+            color: #94A3B8;
         }
 
         /* Progress bars */
@@ -306,11 +303,11 @@
         .animate-pulse-soft { animation: pulse-soft 2s ease infinite; }
 
         /* Recharts override for light theme */
-        .recharts-text { fill: var(--text-muted) !important; } /* Endret for bedre lesbarhet i grafer */
-        .recharts-cartesian-grid line { stroke: #E2E8F0 !important; }
+        .recharts-text { fill: #64748B !important; }
+        .recharts-cartesian-grid line { stroke: #F1F5F9 !important; }
         .recharts-tooltip-wrapper .recharts-default-tooltip {
             background: white !important;
-            border: 1px solid var(--border) !important;
+            border: 1px solid #E2E8F0 !important;
             border-radius: 10px !important;
             box-shadow: 0 4px 24px rgba(0,0,0,0.1) !important;
         }
@@ -333,7 +330,7 @@
         .tab-bar {
             display: flex;
             gap: 4px;
-            background: #E2E8F0; /* Gjort fanelinjen litt mørkere for kontrast */
+            background: #F1F5F9;
             border-radius: 10px;
             padding: 4px;
         }
@@ -424,7 +421,7 @@
         }
 
         .empty-state svg {
-            opacity: 0.5; /* Gjort ikoner i empty-state mer synlige */
+            opacity: 0.25;
             margin-bottom: 16px;
         }
 
