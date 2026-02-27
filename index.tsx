@@ -15,6 +15,7 @@ import { FamilyCalendar } from './components/FamilyCalendar';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { SettingsManager } from './components/SettingsManager';
 import { ResidentsManager } from './components/ResidentsManager';
+import { PaywallModal } from './components/PaywallModal';
 import { NAVIGATION } from './constants';
 import {
   Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission,
@@ -22,10 +23,18 @@ import {
   CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole
 } from './types';
 import { translations } from './translations';
-import { Heart, LogOut, ShieldCheck, Loader2, AlertCircle, Key, Menu, X } from 'lucide-react';
+import { Heart, LogOut, ShieldCheck, Loader2, AlertCircle, Key, Menu, X, Crown } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
+const TRIAL_DAYS = 3;
+
+const getTrialDaysLeft = (trialStartedAt: string): number => {
+  const start = new Date(trialStartedAt).getTime();
+  const now = Date.now();
+  const elapsed = (now - start) / (1000 * 60 * 60 * 24);
+  return Math.ceil(TRIAL_DAYS - elapsed);
+};
 
 const App = () => {
   const [session, setSession] = useState<any>(null);
@@ -33,6 +42,9 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cashBalance, setCashBalance] = useState(4250);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
+  const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>([]);
   const [weeklyMenu, setWeeklyMenu] = useState<any[]>([]);
@@ -82,6 +94,37 @@ const App = () => {
     if (residentData && residentData.length > 0) setFamilyMembers(residentData);
   }, []);
 
+  const checkSubscription = useCallback(async (user: any) => {
+    // Admin har alltid lifetime
+    if (user.email === ADMIN_EMAIL) {
+      setSubscriptionStatus('lifetime');
+      return;
+    }
+    if (!isSupabaseConfigured()) return;
+
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('subscription_status, trial_started_at')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile) {
+      // Opprett profil hvis den ikke finnes (eldre brukere)
+      await supabase.from('user_profiles').insert({ id: user.id });
+      setSubscriptionStatus('trial');
+      setTrialDaysLeft(TRIAL_DAYS);
+      return;
+    }
+
+    setSubscriptionStatus(profile.subscription_status);
+
+    if (profile.subscription_status === 'trial') {
+      const daysLeft = getTrialDaysLeft(profile.trial_started_at);
+      setTrialDaysLeft(daysLeft);
+      if (daysLeft <= 0) setShowPaywall(true);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       if (!isSupabaseConfigured()) {
@@ -98,6 +141,7 @@ const App = () => {
         if (session?.user) {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id);
+          checkSubscription(session.user);
         }
         setLoading(false);
       }).catch(() => setLoading(false));
@@ -107,6 +151,7 @@ const App = () => {
         if (session?.user) {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id);
+          checkSubscription(session.user);
         }
       });
 
@@ -114,7 +159,7 @@ const App = () => {
     } catch {
       setLoading(false);
     }
-  }, [fetchAllData]);
+  }, [fetchAllData, checkSubscription]);
 
   const handleRoleAssignment = (user: any) => {
     if (user.email === ADMIN_EMAIL) {
@@ -338,6 +383,24 @@ const App = () => {
 
   return (
     <div className="flex min-h-screen bg-[#DDE3EE]">
+      {/* Paywall */}
+      {showPaywall && session?.user && (
+        <PaywallModal
+          userEmail={session.user.email}
+          daysLeft={trialDaysLeft}
+          onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined}
+        />
+      )}
+
+      {/* Trial-banner (bare når dager igjen og ikke expired) */}
+      {subscriptionStatus === 'trial' && trialDaysLeft > 0 && !showPaywall && (
+        <div className="fixed top-0 left-0 right-0 z-[150] bg-amber-500 text-white text-xs font-semibold py-2 px-4 flex items-center justify-center gap-2">
+          <Crown className="w-3.5 h-3.5" />
+          Prøveperiode: {trialDaysLeft} dag{trialDaysLeft !== 1 ? 'er' : ''} igjen —
+          <button onClick={() => setShowPaywall(true)} className="underline ml-1">Oppgrader nå</button>
+        </div>
+      )}
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
