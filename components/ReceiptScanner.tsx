@@ -88,7 +88,7 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
             key={t.id}
             onClick={() => setView(t.id as any)}
             className={`flex items-center gap-2 px-6 py-2 text-xs font-black uppercase tracking-widest transition-all shrink-0 ${
-              view === t.id ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5' : 'text-slate-500 hover:text-slate-300'
+              view === t.id ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             {t.icon} {t.label}

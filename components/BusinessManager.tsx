@@ -190,7 +190,7 @@ export const BusinessManager: React.FC<Props> = ({
             className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shrink-0 ${
               activeTab === tab.id 
                 ? `${tab.color} border-b-2 border-current bg-white/5` 
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {tab.icon} {tab.label}
@@ -211,7 +211,7 @@ export const BusinessManager: React.FC<Props> = ({
                  {id: 'forecast', label: 'AI Prognose'},
                  {id: 'advisor', label: 'AI Rådgiver'}
                ].map(st => (
-                 <button key={st.id} onClick={() => setFarmSubTab(st.id as any)} className={`text-[10px] font-black uppercase tracking-widest transition-all shrink-0 pb-2 ${farmSubTab === st.id ? 'text-yellow-400 border-b border-yellow-400' : 'text-slate-500'}`}>
+                 <button key={st.id} onClick={() => setFarmSubTab(st.id as any)} className={`text-[10px] font-black uppercase tracking-widest transition-all shrink-0 pb-2 ${farmSubTab === st.id ? 'text-yellow-400 border-b border-yellow-400' : 'text-slate-400'}`}>
                     {st.label}
                  </button>
                ))}

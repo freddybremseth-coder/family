@@ -216,7 +216,7 @@ export const BillsManager: React.FC<Props> = ({ bills, setBills }) => {
                     className={`px-3 py-1.5 text-[9px] uppercase font-black tracking-tighter transition-all flex items-center gap-1.5 ${
                       filterMode === f.id 
                         ? 'bg-magenta-500 text-black shadow-[0_0_10px_#ff00ff]' 
-                        : 'text-slate-500 hover:text-slate-300'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     {f.icon}
