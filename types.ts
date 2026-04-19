@@ -144,10 +144,34 @@ export interface GroceryItem {
   quantity: number;
   unit: string;
   frequency: 'low' | 'medium' | 'high';
-  store: 'Mercadona' | 'Carrefour' | 'Lidl' | 'Aldi' | 'Family Cash' | 'Markedet (Benidorm)';
+  store: string;
   isBought: boolean;
   isSuggestion?: boolean;
+  category?: string;
+  notes?: string;
 }
+
+export interface PurchaseHistoryEntry {
+  id: string;
+  itemName: string;
+  normalizedName: string;
+  purchasedAt: string;
+  quantity: number;
+  unit: string;
+  store?: string;
+}
+
+export interface SmartSuggestion {
+  name: string;
+  reason: string;
+  source: 'frequency' | 'recent' | 'ai' | 'staple';
+  confidence: number;
+  daysSinceLast?: number;
+  averageInterval?: number;
+  added?: boolean;
+}
+
+export type SubscriptionPlan = 'monthly' | 'annual';
 
 export interface FamilyMember {
   id: string;

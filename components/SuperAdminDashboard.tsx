@@ -30,8 +30,8 @@ export const SuperAdminDashboard = () => {
   const stats = {
     totalUsers: mockSaaSUsers.length,
     activePaid: mockSaaSUsers.filter(u => u.status === 'Paid').length,
-    mrr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Monthly').reduce((acc, u) => acc + 4, 0),
-    arr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Annual').reduce((acc, u) => acc + 38, 0),
+    mrr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Monthly').reduce((acc) => acc + 6, 0),
+    arr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Annual').reduce((acc) => acc + 57.6, 0),
     churn: '20%',
   };
 

@@ -366,18 +366,61 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
 
-        /* Mobile nav */
+        /* Bottom tab nav (mobile only) */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 60;
+            background: white;
+            border-top: 1px solid var(--border);
+            box-shadow: 0 -4px 24px rgba(15,23,42,0.08);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 6px 4px calc(env(safe-area-inset-bottom, 0px) + 6px) 4px;
+        }
+
+        .bottom-nav-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            padding: 8px 2px;
+            border-radius: 10px;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: color 0.15s ease, background 0.15s ease;
+            min-height: 52px;
+        }
+
+        .bottom-nav-item.active {
+            color: var(--primary);
+            background: #EEF2FF;
+        }
+
+        .bottom-nav-item svg {
+            width: 22px;
+            height: 22px;
+        }
+
         @media (max-width: 768px) {
-            .app-sidebar {
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                z-index: 50;
-                border-right: none;
-                border-top: 1px solid var(--border);
-                box-shadow: 0 -4px 24px rgba(0,0,0,0.08);
-            }
+            body { padding-bottom: 72px; }
+        }
+
+        /* Larger touch targets on mobile */
+        @media (max-width: 768px) {
+            .input-field { font-size: 16px; padding: 12px 14px; }
+            .btn-primary, .btn-secondary, .btn-danger { padding: 12px 18px; font-size: 15px; }
+            .tab-item { padding: 10px 14px; font-size: 14px; min-height: 44px; }
+            .nav-item { padding: 14px 16px; font-size: 15px; }
         }
 
         #root { min-height: 100vh; }

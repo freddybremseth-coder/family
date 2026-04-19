@@ -23,7 +23,10 @@ import {
   CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, Language, UserRole
 } from './types';
 import { translations } from './translations';
-import { Heart, LogOut, ShieldCheck, Loader2, AlertCircle, Key, Menu, X, Crown } from 'lucide-react';
+import {
+  Heart, LogOut, ShieldCheck, Loader2, AlertCircle, Key, Menu, X, Crown,
+  LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal,
+} from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
@@ -254,6 +257,8 @@ const App = () => {
             setGroceryItems={setGroceryItems}
             weeklyMenu={weeklyMenu}
             setWeeklyMenu={setWeeklyMenu}
+            lang={userConfig.language}
+            userId={session?.user?.id}
           />
         );
 
@@ -389,15 +394,16 @@ const App = () => {
           userEmail={session.user.email}
           daysLeft={trialDaysLeft}
           onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined}
+          lang={userConfig.language}
         />
       )}
 
-      {/* Trial-banner (bare når dager igjen og ikke expired) */}
+      {/* Trial banner */}
       {subscriptionStatus === 'trial' && trialDaysLeft > 0 && !showPaywall && (
         <div className="fixed top-0 left-0 right-0 z-[150] bg-amber-500 text-white text-xs font-semibold py-2 px-4 flex items-center justify-center gap-2">
           <Crown className="w-3.5 h-3.5" />
-          Prøveperiode: {trialDaysLeft} dag{trialDaysLeft !== 1 ? 'er' : ''} igjen —
-          <button onClick={() => setShowPaywall(true)} className="underline ml-1">Oppgrader nå</button>
+          {t.trial_days_left.replace('{days}', String(trialDaysLeft))} —
+          <button onClick={() => setShowPaywall(true)} className="underline ml-1">{t.upgrade_now}</button>
         </div>
       )}
 
@@ -408,6 +414,32 @@ const App = () => {
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
+      {/* MOBILE BOTTOM TAB NAV */}
+      <nav className="bottom-nav md:hidden">
+        {[
+          { id: 'dashboard', icon: <LayoutDashboard /> },
+          { id: 'shopping', icon: <ShoppingCart /> },
+          { id: 'familyplan', icon: <CalendarDays /> },
+          { id: 'transactions', icon: <CreditCard /> },
+        ].map(item => (
+          <button
+            key={item.id}
+            onClick={() => navigate(item.id)}
+            className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}
+          >
+            {item.icon}
+            <span>{t[item.id] || item.id}</span>
+          </button>
+        ))}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}
+        >
+          <MoreHorizontal />
+          <span>{t.see_all}</span>
+        </button>
+      </nav>
 
       {/* SIDEBAR */}
       <aside className={`

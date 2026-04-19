@@ -8,11 +8,16 @@ create table if not exists public.user_profiles (
   id                     uuid primary key references auth.users(id) on delete cascade,
   trial_started_at       timestamptz not null default now(),
   subscription_status    text not null default 'trial',  -- trial | active | cancelled | expired | lifetime
+  subscription_plan      text default 'monthly',         -- monthly | annual
   subscription_expires_at timestamptz,
   stripe_customer_id     text,
   stripe_subscription_id text,
   created_at             timestamptz default now()
 );
+
+-- Add column for existing installs
+alter table public.user_profiles
+  add column if not exists subscription_plan text default 'monthly';
 
 alter table public.user_profiles enable row level security;
 
@@ -173,7 +178,69 @@ create policy "Bruker sletter egne gårdsoperasjoner"
   on public.farm_operations for delete using (auth.uid() = user_id);
 
 
--- ── 6. ADMIN: GI FREDDY LIFETIME-ABONNEMENT ─────────────────
+-- ── 6. PURCHASE HISTORY (smart shopping cart) ───────────────
+create table if not exists public.purchase_history (
+  id              text primary key,
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  item_name       text not null,
+  normalized_name text not null,
+  purchased_at    timestamptz not null default now(),
+  quantity        numeric default 1,
+  unit            text default 'stk',
+  store           text,
+  created_at      timestamptz default now()
+);
+
+create index if not exists idx_purchase_history_user_normalized
+  on public.purchase_history (user_id, normalized_name);
+
+create index if not exists idx_purchase_history_user_purchased
+  on public.purchase_history (user_id, purchased_at desc);
+
+alter table public.purchase_history enable row level security;
+
+create policy "User reads own purchase history"
+  on public.purchase_history for select using (auth.uid() = user_id);
+
+create policy "User inserts own purchase history"
+  on public.purchase_history for insert with check (auth.uid() = user_id);
+
+create policy "User deletes own purchase history"
+  on public.purchase_history for delete using (auth.uid() = user_id);
+
+
+-- ── 7. GROCERY ITEMS (active shopping list, persisted) ──────
+create table if not exists public.grocery_items (
+  id          text primary key,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  name        text not null,
+  quantity    numeric default 1,
+  unit        text default 'stk',
+  store       text default 'Andre',
+  is_bought   boolean default false,
+  is_suggestion boolean default false,
+  category    text,
+  notes       text,
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
+alter table public.grocery_items enable row level security;
+
+create policy "User reads own grocery items"
+  on public.grocery_items for select using (auth.uid() = user_id);
+
+create policy "User inserts own grocery items"
+  on public.grocery_items for insert with check (auth.uid() = user_id);
+
+create policy "User updates own grocery items"
+  on public.grocery_items for update using (auth.uid() = user_id);
+
+create policy "User deletes own grocery items"
+  on public.grocery_items for delete using (auth.uid() = user_id);
+
+
+-- ── 8. ADMIN: GI FREDDY LIFETIME-ABONNEMENT ─────────────────
 -- Kjør dette ETTER at freddy.bremseth@gmail.com har logget inn minst én gang
 -- (slik at auth.users-raden eksisterer)
 

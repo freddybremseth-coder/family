@@ -367,15 +367,15 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
       <section className="bg-slate-50 py-24">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <h2 className="text-3xl font-bold text-slate-900 mb-4">Enkel, ærlig pris</h2>
-          <p className="text-slate-500 mb-12">Start gratis. Oppgrader når du er klar.</p>
+          <p className="text-slate-500 mb-12">Start gratis i 3 dager. Velg månedlig eller spar 20 % med årlig.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl p-8 border border-slate-200 text-left">
-              <h3 className="font-bold text-slate-800 text-xl mb-2">Gratis</h3>
-              <p className="text-4xl font-extrabold text-slate-900 mb-1">0 kr</p>
-              <p className="text-sm text-slate-400 mb-6">For alltid</p>
+              <h3 className="font-bold text-slate-800 text-xl mb-2">Månedlig</h3>
+              <p className="text-4xl font-extrabold text-slate-900 mb-1">6 €</p>
+              <p className="text-sm text-slate-400 mb-6">per måned · avslutt når som helst</p>
               <ul className="space-y-3 text-sm text-slate-600">
-                {['Felles kalender', 'Handleliste', 'Opptil 3 familiemedlemmer', 'Grunnleggende budsjett'].map(f => (
+                {['Felles kalender og oppgaver', 'Smart handleliste med vane-AI', 'Ubegrenset familiemedlemmer', 'Kvitteringsskanning'].map(f => (
                   <li key={f} className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" /> {f}
                   </li>
@@ -385,19 +385,19 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
                 onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
                 className="mt-8 w-full py-3 rounded-xl border border-slate-200 font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
               >
-                Start gratis
+                Start prøveperiode
               </button>
             </div>
 
             <div className="bg-indigo-600 rounded-2xl p-8 text-left relative overflow-hidden">
-              <div className="absolute top-4 right-4 bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1 rounded-full">
-                Populær
+              <div className="absolute top-4 right-4 bg-emerald-400 text-emerald-900 text-xs font-bold px-3 py-1 rounded-full">
+                Spar 20 %
               </div>
-              <h3 className="font-bold text-white text-xl mb-2">Familie Pro</h3>
-              <p className="text-4xl font-extrabold text-white mb-1">49 kr</p>
-              <p className="text-sm text-indigo-200 mb-6">per måned (eller 449 kr/år)</p>
+              <h3 className="font-bold text-white text-xl mb-2">Årlig</h3>
+              <p className="text-4xl font-extrabold text-white mb-1">4,80 €</p>
+              <p className="text-sm text-indigo-200 mb-6">per måned · faktureres 57,60 € / år</p>
               <ul className="space-y-3 text-sm text-indigo-100">
-                {['Alt i Gratis', 'Ubegrenset familiemedlemmer', 'AI-ukeplan', 'Kvitteringsskanning', 'Avansert budsjett', 'Prioritert support'].map(f => (
+                {['Alt i månedlig', 'AI-ukeplan og kjøleskap-skann', 'Avansert budsjett og forretning', 'Prioritert support', '6 språk støttet', 'Familieøkonomi og eiendeler'].map(f => (
                   <li key={f} className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-indigo-300 shrink-0" /> {f}
                   </li>
@@ -407,7 +407,7 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
                 onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
                 className="mt-8 w-full py-3 rounded-xl bg-white text-indigo-700 font-bold hover:bg-indigo-50 transition-colors"
               >
-                Prøv gratis i 14 dager
+                Start prøveperiode
               </button>
             </div>
           </div>
