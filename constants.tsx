@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Landmark,
   Briefcase,
+  FileText,
 } from 'lucide-react';
 import { FarmCategory } from './types';
 import { filterEnabledModules } from './config/productMode';
@@ -39,6 +40,7 @@ export const ALL_NAVIGATION = [
   { id: 'shopping',    label: 'Handleliste',       icon: <ShoppingCart className="w-5 h-5" /> },
   { id: 'transactions',label: 'Økonomi',           icon: <CreditCard className="w-5 h-5" /> },
   { id: 'bank',        label: 'Eiendeler',         icon: <Landmark className="w-5 h-5" /> },
+  { id: 'documents',   label: 'Dokumenter',        icon: <FileText className="w-5 h-5" /> },
   { id: 'trends',      label: 'Regninger',         icon: <TrendingUp className="w-5 h-5" /> },
   { id: 'receipts',    label: 'Kvitteringer',      icon: <Receipt className="w-5 h-5" /> },
   { id: 'business',    label: 'Business',          icon: <Briefcase className="w-5 h-5" /> },
