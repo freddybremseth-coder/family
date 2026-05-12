@@ -185,6 +185,8 @@ export interface FamilyMember {
 export interface CalendarEvent {
   id: string;
   date: string;
+  startTime?: string;
+  endTime?: string;
   description: string;
   assignedToId: string;
   type: 'Appointment' | 'Meeting' | 'Social' | 'Travel';
