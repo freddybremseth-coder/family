@@ -1,16 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 
-const familySupabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const familySupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const env = import.meta.env;
+
+const familySupabaseUrl = env.VITE_SUPABASE_URL || '';
+const familySupabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
 
 // RealtyFlow Pro er hubben for eiendomssalg/provisjoner.
 const realtyflowSupabaseUrl =
-  import.meta.env.VITE_REALTYFLOW_SUPABASE_URL ||
+  env.VITE_REALTYFLOW_SUPABASE_URL ||
   familySupabaseUrl ||
   'https://ereapsfcsqtdmzosgnnn.supabase.co';
 
 const realtyflowSupabaseAnonKey =
-  import.meta.env.VITE_REALTYFLOW_SUPABASE_ANON_KEY ||
+  env.VITE_REALTYFLOW_SUPABASE_ANON_KEY ||
+  env.VITE_REALTYFLOW_ANON_KEY ||
   familySupabaseAnonKey ||
   '';
 
@@ -18,13 +21,19 @@ const realtyflowSupabaseAnonKey =
 // Viktig: bruk egen anon key. Ikke fall tilbake til RealtyFlow-key,
 // fordi det kan gi 0 rader eller feil prosjekt uten tydelig feilmelding.
 const donaAnnaSupabaseUrl =
-  import.meta.env.VITE_DONAANNA_SUPABASE_URL ||
-  import.meta.env.VITE_OLIVIA_SUPABASE_URL ||
+  env.VITE_DONAANNA_SUPABASE_URL ||
+  env.VITE_DONA_ANNA_SUPABASE_URL ||
+  env.VITE_OLIVIA_SUPABASE_URL ||
   'https://jvcdkclfcaccogmvvkrs.supabase.co';
 
 const donaAnnaSupabaseAnonKey =
-  import.meta.env.VITE_DONAANNA_SUPABASE_ANON_KEY ||
-  import.meta.env.VITE_OLIVIA_SUPABASE_ANON_KEY ||
+  env.VITE_DONAANNA_SUPABASE_ANON_KEY ||
+  env.VITE_DONA_ANNA_SUPABASE_ANON_KEY ||
+  env.VITE_DONAANNA_ANON_KEY ||
+  env.VITE_DONA_ANNA_ANON_KEY ||
+  env.VITE_OLIVIA_SUPABASE_ANON_KEY ||
+  env.VITE_OLIVIA_ANON_KEY ||
+  env.VITE_OLIVIA_SUPABASE_KEY ||
   '';
 
 export const supabase = createClient(
@@ -56,4 +65,22 @@ export const SUPABASE_REFS = {
   family: familySupabaseUrl,
   realtyflow: realtyflowSupabaseUrl,
   donaAnna: donaAnnaSupabaseUrl,
+};
+
+export const SUPABASE_STATUS = {
+  familyUrlConfigured: !!familySupabaseUrl,
+  familyKeyConfigured: !!familySupabaseAnonKey,
+  realtyflowUrlConfigured: !!realtyflowSupabaseUrl,
+  realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey,
+  donaAnnaUrlConfigured: !!donaAnnaSupabaseUrl,
+  donaAnnaKeyConfigured: !!donaAnnaSupabaseAnonKey,
+  donaAnnaAcceptedKeyNames: [
+    'VITE_DONAANNA_SUPABASE_ANON_KEY',
+    'VITE_DONA_ANNA_SUPABASE_ANON_KEY',
+    'VITE_DONAANNA_ANON_KEY',
+    'VITE_DONA_ANNA_ANON_KEY',
+    'VITE_OLIVIA_SUPABASE_ANON_KEY',
+    'VITE_OLIVIA_ANON_KEY',
+    'VITE_OLIVIA_SUPABASE_KEY',
+  ],
 };
