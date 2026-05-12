@@ -69,6 +69,7 @@ const App = () => {
   const [userConfig, setUserConfig] = useState<UserConfig>({ familyName: 'FAMILIE', location: '', timezone: 'Europe/Oslo', preferredCurrency: 'NOK', language: 'no', role: UserRole.USER, subscriptionStatus: 'Active' });
 
   const t = translations[userConfig.language] || translations['no'];
+  const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
 
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) return;
@@ -162,21 +163,21 @@ const App = () => {
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4"><div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm"><Heart className="w-7 h-7 text-white" /></div><Loader2 className="w-6 h-6 text-slate-500 animate-spin" /><p className="text-sm text-slate-500 font-medium">Laster FamilieHub...</p></div>;
   if (!session) return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
-  const pageTitle = activeTab === 'superadmin' ? 'Admin' : (t[activeTab] || NAVIGATION.find(n => n.id === activeTab)?.label || '');
+  const pageTitle = activeTab === 'superadmin' ? 'Admin' : labelFor(activeTab, NAVIGATION.find(n => n.id === activeTab)?.label || '');
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       {showPaywall && session?.user && <PaywallModal userEmail={session.user.email} daysLeft={trialDaysLeft} onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined} lang={userConfig.language} />}
       {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
       <nav className="bottom-nav md:hidden">
-        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{t[item.id] || item.id}</span></button>)}
+        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}
         <button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button>
       </nav>
       <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}>
         <div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-slate-900"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div>
         <nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">
           {userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}
-          {NAVIGATION.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{t[item.id] || item.label}</span></button>)}
+          {NAVIGATION.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}
         </nav>
         <div className="p-4 border-t border-slate-100"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div>
       </aside>
