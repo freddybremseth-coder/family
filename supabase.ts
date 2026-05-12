@@ -18,23 +18,24 @@ const realtyflowSupabaseAnonKey =
   '';
 
 // Dona Anna / Olivia ligger i eget Supabase-prosjekt.
-// Viktig: bruk egen anon key. Ikke fall tilbake til RealtyFlow-key,
-// fordi det kan gi 0 rader eller feil prosjekt uten tydelig feilmelding.
 const donaAnnaSupabaseUrl =
   env.VITE_DONAANNA_SUPABASE_URL ||
   env.VITE_DONA_ANNA_SUPABASE_URL ||
   env.VITE_OLIVIA_SUPABASE_URL ||
   'https://jvcdkclfcaccogmvvkrs.supabase.co';
 
-const donaAnnaSupabaseAnonKey =
-  env.VITE_DONAANNA_SUPABASE_ANON_KEY ||
-  env.VITE_DONA_ANNA_SUPABASE_ANON_KEY ||
-  env.VITE_DONAANNA_ANON_KEY ||
-  env.VITE_DONA_ANNA_ANON_KEY ||
-  env.VITE_OLIVIA_SUPABASE_ANON_KEY ||
-  env.VITE_OLIVIA_ANON_KEY ||
-  env.VITE_OLIVIA_SUPABASE_KEY ||
-  '';
+const donaAnnaKeyCandidates: Record<string, string | undefined> = {
+  VITE_DONAANNA_SUPABASE_ANON_KEY: env.VITE_DONAANNA_SUPABASE_ANON_KEY,
+  VITE_DONA_ANNA_SUPABASE_ANON_KEY: env.VITE_DONA_ANNA_SUPABASE_ANON_KEY,
+  VITE_DONAANNA_ANON_KEY: env.VITE_DONAANNA_ANON_KEY,
+  VITE_DONA_ANNA_ANON_KEY: env.VITE_DONA_ANNA_ANON_KEY,
+  VITE_OLIVIA_SUPABASE_ANON_KEY: env.VITE_OLIVIA_SUPABASE_ANON_KEY,
+  VITE_OLIVIA_ANON_KEY: env.VITE_OLIVIA_ANON_KEY,
+  VITE_OLIVIA_SUPABASE_KEY: env.VITE_OLIVIA_SUPABASE_KEY,
+};
+
+const donaAnnaSupabaseAnonKey = Object.values(donaAnnaKeyCandidates).find(Boolean) || '';
+const donaAnnaResolvedKeyName = Object.entries(donaAnnaKeyCandidates).find(([, value]) => !!value)?.[0] || '';
 
 export const supabase = createClient(
   familySupabaseUrl || 'https://placeholder.supabase.co',
@@ -74,13 +75,7 @@ export const SUPABASE_STATUS = {
   realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey,
   donaAnnaUrlConfigured: !!donaAnnaSupabaseUrl,
   donaAnnaKeyConfigured: !!donaAnnaSupabaseAnonKey,
-  donaAnnaAcceptedKeyNames: [
-    'VITE_DONAANNA_SUPABASE_ANON_KEY',
-    'VITE_DONA_ANNA_SUPABASE_ANON_KEY',
-    'VITE_DONAANNA_ANON_KEY',
-    'VITE_DONA_ANNA_ANON_KEY',
-    'VITE_OLIVIA_SUPABASE_ANON_KEY',
-    'VITE_OLIVIA_ANON_KEY',
-    'VITE_OLIVIA_SUPABASE_KEY',
-  ],
+  donaAnnaResolvedKeyName,
+  donaAnnaKeyLength: donaAnnaSupabaseAnonKey.length,
+  donaAnnaAcceptedKeyNames: Object.keys(donaAnnaKeyCandidates),
 };
