@@ -1,14 +1,16 @@
-// Henter konsolidert månedlig økonomi-oversikt fra delt Supabase
-// (olivia + realtyflow-pro + mondeo). Bruker view 'family_economy_monthly'.
+// Konsolidert månedlig økonomi-oversikt.
+// Leser fra view `family.economy_monthly` som joiner RealtyFlows
+// sentrale ledger (public.business_financial_events) med Mondeo-
+// betalinger i family-schemaet. Alle beløp returneres i NOK.
 
 import { supabase, isSupabaseConfigured } from '../supabase';
 
 export interface MonthlyEconomyRow {
-  month: string; // ISO 'YYYY-MM-DD' (første dag i mnd)
-  oliviaRevenueNok: number;
-  oliviaCostNok: number;
+  month: string;
+  oliviaNetNok: number;
   realtyflowNetNok: number;
   mondeoInterestNok: number;
+  mondeoPaidNok: number;
   totalNetNok: number;
 }
 
@@ -32,47 +34,46 @@ export async function fetchFamilyEconomy(userId: string): Promise<EconomySummary
 
   if (!isSupabaseConfigured() || !userId) return empty;
 
+  // economy_monthly er allerede filtrert via RLS for mondeo-radene,
+  // men olivia/realtyflow-summene er aggregerte på tvers av tenants.
   const { data, error } = await supabase
-    .from('family_economy_monthly')
+    .from('economy_monthly')
     .select('*')
-    .eq('user_id', userId)
     .order('month', { ascending: true });
 
   if (error || !data) {
-    if (error && error.code !== 'PGRST116') {
+    if (error && (error as any).code !== 'PGRST116') {
       console.warn('[familyEconomyService] error', error);
     }
     return empty;
   }
 
   const rows: MonthlyEconomyRow[] = data.map((r: any) => {
-    const oliviaNet = Number(r.olivia_revenue_nok || 0) - Number(r.olivia_cost_nok || 0);
-    const total = oliviaNet + Number(r.realtyflow_net_nok || 0) + Number(r.mondeo_interest_nok || 0);
+    const olivia = Number(r.olivia_net_nok || 0);
+    const realtyflow = Number(r.realtyflow_net_nok || 0);
+    const mondeo = Number(r.mondeo_interest_nok || 0);
     return {
       month: r.month,
-      oliviaRevenueNok: Number(r.olivia_revenue_nok || 0),
-      oliviaCostNok: Number(r.olivia_cost_nok || 0),
-      realtyflowNetNok: Number(r.realtyflow_net_nok || 0),
-      mondeoInterestNok: Number(r.mondeo_interest_nok || 0),
-      totalNetNok: total,
+      oliviaNetNok: olivia,
+      realtyflowNetNok: realtyflow,
+      mondeoInterestNok: mondeo,
+      mondeoPaidNok: Number(r.mondeo_paid_nok || 0),
+      totalNetNok: olivia + realtyflow + mondeo,
     };
   });
 
   const currentYear = new Date().getFullYear();
-  const ytdRows = rows.filter((r) => new Date(r.month).getFullYear() === currentYear);
-  const ytd = ytdRows.reduce(
-    (acc, r) => ({
-      oliviaNet: acc.oliviaNet + (r.oliviaRevenueNok - r.oliviaCostNok),
-      realtyflowNet: acc.realtyflowNet + r.realtyflowNetNok,
-      mondeoInterest: acc.mondeoInterest + r.mondeoInterestNok,
-      totalNet: acc.totalNet + r.totalNetNok,
-    }),
-    { oliviaNet: 0, realtyflowNet: 0, mondeoInterest: 0, totalNet: 0 },
-  );
+  const ytd = rows
+    .filter((r) => new Date(r.month).getFullYear() === currentYear)
+    .reduce(
+      (acc, r) => ({
+        oliviaNet: acc.oliviaNet + r.oliviaNetNok,
+        realtyflowNet: acc.realtyflowNet + r.realtyflowNetNok,
+        mondeoInterest: acc.mondeoInterest + r.mondeoInterestNok,
+        totalNet: acc.totalNet + r.totalNetNok,
+      }),
+      { oliviaNet: 0, realtyflowNet: 0, mondeoInterest: 0, totalNet: 0 },
+    );
 
-  return {
-    rows,
-    ytd,
-    lastMonth: rows[rows.length - 1] ?? null,
-  };
+  return { rows, ytd, lastMonth: rows[rows.length - 1] ?? null };
 }

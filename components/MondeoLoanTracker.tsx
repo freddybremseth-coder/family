@@ -17,7 +17,7 @@ import {
   TransactionType,
 } from '../types';
 import { fetchNorgesBankPolicyRate } from '../services/norgesBankService';
-import { isSupabaseConfigured, supabase } from '../supabase';
+import { isSupabaseConfigured, supabase, supabasePublic } from '../supabase';
 
 interface Props {
   userId?: string;
@@ -246,6 +246,27 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
         payment_method: interestTx.paymentMethod,
         is_accrual: false,
       });
+
+      // Speil renteinntekten til RealtyFlows sentrale ledger.
+      // Feiler stille hvis tabellen ikke finnes eller RLS blokkerer.
+      await supabasePublic
+        .from('business_financial_events')
+        .insert({
+          brand_id: 'family',
+          source_type: 'manual',
+          source_id: `mondeo:${newPayment.id}`,
+          stream: 'manual_adjustment',
+          direction: 'income',
+          status: 'recognized',
+          amount: interestTx.amount,
+          currency: 'NOK',
+          event_date: interestTx.date,
+          description: interestTx.description,
+          metadata: { source: 'family.mondeo', payment_id: newPayment.id },
+        })
+        .then(({ error }) => {
+          if (error) console.warn('[Mondeo] could not mirror to business_financial_events', error);
+        });
     }
   };
 
@@ -259,6 +280,13 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
       if (payment.postedTransactionId) {
         await supabase.from('transactions').delete().eq('id', payment.postedTransactionId);
       }
+      await supabasePublic
+        .from('business_financial_events')
+        .delete()
+        .eq('source_id', `mondeo:${payment.id}`)
+        .then(({ error }) => {
+          if (error) console.warn('[Mondeo] could not delete mirror event', error);
+        });
     }
   };
 

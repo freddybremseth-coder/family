@@ -93,7 +93,7 @@ const App = () => {
     const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
     if (farmData) setFarmOps(farmData);
 
-    const { data: residentData } = await supabase.from('family_members').select('*').eq('user_id', userId);
+    const { data: residentData } = await supabase.from('members').select('*').eq('user_id', userId);
     if (residentData && residentData.length > 0) setFamilyMembers(residentData);
   }, []);
 
