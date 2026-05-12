@@ -13,9 +13,18 @@
 -- ============================================================
 
 create schema if not exists family;
-grant usage on schema family to anon, authenticated;
-alter default privileges in schema family
-  grant select, insert, update, delete on tables to authenticated;
+
+-- Grants som kreves for at PostgREST/Supabase JS-klienten skal nå schemaet
+grant usage on schema family to anon, authenticated, service_role;
+grant all on all tables    in schema family to anon, authenticated, service_role;
+grant all on all routines  in schema family to anon, authenticated, service_role;
+grant all on all sequences in schema family to anon, authenticated, service_role;
+alter default privileges for role postgres in schema family
+  grant all on tables    to anon, authenticated, service_role;
+alter default privileges for role postgres in schema family
+  grant all on routines  to anon, authenticated, service_role;
+alter default privileges for role postgres in schema family
+  grant all on sequences to anon, authenticated, service_role;
 
 
 -- ── 1. USER PROFILES (trial + abonnement) ───────────────────
