@@ -8,14 +8,22 @@ const familySupabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
 // RealtyFlow Pro er hubben for eiendomssalg/provisjoner.
 const realtyflowSupabaseUrl =
   env.VITE_REALTYFLOW_SUPABASE_URL ||
+  env.VITE_REALTYFLOW_URL ||
   familySupabaseUrl ||
   'https://ereapsfcsqtdmzosgnnn.supabase.co';
 
+const realtyflowKeyCandidates: Record<string, string | undefined> = {
+  VITE_REALTYFLOW_SUPABASE_ANON_KEY: env.VITE_REALTYFLOW_SUPABASE_ANON_KEY,
+  VITE_REALTYFLOW_ANON_KEY: env.VITE_REALTYFLOW_ANON_KEY,
+  VITE_REALTYFLOW_SUPABASE_KEY: env.VITE_REALTYFLOW_SUPABASE_KEY,
+  VITE_REALTYFLOW_KEY: env.VITE_REALTYFLOW_KEY,
+};
+
 const realtyflowSupabaseAnonKey =
-  env.VITE_REALTYFLOW_SUPABASE_ANON_KEY ||
-  env.VITE_REALTYFLOW_ANON_KEY ||
+  Object.values(realtyflowKeyCandidates).find(Boolean) ||
   familySupabaseAnonKey ||
   '';
+const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'VITE_SUPABASE_ANON_KEY fallback' : '');
 
 // Dona Anna / Olivia ligger i eget Supabase-prosjekt.
 const donaAnnaSupabaseUrl =
@@ -73,6 +81,9 @@ export const SUPABASE_STATUS = {
   familyKeyConfigured: !!familySupabaseAnonKey,
   realtyflowUrlConfigured: !!realtyflowSupabaseUrl,
   realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey,
+  realtyflowResolvedKeyName,
+  realtyflowKeyLength: realtyflowSupabaseAnonKey.length,
+  realtyflowAcceptedKeyNames: Object.keys(realtyflowKeyCandidates),
   donaAnnaUrlConfigured: !!donaAnnaSupabaseUrl,
   donaAnnaKeyConfigured: !!donaAnnaSupabaseAnonKey,
   donaAnnaResolvedKeyName,
