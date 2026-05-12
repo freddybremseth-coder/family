@@ -14,9 +14,9 @@ const realtyflowSupabaseAnonKey =
   familySupabaseAnonKey ||
   '';
 
-// Dona Anna / Olivia kan ligge i eget Supabase-prosjekt.
-// Når data senere speiles korrekt inn i RealtyFlow, kan dette fortsatt beholdes
-// som primær kilde for farm/Olivia og RealtyFlow som hub for samlede rapporter.
+// Dona Anna / Olivia ligger i eget Supabase-prosjekt.
+// Viktig: bruk egen anon key. Ikke fall tilbake til RealtyFlow-key,
+// fordi det kan gi 0 rader eller feil prosjekt uten tydelig feilmelding.
 const donaAnnaSupabaseUrl =
   import.meta.env.VITE_DONAANNA_SUPABASE_URL ||
   import.meta.env.VITE_OLIVIA_SUPABASE_URL ||
@@ -25,8 +25,6 @@ const donaAnnaSupabaseUrl =
 const donaAnnaSupabaseAnonKey =
   import.meta.env.VITE_DONAANNA_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_OLIVIA_SUPABASE_ANON_KEY ||
-  realtyflowSupabaseAnonKey ||
-  familySupabaseAnonKey ||
   '';
 
 export const supabase = createClient(
