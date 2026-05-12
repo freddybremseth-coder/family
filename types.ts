@@ -315,3 +315,40 @@ export interface FarmTask {
   dueDate: string;
   status: 'Pending' | 'Completed';
 }
+
+// ── Mondeo Eiendom AS – salgsfinansiering ──────────────────────────
+// Salget av Mondeo Eiendom AS (4.8M NOK) finansieres som lån til kjøper.
+// Rente = Norges Bank styringsrente + 6 % margin (årlig nominell).
+// Kjøper bestemmer selv avdrag → saldo kan øke eller synke per måned.
+
+export interface MondeoLoanSettings {
+  id: string;
+  initialPrincipal: number;
+  startDate: string;
+  marginPct: number;
+  norgesBankRatePct: number;
+  norgesBankRateObservedAt?: string;
+  buyerName?: string;
+  notes?: string;
+}
+
+export interface MondeoLoanPayment {
+  id: string;
+  date: string;
+  amount: number;
+  note?: string;
+  postedTransactionId?: string;
+}
+
+export interface MondeoLedgerRow {
+  id: string;
+  nr: number;
+  fromDate: string;
+  date: string;
+  openingBalance: number;
+  interestDue: number;
+  paid: number;
+  principalChange: number;
+  closingBalance: number;
+  status: 'Avdrag' | 'Lånet øker';
+}

@@ -18,6 +18,7 @@ import {
   Trophy, ArrowRightLeft, Thermometer
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
+import { MondeoLoanTracker } from './MondeoLoanTracker';
 import { 
   getFarmStrategicAdvice, 
   getFarmYieldForecast,
@@ -32,7 +33,7 @@ interface Props {
   afterSales: AfterSaleCommission[];
   setAfterSales: React.Dispatch<React.SetStateAction<AfterSaleCommission[]>>;
   farmOps: FarmOperation[];
-  setFarmOps: React.Dispatch<React.SetStateAction<FarmOperation[]>>; 
+  setFarmOps: React.Dispatch<React.SetStateAction<FarmOperation[]>>;
   developers: Developer[];
   setDevelopers: React.Dispatch<React.SetStateAction<Developer[]>>;
   afterSalePartners: any[];
@@ -40,6 +41,7 @@ interface Props {
   transactions: Transaction[];
   setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
   bankAccounts: any[];
+  userId?: string;
 }
 
 const formatCurrency = (amount: number, currency: Currency) => {
@@ -47,16 +49,18 @@ const formatCurrency = (amount: number, currency: Currency) => {
   return `${symbol} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
-export const BusinessManager: React.FC<Props> = ({ 
+export const BusinessManager: React.FC<Props> = ({
   deals, setDeals,
   afterSales, setAfterSales,
   farmOps, setFarmOps,
   developers, setDevelopers,
-  transactions
+  transactions,
+  setTransactions,
+  userId,
 }) => {
   const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture' | 'marketing'>('farm');
   const [farmSubTab, setFarmSubTab] = useState<'ops' | 'inventory' | 'profile' | 'forecast' | 'advisor' | 'simulator'>('ops');
-  const [reSubTab, setReSubTab] = useState<'deals' | 'developers'>('deals');
+  const [reSubTab, setReSubTab] = useState<'deals' | 'developers' | 'mondeo'>('deals');
   
   // -- AI DATA STATES --
   const [aiForecast, setAiForecast] = useState<any>(null);
@@ -717,7 +721,16 @@ export const BusinessManager: React.FC<Props> = ({
              <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
                 <button onClick={() => setReSubTab('deals')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'deals' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-500'}`}>Salgsoversikt</button>
                 <button onClick={() => setReSubTab('developers')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'developers' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-500'}`}>Utbyggere & Partnere</button>
+                <button onClick={() => setReSubTab('mondeo')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'mondeo' ? 'text-amber-400 border-b border-amber-400' : 'text-slate-500'}`}>Mondeo Eiendom (Lån)</button>
              </div>
+
+             {reSubTab === 'mondeo' && (
+                <MondeoLoanTracker
+                  userId={userId}
+                  transactions={transactions}
+                  setTransactions={setTransactions}
+                />
+             )}
 
              {reSubTab === 'deals' && (
                 <>

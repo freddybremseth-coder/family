@@ -240,7 +240,61 @@ create policy "User deletes own grocery items"
   on public.grocery_items for delete using (auth.uid() = user_id);
 
 
--- ── 8. ADMIN: GI FREDDY LIFETIME-ABONNEMENT ─────────────────
+-- ── 8. MONDEO EIENDOM – SALGSFINANSIERING ──────────────────
+-- Mondeo Eiendom AS solgt for 4.8 MNOK. Kjøper betaler rente
+-- = Norges Bank styringsrente + 6 %. Kjøper styrer selv avdrag.
+
+create table if not exists public.mondeo_loan_settings (
+  id                          text primary key default gen_random_uuid()::text,
+  user_id                     uuid not null references auth.users(id) on delete cascade,
+  initial_principal           numeric not null default 4800000,
+  start_date                  text not null,
+  margin_pct                  numeric not null default 6,
+  norges_bank_rate_pct        numeric not null default 4.5,
+  norges_bank_rate_observed_at text,
+  buyer_name                  text,
+  notes                       text,
+  created_at                  timestamptz default now(),
+  updated_at                  timestamptz default now()
+);
+
+alter table public.mondeo_loan_settings enable row level security;
+
+create policy "Bruker ser egne mondeo-innstillinger"
+  on public.mondeo_loan_settings for select using (auth.uid() = user_id);
+create policy "Bruker lager egne mondeo-innstillinger"
+  on public.mondeo_loan_settings for insert with check (auth.uid() = user_id);
+create policy "Bruker oppdaterer egne mondeo-innstillinger"
+  on public.mondeo_loan_settings for update using (auth.uid() = user_id);
+create policy "Bruker sletter egne mondeo-innstillinger"
+  on public.mondeo_loan_settings for delete using (auth.uid() = user_id);
+
+create table if not exists public.mondeo_loan_payments (
+  id                    text primary key default gen_random_uuid()::text,
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  date                  text not null,
+  amount                numeric not null default 0,
+  note                  text,
+  posted_transaction_id text,
+  created_at            timestamptz default now()
+);
+
+create index if not exists idx_mondeo_loan_payments_user_date
+  on public.mondeo_loan_payments (user_id, date);
+
+alter table public.mondeo_loan_payments enable row level security;
+
+create policy "Bruker ser egne mondeo-betalinger"
+  on public.mondeo_loan_payments for select using (auth.uid() = user_id);
+create policy "Bruker lager egne mondeo-betalinger"
+  on public.mondeo_loan_payments for insert with check (auth.uid() = user_id);
+create policy "Bruker oppdaterer egne mondeo-betalinger"
+  on public.mondeo_loan_payments for update using (auth.uid() = user_id);
+create policy "Bruker sletter egne mondeo-betalinger"
+  on public.mondeo_loan_payments for delete using (auth.uid() = user_id);
+
+
+-- ── 9. ADMIN: GI FREDDY LIFETIME-ABONNEMENT ─────────────────
 -- Kjør dette ETTER at freddy.bremseth@gmail.com har logget inn minst én gang
 -- (slik at auth.users-raden eksisterer)
 

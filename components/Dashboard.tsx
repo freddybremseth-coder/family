@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EXCHANGE_RATE_EUR_TO_NOK, MEMBER_COLORS } from '../constants';
 import { getFinancialStatusInsight } from '../services/geminiService';
+import { fetchFamilyEconomy, EconomySummary } from '../services/familyEconomyService';
 import { translations } from '../translations';
 
 interface Props {
@@ -27,6 +28,7 @@ interface Props {
   calendarEvents?: CalendarEvent[];
   groceryCount?: number;
   lang: Language;
+  userId?: string;
 }
 
 const convertToPreferred = (amount: number, currency: string, preferred: string) => {
@@ -60,12 +62,19 @@ export const Dashboard: React.FC<Props> = ({
   calendarEvents = [],
   groceryCount = 0,
   lang,
+  userId,
 }) => {
   const t = translations[lang];
   const currency = 'NOK';
 
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [economy, setEconomy] = useState<EconomySummary | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchFamilyEconomy(userId).then(setEconomy).catch(() => setEconomy(null));
+  }, [userId]);
 
   // Stats
   const stats = useMemo(() => {
@@ -238,6 +247,55 @@ export const Dashboard: React.FC<Props> = ({
           <button onClick={fetchAiTip} disabled={aiLoading} className="p-1.5 hover:bg-amber-100 rounded-lg transition-colors shrink-0">
             <RefreshCw className={`w-4 h-4 text-amber-600 ${aiLoading ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+      )}
+
+      {/* KONSOLIDERT FAMILIEØKONOMI (på tvers av olivia + realtyflow + mondeo) */}
+      {economy && (economy.ytd.totalNet !== 0 || economy.rows.length > 0) && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Konsolidert familieøkonomi · hittil i år
+              </p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {formatMoney(economy.ytd.totalNet, 'NOK')}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-emerald-600" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                Dona Anna (olivenfarm)
+              </p>
+              <p className="text-base font-bold text-slate-900 mt-1">
+                {formatMoney(economy.ytd.oliviaNet, 'NOK')}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                RealtyFlow Pro (provisjon)
+              </p>
+              <p className="text-base font-bold text-slate-900 mt-1">
+                {formatMoney(economy.ytd.realtyflowNet, 'NOK')}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                Mondeo renteinntekt
+              </p>
+              <p className="text-base font-bold text-slate-900 mt-1">
+                {formatMoney(economy.ytd.mondeoInterest, 'NOK')}
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-3">
+            Hentet fra delt Supabase-view <code>family_economy_monthly</code>.
+            Krever at olivia og realtyflow-pro bruker samme Supabase-prosjekt.
+          </p>
         </div>
       )}
 

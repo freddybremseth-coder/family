@@ -246,6 +246,7 @@ const App = () => {
             calendarEvents={calendarEvents}
             groceryCount={groceryItems.filter(i => !i.isBought).length}
             lang={userConfig.language}
+            userId={session?.user?.id}
           />
         );
 
@@ -320,6 +321,7 @@ const App = () => {
             afterSalePartners={[]} setAfterSalePartners={() => {}}
             transactions={transactions} setTransactions={setTransactions}
             bankAccounts={bankAccounts}
+            userId={session?.user?.id}
           />
         );
 
