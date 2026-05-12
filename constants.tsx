@@ -13,11 +13,12 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { FarmCategory } from './types';
+import { filterEnabledModules } from './config/productMode';
 
 export const COLORS = {
-  primary: '#2563EB',
-  primaryLight: '#DBEAFE',
-  primaryDark: '#1D4ED8',
+  primary: '#0F172A',
+  primaryLight: '#F1F5F9',
+  primaryDark: '#020617',
   accent: '#0F172A',
   accentLight: '#F1F5F9',
   success: '#059669',
@@ -32,18 +33,20 @@ export const COLORS = {
 
 export const EXCHANGE_RATE_EUR_TO_NOK = 11.55;
 
-export const NAVIGATION = [
+export const ALL_NAVIGATION = [
   { id: 'dashboard',    label: 'Oversikt',        icon: <LayoutDashboard className="w-5 h-5" /> },
   { id: 'familyplan',  label: 'Kalender',         icon: <CalendarDays className="w-5 h-5" /> },
   { id: 'shopping',    label: 'Handleliste',       icon: <ShoppingCart className="w-5 h-5" /> },
-  { id: 'transactions',label: 'Transaksjoner',     icon: <CreditCard className="w-5 h-5" /> },
-  { id: 'bank',        label: 'Bank & Eiendeler',  icon: <Landmark className="w-5 h-5" /> },
+  { id: 'transactions',label: 'Økonomi',           icon: <CreditCard className="w-5 h-5" /> },
+  { id: 'bank',        label: 'Eiendeler',         icon: <Landmark className="w-5 h-5" /> },
   { id: 'trends',      label: 'Regninger',         icon: <TrendingUp className="w-5 h-5" /> },
   { id: 'receipts',    label: 'Kvitteringer',      icon: <Receipt className="w-5 h-5" /> },
   { id: 'business',    label: 'Business',          icon: <Briefcase className="w-5 h-5" /> },
-  { id: 'members',     label: 'Familiemedlemmer',  icon: <Users className="w-5 h-5" /> },
+  { id: 'members',     label: 'Familie',           icon: <Users className="w-5 h-5" /> },
   { id: 'settings',    label: 'Innstillinger',     icon: <Settings className="w-5 h-5" /> },
 ];
+
+export const NAVIGATION = filterEnabledModules(ALL_NAVIGATION);
 
 export const GROCERY_STORES = ['Meny', 'Rema 1000', 'Kiwi', 'Coop', 'Bunnpris', 'Spar', 'Lidl', 'Aldi', 'Andre'] as const;
 
