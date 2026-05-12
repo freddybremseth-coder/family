@@ -183,52 +183,70 @@ export const Dashboard: React.FC<Props> = ({
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* GREETING HEADER */}
-      <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 text-white">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-indigo-200 text-sm font-medium mb-1">
-              {new Date().toLocaleDateString(lang === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
-            <h1 className="text-2xl font-bold mb-1">{getGreeting(lang)}! 👋</h1>
-            <p className="text-indigo-200 text-sm">Her er familiens oversikt for i dag</p>
+      {/* GREETING HEADER – aurora gradient */}
+      <div
+        className="relative overflow-hidden rounded-3xl p-7 text-white shadow-2xl"
+        style={{
+          background:
+            'linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #EC4899 75%, #F97316 100%)',
+        }}
+      >
+        <div
+          className="absolute -top-24 -right-16 w-72 h-72 rounded-full blur-3xl opacity-30"
+          style={{ background: '#FBBF24' }}
+        />
+        <div
+          className="absolute -bottom-32 -left-12 w-80 h-80 rounded-full blur-3xl opacity-25"
+          style={{ background: '#22D3EE' }}
+        />
+        <div className="relative">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">
+                {new Date().toLocaleDateString(lang === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+              <h1 className="text-3xl md:text-4xl font-extrabold mb-1 tracking-tight">
+                {getGreeting(lang)} 👋
+              </h1>
+              <p className="text-white/85 text-sm">Her er familiens oversikt for i dag</p>
+            </div>
+            <div className="flex -space-x-2 shrink-0">
+              {familyMembers.slice(0, 4).map((m, i) => (
+                <div
+                  key={m.id}
+                  className="w-10 h-10 rounded-full border-2 border-white/90 flex items-center justify-center text-sm font-bold text-white shadow-lg"
+                  style={{ background: MEMBER_COLORS[i % MEMBER_COLORS.length] }}
+                  title={m.name}
+                >
+                  {m.name.charAt(0).toUpperCase()}
+                </div>
+              ))}
+              {familyMembers.length === 0 && (
+                <div className="flex items-center gap-1.5 text-white/80 text-sm">
+                  <Heart className="w-4 h-4" />
+                  <span>Familie</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex -space-x-2">
-            {familyMembers.slice(0, 4).map((m, i) => (
-              <div
-                key={m.id}
-                className="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow"
-                style={{ background: MEMBER_COLORS[i % MEMBER_COLORS.length] }}
-                title={m.name}
-              >
-                {m.name.charAt(0).toUpperCase()}
+
+          {/* Quick stats row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-7">
+            {[
+              { label: 'Hendelser i dag', value: todayEvents.length.toString(), icon: <Calendar className="w-4 h-4" /> },
+              { label: 'Ventende oppgaver', value: pendingTasks.length.toString(), icon: <CheckSquare className="w-4 h-4" /> },
+              { label: 'Handlevarer', value: groceryCount.toString(), icon: <ShoppingCart className="w-4 h-4" /> },
+              { label: 'Banksaldo', value: formatMoney(stats.bankBalance, currency), icon: <Wallet className="w-4 h-4" /> },
+            ].map((s, i) => (
+              <div key={i} className="bg-white/15 rounded-2xl p-4 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-colors">
+                <div className="flex items-center gap-1.5 text-white/80 text-[11px] font-semibold uppercase tracking-wide mb-2">
+                  {s.icon}
+                  <span>{s.label}</span>
+                </div>
+                <p className="text-white font-extrabold text-xl leading-none tracking-tight">{s.value}</p>
               </div>
             ))}
-            {familyMembers.length === 0 && (
-              <div className="flex items-center gap-1.5 text-indigo-200 text-sm">
-                <Heart className="w-4 h-4" />
-                <span>Familie</span>
-              </div>
-            )}
           </div>
-        </div>
-
-        {/* Quick stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
-          {[
-            { label: 'Hendelser i dag', value: todayEvents.length.toString(), icon: <Calendar className="w-4 h-4" /> },
-            { label: 'Ventende oppgaver', value: pendingTasks.length.toString(), icon: <CheckSquare className="w-4 h-4" /> },
-            { label: 'Handlevarer', value: groceryCount.toString(), icon: <ShoppingCart className="w-4 h-4" /> },
-            { label: 'Banksaldo', value: formatMoney(stats.bankBalance, currency), icon: <Wallet className="w-4 h-4" /> },
-          ].map((s, i) => (
-            <div key={i} className="bg-white/15 rounded-xl p-3 backdrop-blur-sm">
-              <div className="flex items-center gap-1.5 text-indigo-200 text-xs mb-1">
-                {s.icon}
-                <span>{s.label}</span>
-              </div>
-              <p className="text-white font-bold text-lg leading-none">{s.value}</p>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -252,49 +270,59 @@ export const Dashboard: React.FC<Props> = ({
 
       {/* KONSOLIDERT FAMILIEØKONOMI (på tvers av olivia + realtyflow + mondeo) */}
       {economy && (economy.ytd.totalNet !== 0 || economy.rows.length > 0) && (
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="card-vivid p-6">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                 Konsolidert familieøkonomi · hittil i år
               </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
+              <p className="text-3xl md:text-4xl font-extrabold text-slate-900 mt-1 tracking-tight">
                 {formatMoney(economy.ytd.totalNet, 'NOK')}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-emerald-600" />
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg"
+              style={{ background: 'linear-gradient(135deg, #10B981, #06B6D4)' }}
+            >
+              <TrendingUp className="w-6 h-6" />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-slate-200 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-                Dona Anna (olivenfarm)
-              </p>
-              <p className="text-base font-bold text-slate-900 mt-1">
-                {formatMoney(economy.ytd.oliviaNet, 'NOK')}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-                RealtyFlow Pro (provisjon)
-              </p>
-              <p className="text-base font-bold text-slate-900 mt-1">
-                {formatMoney(economy.ytd.realtyflowNet, 'NOK')}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-                Mondeo renteinntekt
-              </p>
-              <p className="text-base font-bold text-slate-900 mt-1">
-                {formatMoney(economy.ytd.mondeoInterest, 'NOK')}
-              </p>
-            </div>
+            {[
+              {
+                label: 'Dona Anna · olivenfarm',
+                value: economy.ytd.oliviaNet,
+                gradient: 'linear-gradient(135deg, #FBBF24, #F97316)',
+                accent: 'bg-amber-50 border-amber-200',
+              },
+              {
+                label: 'RealtyFlow Pro · provisjon',
+                value: economy.ytd.realtyflowNet,
+                gradient: 'linear-gradient(135deg, #06B6D4, #0EA5E9)',
+                accent: 'bg-cyan-50 border-cyan-200',
+              },
+              {
+                label: 'Mondeo · renteinntekt',
+                value: economy.ytd.mondeoInterest,
+                gradient: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+                accent: 'bg-fuchsia-50 border-fuchsia-200',
+              },
+            ].map((c) => (
+              <div key={c.label} className={`rounded-2xl border p-4 ${c.accent}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">
+                    {c.label}
+                  </p>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.gradient }} />
+                </div>
+                <p className="text-xl font-extrabold text-slate-900 tracking-tight">
+                  {formatMoney(c.value, 'NOK')}
+                </p>
+              </div>
+            ))}
           </div>
           <p className="text-[11px] text-slate-400 mt-3">
-            Hentet fra delt Supabase-view <code>family_economy_monthly</code>.
-            Krever at olivia og realtyflow-pro bruker samme Supabase-prosjekt.
+            Hentet fra delt Supabase-view <code className="text-slate-500">family.economy_monthly</code>.
           </p>
         </div>
       )}

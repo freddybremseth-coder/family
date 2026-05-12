@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
   Building2,
   Calculator,
   Coins,
@@ -159,6 +168,28 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
         return row;
       });
   }, [payments, settings.initialPrincipal, settings.startDate, monthlyRate]);
+
+  const chartData = useMemo(() => {
+    const startPoint = {
+      date: settings.startDate,
+      saldo: Number(settings.initialPrincipal || 0),
+      rente: 0,
+      betalt: 0,
+    };
+    let cumulativeInterest = 0;
+    let cumulativePaid = 0;
+    const points = ledger.map((row) => {
+      cumulativeInterest += row.interestDue;
+      cumulativePaid += row.paid;
+      return {
+        date: row.date,
+        saldo: Math.round(row.closingBalance),
+        rente: Math.round(cumulativeInterest),
+        betalt: Math.round(cumulativePaid),
+      };
+    });
+    return [startPoint, ...points];
+  }, [ledger, settings.initialPrincipal, settings.startDate]);
 
   const currentBalance = ledger.length
     ? ledger[ledger.length - 1].closingBalance
@@ -563,6 +594,102 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* GRAF – saldo og akkumulert rente over tid */}
+      <div className="glass-panel p-6 border-l-4 border-l-cyan-500">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-white">
+              Saldo & akkumulert rente
+            </h3>
+            <p className="text-[11px] text-slate-400 italic mt-1">
+              Hvordan lånet utvikler seg etter hver registrerte betaling
+            </p>
+          </div>
+          <div className="flex gap-4 text-[10px] uppercase tracking-widest font-black">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-sm" style={{ background: '#06B6D4' }} />
+              <span className="text-slate-300">Saldo</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />
+              <span className="text-slate-300">Akk. rente</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-sm" style={{ background: '#10B981' }} />
+              <span className="text-slate-300">Akk. betalt</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ width: '100%', height: 280 }}>
+          <ResponsiveContainer>
+            <AreaChart data={chartData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="mondeoSaldoFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#06B6D4" stopOpacity={0.6} />
+                  <stop offset="100%" stopColor="#06B6D4" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="mondeoRenteFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.5} />
+                  <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="mondeoBetaltFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity={0.5} />
+                  <stop offset="100%" stopColor="#10B981" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis
+                dataKey="date"
+                stroke="#94A3B8"
+                fontSize={11}
+                tickFormatter={(d) =>
+                  new Date(d).toLocaleDateString('no-NO', { month: 'short', year: '2-digit' })
+                }
+              />
+              <YAxis
+                stroke="#94A3B8"
+                fontSize={11}
+                tickFormatter={(v) => `${Math.round(v / 1000)}k`}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: '#0F172A',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: '#E2E8F0' }}
+                formatter={(value: any) => formatNOK(Number(value))}
+              />
+              <Area
+                type="monotone"
+                dataKey="saldo"
+                stroke="#06B6D4"
+                strokeWidth={2.5}
+                fill="url(#mondeoSaldoFill)"
+                name="Saldo"
+              />
+              <Area
+                type="monotone"
+                dataKey="rente"
+                stroke="#F59E0B"
+                strokeWidth={2}
+                fill="url(#mondeoRenteFill)"
+                name="Akk. rente"
+              />
+              <Area
+                type="monotone"
+                dataKey="betalt"
+                stroke="#10B981"
+                strokeWidth={2}
+                fill="url(#mondeoBetaltFill)"
+                name="Akk. betalt"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

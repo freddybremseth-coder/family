@@ -718,10 +718,17 @@ export const BusinessManager: React.FC<Props> = ({
 
         {activeTab === 'realestate' && (
           <div className="space-y-8 animate-in fade-in">
-             <div className="flex gap-6 border-b border-white/5 pb-2 overflow-x-auto no-scrollbar">
-                <button onClick={() => setReSubTab('deals')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'deals' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-500'}`}>Salgsoversikt</button>
-                <button onClick={() => setReSubTab('developers')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'developers' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-500'}`}>Utbyggere & Partnere</button>
-                <button onClick={() => setReSubTab('mondeo')} className={`text-[10px] font-black uppercase tracking-widest transition-all pb-2 ${reSubTab === 'mondeo' ? 'text-amber-400 border-b border-amber-400' : 'text-slate-500'}`}>Mondeo Eiendom (Lån)</button>
+             <div className="flex gap-2 border-b border-white/5 pb-3 overflow-x-auto no-scrollbar">
+                <button onClick={() => setReSubTab('deals')} className={`px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide transition-all flex items-center gap-2 shrink-0 ${reSubTab === 'deals' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-400 hover:text-white border border-transparent'}`}>
+                  <Building2 className="w-4 h-4" /> Salgsoversikt
+                </button>
+                <button onClick={() => setReSubTab('developers')} className={`px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide transition-all flex items-center gap-2 shrink-0 ${reSubTab === 'developers' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-400 hover:text-white border border-transparent'}`}>
+                  <Users className="w-4 h-4" /> Utbyggere
+                </button>
+                <button onClick={() => setReSubTab('mondeo')} className={`px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide transition-all flex items-center gap-2 shrink-0 ${reSubTab === 'mondeo' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-lg shadow-amber-500/10' : 'text-slate-400 hover:text-amber-300 border border-transparent ring-1 ring-amber-500/20'}`}>
+                  <Calculator className="w-4 h-4" /> Mondeo Lån
+                  <span className="ml-1 px-1.5 py-0.5 text-[9px] font-black bg-amber-500 text-black rounded">NY</span>
+                </button>
              </div>
 
              {reSubTab === 'mondeo' && (
