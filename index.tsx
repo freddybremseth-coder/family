@@ -48,7 +48,14 @@ const App = () => {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    // Detekteres ved oppstart for å unngå race med onAuthStateChange.
+    return (
+      window.location.search.includes('recover=1') ||
+      window.location.hash.includes('type=recovery')
+    );
+  });
   const [newPassword, setNewPassword] = useState('');
   const [recoveryStatus, setRecoveryStatus] = useState<string>('');
 
