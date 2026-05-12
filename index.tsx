@@ -8,7 +8,7 @@ import { ShoppingList } from './components/ShoppingList';
 import { TransactionManager } from './components/TransactionManager';
 import { ReceiptScanner } from './components/ReceiptScanner';
 import { BillsManager } from './components/BillsManager';
-import { BusinessManager } from './components/BusinessManager';
+import { BusinessManagerClean as BusinessManager } from './components/BusinessManagerClean';
 import { BankManager } from './components/BankManager';
 import { AssetManager } from './components/AssetManager';
 import { FamilyCalendar } from './components/FamilyCalendar';
@@ -50,7 +50,6 @@ const App = () => {
   const [showPaywall, setShowPaywall] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(() => {
     if (typeof window === 'undefined') return false;
-    // Detekteres ved oppstart for å unngå race med onAuthStateChange.
     return (
       window.location.search.includes('recover=1') ||
       window.location.hash.includes('type=recovery')
@@ -108,7 +107,6 @@ const App = () => {
   }, []);
 
   const checkSubscription = useCallback(async (user: any) => {
-    // Admin har alltid lifetime
     if (user.email === ADMIN_EMAIL) {
       setSubscriptionStatus('lifetime');
       return;
@@ -122,7 +120,6 @@ const App = () => {
       .single();
 
     if (!profile) {
-      // Opprett profil hvis den ikke finnes (eldre brukere)
       await supabase.from('user_profiles').insert({ id: user.id });
       setSubscriptionStatus('trial');
       setTrialDaysLeft(TRIAL_DAYS);
@@ -161,9 +158,7 @@ const App = () => {
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setSession(session);
-        if (event === 'PASSWORD_RECOVERY') {
-          setPasswordRecovery(true);
-        }
+        if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
         if (session?.user) {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id);
@@ -179,19 +174,9 @@ const App = () => {
 
   const handleRoleAssignment = (user: any) => {
     if (user.email === ADMIN_EMAIL) {
-      setUserConfig(prev => ({
-        ...prev,
-        familyName: 'BREMSETH',
-        role: UserRole.SUPER_ADMIN,
-        subscriptionStatus: 'Lifetime',
-      }));
+      setUserConfig(prev => ({ ...prev, familyName: 'BREMSETH', role: UserRole.SUPER_ADMIN, subscriptionStatus: 'Lifetime' }));
     } else {
-      setUserConfig(prev => ({
-        ...prev,
-        familyName: user.user_metadata?.family_name || 'FAMILIE',
-        role: UserRole.USER,
-        subscriptionStatus: 'Active',
-      }));
+      setUserConfig(prev => ({ ...prev, familyName: user.user_metadata?.family_name || 'FAMILIE', role: UserRole.USER, subscriptionStatus: 'Active' }));
     }
   };
 
@@ -205,10 +190,7 @@ const App = () => {
       }
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({
-      email: credentials.email,
-      password: credentials.password || '',
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password || '' });
     if (error) alert(error.message);
   };
 
@@ -229,10 +211,7 @@ const App = () => {
       user_id: session?.user?.id,
     };
 
-    if (isSupabaseConfigured() && session?.user) {
-      await supabase.from('transactions').insert([newT]);
-    }
-
+    if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([newT]);
     setTransactions(prev => [{ ...newT, id: `tx-rcpt-${Date.now()}` }, ...prev]);
     setCashBalance(prev => prev - data.totalAmount);
     setActiveTab('transactions');
@@ -245,417 +224,54 @@ const App = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'superadmin':
-        return <SuperAdminDashboard />;
-
-      case 'dashboard':
-        return (
-          <Dashboard
-            transactions={transactions}
-            bankAccounts={bankAccounts}
-            assets={assets}
-            familyMembers={familyMembers}
-            tasks={tasks}
-            calendarEvents={calendarEvents}
-            groceryCount={groceryItems.filter(i => !i.isBought).length}
-            lang={userConfig.language}
-            userId={session?.user?.id}
-          />
-        );
-
-      case 'shopping':
-        return (
-          <ShoppingList
-            cashBalance={cashBalance}
-            groceryItems={groceryItems}
-            setGroceryItems={setGroceryItems}
-            weeklyMenu={weeklyMenu}
-            setWeeklyMenu={setWeeklyMenu}
-            lang={userConfig.language}
-            userId={session?.user?.id}
-          />
-        );
-
-      case 'familyplan':
-        return (
-          <FamilyCalendar
-            familyMembers={familyMembers}
-            calendarEvents={calendarEvents}
-            setCalendarEvents={setCalendarEvents}
-            tasks={tasks}
-            setTasks={setTasks}
-            userConfig={userConfig}
-            localEvents={localEvents}
-            setLocalEvents={setLocalEvents}
-          />
-        );
-
-      case 'members':
-        return (
-          <ResidentsManager
-            familyMembers={familyMembers}
-            setFamilyMembers={setFamilyMembers}
-            lang={userConfig.language}
-          />
-        );
-
-      case 'settings':
-        return (
-          <SettingsManager
-            userConfig={userConfig}
-            setUserConfig={setUserConfig}
-            onApiUpdate={() => setAiConfigured(isAiAvailable())}
-          />
-        );
-
-      case 'bank':
-        return (
-          <div className="space-y-8">
-            <BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} />
-            <AssetManager assets={assets} setAssets={setAssets} />
-          </div>
-        );
-
-      case 'business':
-        return (
-          <BusinessManager
-            deals={realEstateDeals}
-            setDeals={async (val: any) => {
-              const next = typeof val === 'function' ? val(realEstateDeals) : val;
-              setRealEstateDeals(next);
-            }}
-            afterSales={afterSales} setAfterSales={setAfterSales}
-            farmOps={farmOps}
-            setFarmOps={async (val: any) => {
-              const next = typeof val === 'function' ? val(farmOps) : val;
-              setFarmOps(next);
-            }}
-            developers={developers} setDevelopers={setDevelopers}
-            afterSalePartners={[]} setAfterSalePartners={() => {}}
-            transactions={transactions} setTransactions={setTransactions}
-            bankAccounts={bankAccounts}
-            userId={session?.user?.id}
-          />
-        );
-
-      case 'transactions':
-        return (
-          <TransactionManager
-            transactions={transactions}
-            setTransactions={async (val: any) => {
-              const next = typeof val === 'function' ? val(transactions) : val;
-              setTransactions(next);
-              if (next.length > transactions.length && isSupabaseConfigured() && session?.user) {
-                await supabase.from('transactions').insert([{ ...next[0], user_id: session.user.id }]);
-              }
-            }}
-            bankAccounts={bankAccounts} setBankAccounts={setBankAccounts}
-            deals={realEstateDeals} setDeals={setRealEstateDeals}
-            afterSales={afterSales} setAfterSales={setAfterSales}
-            cashBalance={cashBalance} setCashBalance={setCashBalance}
-          />
-        );
-
-      case 'receipts':
-        return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
-
-      case 'trends':
-        return <BillsManager bills={bills} setBills={setBills} />;
-
-      default:
-        return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} lang={userConfig.language} />;
+      case 'superadmin': return <SuperAdminDashboard />;
+      case 'dashboard': return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} familyMembers={familyMembers} tasks={tasks} calendarEvents={calendarEvents} groceryCount={groceryItems.filter(i => !i.isBought).length} lang={userConfig.language} userId={session?.user?.id} />;
+      case 'shopping': return <ShoppingList cashBalance={cashBalance} groceryItems={groceryItems} setGroceryItems={setGroceryItems} weeklyMenu={weeklyMenu} setWeeklyMenu={setWeeklyMenu} lang={userConfig.language} userId={session?.user?.id} />;
+      case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
+      case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
+      case 'settings': return <SettingsManager userConfig={userConfig} setUserConfig={setUserConfig} onApiUpdate={() => setAiConfigured(isAiAvailable())} />;
+      case 'bank': return <div className="space-y-8"><BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
+      case 'business': return <BusinessManager deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} farmOps={farmOps} setFarmOps={setFarmOps} developers={developers} setDevelopers={setDevelopers} afterSalePartners={[]} setAfterSalePartners={() => {}} transactions={transactions} setTransactions={setTransactions} bankAccounts={bankAccounts} userId={session?.user?.id} />;
+      case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} />;
+      case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
+      case 'trends': return <BillsManager bills={bills} setBills={setBills} />;
+      default: return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} lang={userConfig.language} />;
     }
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#DDE3EE] flex flex-col items-center justify-center gap-4">
-        <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
-          <Heart className="w-7 h-7 text-white" />
-        </div>
-        <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
-        <p className="text-sm text-slate-400 font-medium">Laster FamilieHub...</p>
-      </div>
-    );
-  }
-
-  if (passwordRecovery && session) {
-    const handleSetPassword = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (newPassword.length < 6) {
-        setRecoveryStatus('Passordet må være minst 6 tegn');
-        return;
-      }
-      setRecoveryStatus('Oppdaterer...');
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        setRecoveryStatus(error.message);
-      } else {
-        setRecoveryStatus('Passord oppdatert. Du kan nå bruke det nye passordet.');
-        setNewPassword('');
-        setTimeout(() => {
-          setPasswordRecovery(false);
-          if (window.location.search.includes('recover=1')) {
-            window.history.replaceState({}, '', window.location.pathname);
-          }
-        }, 1500);
-      }
-    };
-
-    return (
-      <div className="min-h-screen bg-[#DDE3EE] flex items-center justify-center p-4">
-        <form
-          onSubmit={handleSetPassword}
-          className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
-              <Key className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-xl font-bold text-slate-800">Sett nytt passord</h1>
-          </div>
-          <p className="text-sm text-slate-500">
-            Skriv inn ditt nye passord for {session.user?.email}.
-          </p>
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Nytt passord (min 6 tegn)"
-            className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-            autoFocus
-            required
-          />
-          <button
-            type="submit"
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
-          >
-            Lagre nytt passord
-          </button>
-          {recoveryStatus && (
-            <p className="text-sm text-center text-slate-600">{recoveryStatus}</p>
-          )}
-        </form>
-      </div>
-    );
+    return <div className="min-h-screen bg-[#DDE3EE] flex flex-col items-center justify-center gap-4"><div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg"><Heart className="w-7 h-7 text-white" /></div><Loader2 className="w-6 h-6 text-indigo-500 animate-spin" /><p className="text-sm text-slate-400 font-medium">Laster FamilieHub...</p></div>;
   }
 
   if (!session) {
-    return (
-      <div className="min-h-screen bg-white">
-        {!isSupabaseConfigured() && (
-          <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-500 text-white text-xs font-semibold py-2 px-4 flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4" />
-            Demo-modus — Supabase ikke konfigurert
-          </div>
-        )}
-        <LandingPage
-          onLogin={handleLogin}
-          lang={userConfig.language}
-          setLang={(l) => setUserConfig({ ...userConfig, language: l })}
-        />
-      </div>
-    );
+    return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
   }
 
-  const pageTitle = activeTab === 'superadmin'
-    ? 'Admin'
-    : (t[activeTab] || NAVIGATION.find(n => n.id === activeTab)?.label || '');
+  const pageTitle = activeTab === 'superadmin' ? 'Admin' : (t[activeTab] || NAVIGATION.find(n => n.id === activeTab)?.label || '');
 
   return (
     <div className="flex min-h-screen">
-      {/* Paywall */}
-      {showPaywall && session?.user && (
-        <PaywallModal
-          userEmail={session.user.email}
-          daysLeft={trialDaysLeft}
-          onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined}
-          lang={userConfig.language}
-        />
-      )}
-
-      {/* Trial banner */}
-      {subscriptionStatus === 'trial' && trialDaysLeft > 0 && !showPaywall && (
-        <div className="fixed top-0 left-0 right-0 z-[150] bg-amber-500 text-white text-xs font-semibold py-2 px-4 flex items-center justify-center gap-2">
-          <Crown className="w-3.5 h-3.5" />
-          {t.trial_days_left.replace('{days}', String(trialDaysLeft))} —
-          <button onClick={() => setShowPaywall(true)} className="underline ml-1">{t.upgrade_now}</button>
-        </div>
-      )}
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* MOBILE BOTTOM TAB NAV */}
+      {showPaywall && session?.user && <PaywallModal userEmail={session.user.email} daysLeft={trialDaysLeft} onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined} lang={userConfig.language} />}
+      {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
       <nav className="bottom-nav md:hidden">
-        {[
-          { id: 'dashboard', icon: <LayoutDashboard /> },
-          { id: 'shopping', icon: <ShoppingCart /> },
-          { id: 'familyplan', icon: <CalendarDays /> },
-          { id: 'transactions', icon: <CreditCard /> },
-        ].map(item => (
-          <button
-            key={item.id}
-            onClick={() => navigate(item.id)}
-            className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}
-          >
-            {item.icon}
-            <span>{t[item.id] || item.id}</span>
-          </button>
-        ))}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}
-        >
-          <MoreHorizontal />
-          <span>{t.see_all}</span>
-        </button>
+        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{t[item.id] || item.id}</span></button>)}
+        <button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button>
       </nav>
-
-      {/* SIDEBAR */}
-      <aside className={`
-        app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col
-        transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:translate-x-0 md:static md:z-auto
-      `}>
-        {/* Logo */}
-        <div className="p-5 border-b border-slate-100">
-          <div
-            className="flex items-center gap-3 cursor-pointer group"
-            onClick={() => navigate('dashboard')}
-          >
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105"
-              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }}
-            >
-              <Heart className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p>
-              <p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">
-                {userConfig.familyName}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav links */}
+      <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}>
+        <div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-blue-600"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div>
         <nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">
-          {userConfig.role === UserRole.SUPER_ADMIN && (
-            <button
-              onClick={() => navigate('superadmin')}
-              className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}
-            >
-              <ShieldCheck className="w-5 h-5 shrink-0" />
-              Admin
-            </button>
-          )}
-
-          {NAVIGATION.map(item => (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.id)}
-              className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}
-            >
-              {item.icon}
-              <span className="truncate">{t[item.id] || item.label}</span>
-            </button>
-          ))}
+          {userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}
+          {NAVIGATION.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{t[item.id] || item.label}</span></button>)}
         </nav>
-
-        {/* Bottom: AI status + logout */}
-        <div className="p-4 border-t border-slate-100 space-y-2">
-          {!aiConfigured && (
-            <button
-              onClick={() => navigate('settings')}
-              className="w-full flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
-            >
-              <Key className="w-4 h-4 shrink-0" />
-              <span>AI ikke aktivert – konfigurer nøkkel</span>
-            </button>
-          )}
-
-          {/* Family avatars */}
-          <div className="flex items-center gap-2 px-1 py-2">
-            <div className="flex -space-x-1.5">
-              {familyMembers.slice(0, 4).map((m, i) => (
-                <div
-                  key={m.id}
-                  className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white"
-                  style={{ background: ['#4F46E5','#10B981','#F59E0B','#EF4444'][i % 4] }}
-                  title={m.name}
-                >
-                  {m.name.charAt(0)}
-                </div>
-              ))}
-            </div>
-            {familyMembers.length > 0 && (
-              <span className="text-xs text-slate-400 font-medium">{familyMembers.length} medlemmer</span>
-            )}
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut className="w-5 h-5 shrink-0" />
-            {t.logout}
-          </button>
-        </div>
+        <div className="p-4 border-t border-slate-100 space-y-2"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div>
       </aside>
-
-      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-0">
-        {/* Top bar */}
-        <header
-          className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200"
-          style={{ background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(20px)' }}
-        >
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
-            >
-              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <div>
-              <h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2>
-              <p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">
-                {new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {familyMembers.slice(0, 3).map((m, i) => (
-              <div
-                key={m.id}
-                className="w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-xs font-bold text-white"
-                style={{ background: ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4] }}
-                title={m.name}
-              >
-                {m.name.charAt(0)}
-              </div>
-            ))}
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          {renderContent()}
-        </main>
+        <header className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">{sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}</button><div><h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2><p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">{new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div></div></header>
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto">{renderContent()}</main>
       </div>
     </div>
   );
 };
 
 const rootElement = document.getElementById('root');
-if (rootElement) {
-  createRoot(rootElement).render(<App />);
-}
+if (rootElement) createRoot(rootElement).render(<App />);
