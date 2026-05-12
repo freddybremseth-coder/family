@@ -1,0 +1,224 @@
+/* Final app-wide polish inspired by the loan calculator UI.
+   Purpose: calm, bright, readable, spacious, mobile/iPad friendly. */
+
+:root {
+  --primary: #0f172a !important;
+  --primary-dark: #020617 !important;
+  --primary-soft: #f1f5f9 !important;
+  --bg: #f8fafc !important;
+  --surface: #ffffff !important;
+  --surface-muted: #f1f5f9 !important;
+  --text: #0f172a !important;
+  --text-muted: #64748b !important;
+  --text-soft: #94a3b8 !important;
+  --border: #e2e8f0 !important;
+  --border-strong: #cbd5e1 !important;
+  --ring: rgba(15, 23, 42, 0.12) !important;
+  --radius-md: 14px !important;
+  --radius-xl: 22px !important;
+}
+
+body,
+main {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Cards like the loan calculator */
+.card,
+.card-vivid,
+.glass-panel,
+.stat-card,
+.modal-card,
+main [class*="glass-panel"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 22px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+  color: #0f172a !important;
+}
+
+.card:hover,
+.card-vivid:hover,
+.glass-panel:hover,
+.stat-card:hover {
+  transform: none !important;
+  border-color: #dbe3ed !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Remove old dark/cyber surfaces globally */
+main [class*="bg-black"],
+main [class*="bg-slate-900"],
+main [class*="bg-slate-800"],
+main [class*="bg-slate-950"],
+main [class*="bg-white/"],
+main [class*="bg-yellow"],
+main [class*="bg-orange"],
+main [class*="bg-cyan"],
+main [class*="bg-fuchsia"],
+main [class*="bg-purple"] {
+  background-color: #ffffff !important;
+}
+
+main [class*="text-white"],
+main [class*="text-slate-300"],
+main [class*="text-slate-400"] {
+  color: #64748b !important;
+}
+
+main [class*="border-white"],
+main [class*="border-black"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Preserve meaning colors, but toned down */
+main .text-emerald-500,
+main .text-emerald-600,
+main .text-emerald-700 { color: #047857 !important; }
+main .text-red-500,
+main .text-red-600,
+main .text-red-700,
+main .text-rose-500,
+main .text-rose-600,
+main .text-rose-700 { color: #dc2626 !important; }
+main .text-amber-500,
+main .text-amber-600,
+main .text-amber-700 { color: #d97706 !important; }
+main .text-blue-500,
+main .text-blue-600,
+main .text-blue-700,
+main .text-indigo-500,
+main .text-indigo-600,
+main .text-indigo-700 { color: #0f172a !important; }
+
+/* Buttons: more breathing room between box and text */
+button,
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-gradient,
+.CyberButton,
+main button[class*="bg-"],
+main button[class*="border"] {
+  min-height: 44px !important;
+  padding: 11px 18px !important;
+  border-radius: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  gap: 8px !important;
+}
+
+.btn-primary,
+.btn-gradient,
+.CyberButton,
+main button[class*="bg-indigo"],
+main button[class*="bg-blue"],
+main button[class*="bg-slate-900"] {
+  background: #0f172a !important;
+  border: 1px solid #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.btn-primary:hover,
+.btn-gradient:hover,
+.CyberButton:hover,
+main button[class*="bg-indigo"]:hover,
+main button[class*="bg-blue"]:hover,
+main button[class*="bg-slate-900"]:hover {
+  background: #1e293b !important;
+  border-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.btn-secondary,
+main button:not(.btn-primary):not(.btn-gradient):not(.bottom-nav-item):not(.nav-item) {
+  box-shadow: none !important;
+}
+
+/* Inputs: loan calculator feel */
+.input-field,
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='number'],
+input[type='date'],
+input[type='time'],
+textarea,
+select {
+  min-height: 46px !important;
+  padding: 12px 16px !important;
+  border-radius: 14px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  font-size: 14px !important;
+}
+
+.input-field:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.10) !important;
+}
+
+/* Navigation */
+.nav-item {
+  min-height: 48px !important;
+  padding: 12px 16px !important;
+  border-radius: 16px !important;
+}
+
+.nav-item.active,
+.bottom-nav-item.active {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Metric/card icons */
+main .rounded-2xl.bg-blue-600,
+main .rounded-2xl.bg-indigo-600,
+main .rounded-2xl.bg-slate-900 {
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+
+/* Tabs / pill cards */
+main button[class*="ring-2"],
+.tab-item.active {
+  ring-color: transparent !important;
+  background: #ffffff !important;
+  border-color: #0f172a !important;
+}
+
+/* Tables */
+th, td {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+thead tr {
+  border-bottom-color: #e2e8f0 !important;
+}
+
+/* Mobile/iPad comfort */
+@media (max-width: 900px) {
+  main { padding: 18px !important; }
+  button,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-gradient,
+  .CyberButton {
+    min-height: 48px !important;
+    padding: 13px 18px !important;
+  }
+  .card,
+  .glass-panel,
+  .stat-card {
+    border-radius: 20px !important;
+  }
+}
