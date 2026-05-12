@@ -183,7 +183,9 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
       if (error) setMessage(error.message);
       else setMessage('Sjekk e-posten din for bekreftelseslenke!');
     } else if (authMode === 'forgot') {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/?recover=1`,
+      });
       if (error) setMessage(error.message);
       else setMessage('Tilbakestillingslenke sendt til ' + email);
     } else {

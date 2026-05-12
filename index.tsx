@@ -48,6 +48,9 @@ const App = () => {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [recoveryStatus, setRecoveryStatus] = useState<string>('');
 
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>([]);
   const [weeklyMenu, setWeeklyMenu] = useState<any[]>([]);
@@ -149,8 +152,11 @@ const App = () => {
         setLoading(false);
       }).catch(() => setLoading(false));
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setSession(session);
+        if (event === 'PASSWORD_RECOVERY') {
+          setPasswordRecovery(true);
+        }
         if (session?.user) {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id);
@@ -362,6 +368,67 @@ const App = () => {
         </div>
         <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
         <p className="text-sm text-slate-400 font-medium">Laster FamilieHub...</p>
+      </div>
+    );
+  }
+
+  if (passwordRecovery && session) {
+    const handleSetPassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword.length < 6) {
+        setRecoveryStatus('Passordet må være minst 6 tegn');
+        return;
+      }
+      setRecoveryStatus('Oppdaterer...');
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setRecoveryStatus(error.message);
+      } else {
+        setRecoveryStatus('Passord oppdatert. Du kan nå bruke det nye passordet.');
+        setNewPassword('');
+        setTimeout(() => {
+          setPasswordRecovery(false);
+          if (window.location.search.includes('recover=1')) {
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }, 1500);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-[#DDE3EE] flex items-center justify-center p-4">
+        <form
+          onSubmit={handleSetPassword}
+          className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
+              <Key className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-slate-800">Sett nytt passord</h1>
+          </div>
+          <p className="text-sm text-slate-500">
+            Skriv inn ditt nye passord for {session.user?.email}.
+          </p>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Nytt passord (min 6 tegn)"
+            className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            autoFocus
+            required
+          />
+          <button
+            type="submit"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
+          >
+            Lagre nytt passord
+          </button>
+          {recoveryStatus && (
+            <p className="text-sm text-center text-slate-600">{recoveryStatus}</p>
+          )}
+        </form>
       </div>
     );
   }
