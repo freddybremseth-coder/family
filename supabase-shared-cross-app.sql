@@ -1,14 +1,13 @@
 -- ============================================================
 -- FAMILIE-HUB · DELT SUPABASE-SKJEMA (Strategi A)
 -- ------------------------------------------------------------
--- Kjør dette i SAMME Supabase-prosjekt som FamilieHub allerede bruker.
--- Etter at dette er kjørt vil olivia (olivenfarm) og realtyflow-pro
--- skrive sine egne data hit (med samme auth.uid()), og FamilieHub
--- leser dem via views for den konsoliderte økonomi-oversikten.
---
--- Modellen er enkel: hver app eier sine egne tabeller (olivia_* og
--- realtyflow_*), men auth.users er felles. Family-appen leser alt
--- via views som filtrerer på auth.uid().
+-- VIKTIG REKKEFØLGE:
+--   1) Kjør først supabase-setup.sql  (oppretter user_profiles,
+--      transactions, family_members, mondeo_loan_* m.fl.)
+--   2) Kjør deretter denne filen.
+-- Filen er idempotent (CREATE IF NOT EXISTS / OR REPLACE) og kan
+-- trygt kjøres på nytt. Mondeo-tabellene gjentas nederst som backup
+-- slik at views-en alltid har noe å peke på.
 -- ============================================================
 
 
@@ -122,6 +121,74 @@ create table if not exists public.fx_rates (
 );
 alter table public.fx_rates enable row level security;
 create policy "fx_rates_read_all" on public.fx_rates for select using (true);
+
+
+-- ───────────────────────────────────────────────────────────
+-- 3b. MONDEO-TABELLER (idempotent backup, krever supabase-setup.sql)
+--     Disse opprettes også i supabase-setup.sql – inkludert her
+--     for å gjøre views nedenfor robuste hvis setup mangler.
+-- ───────────────────────────────────────────────────────────
+
+create table if not exists public.mondeo_loan_settings (
+  id                          text primary key default gen_random_uuid()::text,
+  user_id                     uuid not null references auth.users(id) on delete cascade,
+  initial_principal           numeric not null default 4800000,
+  start_date                  text not null,
+  margin_pct                  numeric not null default 6,
+  norges_bank_rate_pct        numeric not null default 4.5,
+  norges_bank_rate_observed_at text,
+  buyer_name                  text,
+  notes                       text,
+  created_at                  timestamptz default now(),
+  updated_at                  timestamptz default now()
+);
+
+create table if not exists public.mondeo_loan_payments (
+  id                    text primary key default gen_random_uuid()::text,
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  date                  text not null,
+  amount                numeric not null default 0,
+  note                  text,
+  posted_transaction_id text,
+  created_at            timestamptz default now()
+);
+
+alter table public.mondeo_loan_settings enable row level security;
+alter table public.mondeo_loan_payments enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where policyname = 'mondeo_loan_settings_owner_all') then
+    create policy "mondeo_loan_settings_owner_all" on public.mondeo_loan_settings
+      for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+  if not exists (select 1 from pg_policies where policyname = 'mondeo_loan_payments_owner_all') then
+    create policy "mondeo_loan_payments_owner_all" on public.mondeo_loan_payments
+      for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+end $$;
+
+
+-- ───────────────────────────────────────────────────────────
+-- 3c. TRANSACTIONS-BACKUP (idempotent, krever supabase-setup.sql)
+--     family_economy_mondeo joiner mot public.transactions.
+-- ───────────────────────────────────────────────────────────
+
+create table if not exists public.transactions (
+  id             text primary key default gen_random_uuid()::text,
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  date           text not null,
+  amount         numeric not null default 0,
+  currency       text not null default 'NOK',
+  description    text not null default '',
+  category       text not null default '',
+  type           text not null default 'EXPENSE',
+  payment_method text not null default 'Bank',
+  is_accrual     boolean default false,
+  tax_amount     numeric,
+  from_account_id text,
+  to_account_id  text,
+  created_at     timestamptz default now()
+);
 
 
 -- ───────────────────────────────────────────────────────────
