@@ -1,29 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const familySupabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const familySupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// FamilieHub deler Supabase med RealtyFlow Pro og Dona Anna (olivia).
-// Egne tabeller lever i schema `family.*` for å unngå navnekollisjoner
-// med RealtyFlows tabeller i `public.*`.
-//
-// Husk: Supabase-prosjektet må eksponere schemaet `family` via
-// Project Settings → API → Exposed schemas.
+// RealtyFlow Pro er hubben for salg, provisjoner, Soleada, ZenEcoHomes
+// og Dona Anna/Olivia-data. FamilyHub kan lese fra dette prosjektet uten
+// å være master for schemaet.
+const realtyflowSupabaseUrl =
+  import.meta.env.VITE_REALTYFLOW_SUPABASE_URL ||
+  familySupabaseUrl ||
+  'https://ereapsfcsqtdmzosgnnn.supabase.co';
+
+const realtyflowSupabaseAnonKey =
+  import.meta.env.VITE_REALTYFLOW_SUPABASE_ANON_KEY ||
+  familySupabaseAnonKey ||
+  '';
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-anon-key',
+  familySupabaseUrl || 'https://placeholder.supabase.co',
+  familySupabaseAnonKey || 'placeholder-anon-key',
   {
     db: { schema: 'family' },
   },
 );
 
-// Klient som leser fra RealtyFlows public-schema (business_financial_events,
-// harvest_records, farm_expenses osv.). Brukes for cross-app aggregering.
 export const supabasePublic = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-anon-key',
+  realtyflowSupabaseUrl || 'https://placeholder.supabase.co',
+  realtyflowSupabaseAnonKey || 'placeholder-anon-key',
 );
 
 export const isSupabaseConfigured = () =>
-  !!supabaseUrl && !!supabaseAnonKey && supabaseUrl !== '';
+  !!familySupabaseUrl && !!familySupabaseAnonKey && familySupabaseUrl !== '';
+
+export const isRealtyflowSupabaseConfigured = () =>
+  !!realtyflowSupabaseUrl && !!realtyflowSupabaseAnonKey && realtyflowSupabaseUrl !== '';
+
+export const SUPABASE_REFS = {
+  family: familySupabaseUrl,
+  realtyflow: realtyflowSupabaseUrl,
+};
