@@ -1,14 +1,18 @@
-// Leser eiendomsprovisjoner direkte fra RealtyFlow Pro sin sentrale
-// ledger `public.business_financial_events`. Filterer på stream='commission'
-// og grupperer per brand_id (Soleada, ZenEcoHomes, …).
+// Leser eiendomsprovisjoner fra RealtyFlow Pro sin sentrale hub.
+// FamilyHub skal ikke være master for salg/provisjoner; den viser data fra
+// RealtyFlow Pro / Supabase public-schema.
 
 import { supabasePublic, isSupabaseConfigured } from '../supabase';
 
+export type CommissionBrandKey = 'soleada' | 'zenecohomes' | 'other';
+
 export interface BrandCommission {
+  key: CommissionBrandKey;
   brand: string;
   totalEur: number;
   totalNok: number;
   count: number;
+  rawBrandIds: string[];
   monthly: { month: string; amountEur: number }[];
 }
 
@@ -17,25 +21,88 @@ export interface RealtyflowSummary {
   totalEur: number;
   totalNok: number;
   fxRate: number;
+  source: 'supabase' | 'fallback';
+  diagnostics: string[];
 }
 
 const FALLBACK_FX = 11.55;
+const COMMISSION_STREAMS = new Set([
+  'commission',
+  'commissions',
+  'real_estate_commission',
+  'property_commission',
+  'sales_commission',
+  'sale_commission',
+]);
 
-function brandLabel(brandId: string): string {
-  const map: Record<string, string> = {
-    soleada: 'Soleada',
-    zenecohomes: 'ZenEcoHomes',
-    'zen-eco-homes': 'ZenEcoHomes',
-    zen_eco_homes: 'ZenEcoHomes',
+function normalize(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/https?:\/\//g, '')
+    .replace(/www\./g, '')
+    .replace(/\.com|\.no|\.es/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function brandKey(row: any): CommissionBrandKey {
+  const candidates = [
+    row.brand_id,
+    row.brand,
+    row.business_unit,
+    row.source_type,
+    row.metadata?.brand,
+    row.metadata?.brand_id,
+    row.metadata?.businessUnit,
+    row.metadata?.business_unit,
+    row.metadata?.company,
+    row.metadata?.source,
+  ].map(normalize).filter(Boolean);
+
+  const joined = candidates.join(' ');
+  if (joined.includes('soleada')) return 'soleada';
+  if (
+    joined.includes('zenecohomes') ||
+    joined.includes('zeneco') ||
+    joined.includes('zeneohomes') ||
+    joined.includes('zenhomes') ||
+    joined.includes('zenecohome')
+  ) return 'zenecohomes';
+  return 'other';
+}
+
+function brandLabel(key: CommissionBrandKey): string {
+  if (key === 'soleada') return 'Soleada';
+  if (key === 'zenecohomes') return 'ZenEcoHomes';
+  return 'Andre / ukjent';
+}
+
+function emptyBrand(key: CommissionBrandKey, fxRate: number): BrandCommission {
+  return {
+    key,
+    brand: brandLabel(key),
+    totalEur: 0,
+    totalNok: 0,
+    count: 0,
+    rawBrandIds: [],
+    monthly: [],
   };
-  return map[brandId.toLowerCase()] ?? brandId;
 }
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
-  const empty: RealtyflowSummary = { brands: [], totalEur: 0, totalNok: 0, fxRate: FALLBACK_FX };
-  if (!isSupabaseConfigured()) return empty;
+  const empty: RealtyflowSummary = {
+    brands: [emptyBrand('soleada', FALLBACK_FX), emptyBrand('zenecohomes', FALLBACK_FX)],
+    totalEur: 0,
+    totalNok: 0,
+    fxRate: FALLBACK_FX,
+    source: 'fallback',
+    diagnostics: [],
+  };
 
-  // Hent FX-kurs (best effort)
+  if (!isSupabaseConfigured()) {
+    return { ...empty, diagnostics: ['Supabase er ikke konfigurert i miljøvariablene.'] };
+  }
+
   let fxRate = FALLBACK_FX;
   const { data: fxRow } = await supabasePublic
     .from('fx_rates')
@@ -46,38 +113,57 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
 
   const { data, error } = await supabasePublic
     .from('business_financial_events')
-    .select('brand_id, amount, currency, event_date, status, direction, stream')
-    .eq('stream', 'commission')
-    .in('status', ['recognized', 'paid']);
+    .select('brand_id, brand, business_unit, source_type, amount, currency, event_date, status, direction, stream, metadata')
+    .in('status', ['recognized', 'paid', 'expected', 'pending']);
 
   if (error || !data) {
-    if (error) console.warn('[realtyflowService]', error);
-    return { ...empty, fxRate };
+    const message = error?.message || 'Fant ingen data fra business_financial_events.';
+    console.warn('[realtyflowService]', error);
+    return { ...empty, fxRate, diagnostics: [message] };
   }
 
-  const byBrand = new Map<string, BrandCommission>();
+  const byBrand = new Map<CommissionBrandKey, BrandCommission>();
+  byBrand.set('soleada', emptyBrand('soleada', fxRate));
+  byBrand.set('zenecohomes', emptyBrand('zenecohomes', fxRate));
+
+  const diagnostics: string[] = [];
+  const rawBrandIds = new Set<string>();
+  let commissionRows = 0;
+
   for (const row of data) {
-    const id = row.brand_id || 'ukjent';
-    const amountEur =
-      row.currency === 'EUR' ? Number(row.amount) : Number(row.amount) / fxRate;
+    if (row.brand_id) rawBrandIds.add(String(row.brand_id));
 
-    if (!byBrand.has(id)) {
-      byBrand.set(id, {
-        brand: brandLabel(id),
-        totalEur: 0,
-        totalNok: 0,
-        count: 0,
-        monthly: [],
-      });
-    }
-    const b = byBrand.get(id)!;
-    b.totalEur += amountEur;
-    b.count += 1;
+    const stream = String(row.stream || '').toLowerCase();
+    const description = String(row.description || row.metadata?.description || '').toLowerCase();
+    const isCommission =
+      COMMISSION_STREAMS.has(stream) ||
+      stream.includes('commission') ||
+      description.includes('commission') ||
+      description.includes('provisjon');
 
-    const m = (row.event_date || '').slice(0, 7) + '-01';
-    const existing = b.monthly.find((x) => x.month === m);
+    if (!isCommission) continue;
+    if (row.direction && !['income', 'in', 'credit'].includes(String(row.direction).toLowerCase())) continue;
+
+    commissionRows += 1;
+    const key = brandKey(row);
+    if (key === 'other') continue;
+
+    const amountEur = row.currency === 'EUR'
+      ? Number(row.amount || 0)
+      : Number(row.amount || 0) / fxRate;
+
+    const item = byBrand.get(key) || emptyBrand(key, fxRate);
+    item.totalEur += amountEur;
+    item.count += 1;
+    const rawId = String(row.brand_id || row.brand || row.business_unit || key);
+    if (rawId && !item.rawBrandIds.includes(rawId)) item.rawBrandIds.push(rawId);
+
+    const month = (row.event_date || '').slice(0, 7) + '-01';
+    const existing = item.monthly.find((x) => x.month === month);
     if (existing) existing.amountEur += amountEur;
-    else b.monthly.push({ month: m, amountEur });
+    else item.monthly.push({ month, amountEur });
+
+    byBrand.set(key, item);
   }
 
   const brands = Array.from(byBrand.values()).map((b) => ({
@@ -86,8 +172,19 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)),
   }));
 
-  brands.sort((a, b) => b.totalEur - a.totalEur);
+  const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
 
-  const totalEur = brands.reduce((s, b) => s + b.totalEur, 0);
-  return { brands, totalEur, totalNok: totalEur * fxRate, fxRate };
+  if (commissionRows === 0) diagnostics.push('Fant ingen kommisjonsrader i business_financial_events. Sjekk stream/status.');
+  if ((byBrand.get('zenecohomes')?.count || 0) === 0) diagnostics.push('Fant ingen ZenEcoHomes-kommisjoner. Sjekk brand_id/business_unit i RealtyFlow Pro.');
+  if ((byBrand.get('soleada')?.count || 0) === 0) diagnostics.push('Fant ingen Soleada-kommisjoner. Sjekk brand_id/business_unit i RealtyFlow Pro.');
+  if (rawBrandIds.size > 0) diagnostics.push(`Brand IDs funnet i hub: ${Array.from(rawBrandIds).join(', ')}`);
+
+  return {
+    brands,
+    totalEur,
+    totalNok: totalEur * fxRate,
+    fxRate,
+    source: 'supabase',
+    diagnostics,
+  };
 }
