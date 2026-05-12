@@ -204,13 +204,16 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
   return (
     <div className="min-h-screen bg-white">
       {/* NAV */}
-      <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
+      <nav className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md">
-              <Heart className="w-4.5 h-4.5 text-white w-4 h-4" />
+            <div
+              className="w-9 h-9 rounded-2xl flex items-center justify-center shadow-lg"
+              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }}
+            >
+              <Heart className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-lg text-slate-800">FamilieHub</span>
+            <span className="font-extrabold text-lg text-slate-900 tracking-tight">FamilieHub</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -246,7 +249,11 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
             </button>
             <button
               onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
-              className="btn-primary text-sm px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+              className="text-sm px-5 py-2 rounded-xl text-white font-semibold transition-all hover:-translate-y-0.5"
+              style={{
+                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+                boxShadow: '0 8px 24px rgba(99, 102, 241, 0.35)',
+              }}
             >
               Kom i gang gratis
             </button>
@@ -255,19 +262,29 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
       </nav>
 
       {/* HERO */}
-      <section className="max-w-7xl mx-auto px-6 pt-16 pb-24 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        <div className="space-y-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-full text-sm font-semibold">
+      <section className="relative max-w-7xl mx-auto px-6 pt-16 pb-24 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+        <div
+          className="absolute -top-20 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ background: 'radial-gradient(circle, #C7D2FE 0%, transparent 65%)' }}
+        />
+        <div className="space-y-8 relative">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold"
+               style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(236,72,153,0.10))', color: '#4338CA' }}>
             <Sparkles className="w-4 h-4" />
             Norges beste familieapp — gratis å starte
           </div>
 
-          <h1 className="text-5xl md:text-6xl font-extrabold text-slate-900 leading-tight">
+          <h1 className="text-5xl md:text-6xl font-extrabold text-slate-900 leading-[1.05] tracking-tight">
             Alt familien
             <br />
             trenger, på
             <br />
-            <span className="text-indigo-600">ett sted.</span>
+            <span style={{
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>ett sted.</span>
           </h1>
 
           <p className="text-xl text-slate-500 leading-relaxed max-w-lg">
@@ -277,7 +294,11 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
           <div className="flex flex-col sm:flex-row gap-4">
             <button
               onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
-              className="flex items-center justify-center gap-2 px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold text-base shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all hover:-translate-y-0.5"
+              className="flex items-center justify-center gap-2 px-8 py-4 text-white rounded-2xl font-bold text-base transition-all hover:-translate-y-0.5"
+              style={{
+                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+                boxShadow: '0 16px 40px rgba(99, 102, 241, 0.35)',
+              }}
             >
               Start gratis i dag
               <ArrowRight className="w-5 h-5" />
@@ -454,19 +475,26 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={() => setShowAuth(false)}
           />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-fade-in">
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 animate-fade-in overflow-hidden">
+            <div
+              className="absolute top-0 left-0 right-0 h-1.5"
+              style={{ background: 'linear-gradient(90deg, #6366F1, #8B5CF6, #EC4899, #F97316)' }}
+            />
             <button
               onClick={() => setShowAuth(false)}
-              className="absolute top-4 right-4 p-2 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="mb-8">
-              <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mb-4">
-                <Heart className="w-6 h-6 text-indigo-600" />
+            <div className="mb-8 mt-3">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg"
+                style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }}
+              >
+                <Heart className="w-6 h-6 text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-900">
+              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 {authMode === 'login' ? t.welcome_back : authMode === 'signup' ? t.create_account : t.forgot_password}
               </h2>
               <p className="text-slate-500 text-sm mt-1">FamilieHub</p>
@@ -521,7 +549,11 @@ export const LandingPage: React.FC<Props> = ({ onLogin, lang, setLang }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+                className="w-full py-3.5 text-white rounded-xl font-bold transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+                style={{
+                  background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+                  boxShadow: '0 10px 28px rgba(99, 102, 241, 0.35)',
+                }}
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {authMode === 'login' ? t.login : authMode === 'signup' ? t.signup : t.send_reset}

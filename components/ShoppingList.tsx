@@ -342,7 +342,11 @@ export const ShoppingList: React.FC<Props> = ({
                 />
                 <button
                   onClick={() => addItem(newItemName)}
-                  className="px-4 bg-indigo-600 text-white rounded-xl font-semibold shadow-md shadow-indigo-200 active:scale-95 transition-transform flex items-center gap-1.5"
+                  className="px-5 text-white rounded-xl font-semibold active:scale-95 transition-transform flex items-center gap-1.5"
+                  style={{
+                    background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+                    boxShadow: '0 8px 20px rgba(99, 102, 241, 0.30)',
+                  }}
                   aria-label={t.add_item}
                 >
                   <Plus className="w-5 h-5" />

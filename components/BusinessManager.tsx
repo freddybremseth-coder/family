@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { fetchRealtyflowCommissions, RealtyflowSummary } from '../services/realtyflowService';
 import { 
   RealEstateDeal, AfterSaleCommission, FarmOperation, Developer, 
   Currency, Transaction, TransactionType, DealStatus, CommissionPayoutStatus, 
@@ -19,10 +20,9 @@ import {
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { MondeoLoanTracker } from './MondeoLoanTracker';
-import { 
-  getFarmStrategicAdvice, 
+import {
+  getFarmStrategicAdvice,
   getFarmYieldForecast,
-  generateZenEcoGuide
 } from '../services/geminiService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Line, ComposedChart, BarChart, Bar, Cell } from 'recharts';
 import { EXCHANGE_RATE_EUR_TO_NOK, FARM_CATEGORIES_ARRAY } from '../constants';
@@ -58,15 +58,20 @@ export const BusinessManager: React.FC<Props> = ({
   setTransactions,
   userId,
 }) => {
-  const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture' | 'marketing'>('farm');
+  const [activeTab, setActiveTab] = useState<'realestate' | 'aftersale' | 'farm' | 'oil_venture'>('farm');
   const [farmSubTab, setFarmSubTab] = useState<'ops' | 'inventory' | 'profile' | 'forecast' | 'advisor' | 'simulator'>('ops');
   const [reSubTab, setReSubTab] = useState<'deals' | 'developers' | 'mondeo'>('deals');
   
   // -- AI DATA STATES --
   const [aiForecast, setAiForecast] = useState<any>(null);
   const [aiAdvice, setAiAdvice] = useState<any>(null);
-  const [zenGuide, setZenGuide] = useState<string | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
+
+  // -- REALTYFLOW BRAND COMMISSIONS --
+  const [realtyflow, setRealtyflow] = useState<RealtyflowSummary | null>(null);
+  useEffect(() => {
+    fetchRealtyflowCommissions().then(setRealtyflow).catch(() => setRealtyflow(null));
+  }, []);
 
   // -- SIMULATOR STATE --
   const [simConfig, setSimConfig] = useState({
@@ -147,14 +152,6 @@ export const BusinessManager: React.FC<Props> = ({
     } catch (e) { console.error(e); } finally { setLoadingAI(false); }
   };
 
-  const handleGenerateZenGuide = async () => {
-    setLoadingAI(true);
-    try {
-      const text = await generateZenEcoGuide();
-      setZenGuide(text || "Kunne ikke generere guide.");
-    } catch (e) { console.error(e); } finally { setLoadingAI(false); }
-  };
-
   const handleAddDeal = () => {
     if (!newDeal.customerName || !newDeal.totalSaleValue) return;
     const grossComm = (newDeal.totalSaleValue * (newDeal.commissionPct || 0)) / 100;
@@ -184,7 +181,6 @@ export const BusinessManager: React.FC<Props> = ({
       <div className="flex gap-2 border-b border-white/10 pb-4 overflow-x-auto no-scrollbar">
         {[
           { id: 'farm', label: 'Dona Anna (Gård)', icon: <Sprout className="w-4 h-4" />, color: 'text-yellow-400' },
-          { id: 'marketing', label: 'Zen Eco (Marketing)', icon: <Rocket className="w-4 h-4" />, color: 'text-emerald-400' },
           { id: 'realestate', label: 'Eiendom (Salg)', icon: <Building2 className="w-4 h-4" />, color: 'text-cyan-400' },
           { id: 'aftersale', label: 'AfterSale (Service)', icon: <Handshake className="w-4 h-4" />, color: 'text-magenta-400' },
         ].map(tab => (
@@ -637,85 +633,6 @@ export const BusinessManager: React.FC<Props> = ({
           </div>
         )}
 
-        {activeTab === 'marketing' && (
-          <div className="space-y-8 animate-in slide-in-from-bottom-4">
-             <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-12">
-                   <div>
-                      <h3 className="text-2xl font-black text-white uppercase tracking-widest flex items-center gap-3">
-                         <Rocket className="text-emerald-400 w-6 h-6" /> Zen Eco Marketing Toolkit
-                      </h3>
-                      <p className="text-[11px] text-slate-500 uppercase mt-2 font-mono tracking-widest italic leading-relaxed">
-                        Strategisk innholdsproduksjon for "Zen Eco Homes" — trygghet, kvalitet og spansk livsstil for nordmenn.
-                      </p>
-                   </div>
-                   <CyberButton onClick={handleGenerateZenGuide} disabled={loadingAI} variant="primary" className="py-5 px-10 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-                      {/* Fixed Loader2 compilation error by adding it to lucide-react imports */}
-                      {loadingAI ? <Loader2 className="w-5 h-5 animate-spin mr-3" /> : <Sparkles className="w-5 h-5 mr-3" />}
-                      {loadingAI ? 'Genererer profesjonell guide...' : 'Generer Full Salgsguide'}
-                   </CyberButton>
-                </div>
-
-                {zenGuide ? (
-                  <div className="grid grid-cols-1 gap-12">
-                     <div className="space-y-12">
-                        {/* Rendrer guiden i seksjoner basert på DEL 1, DEL 2 osv */}
-                        <div className="p-8 bg-black/60 border border-emerald-500/20 relative overflow-hidden">
-                           <div className="absolute top-0 right-0 p-3 bg-emerald-500/10 text-[9px] font-black uppercase text-emerald-400 tracking-widest border-b border-l border-emerald-500/20">
-                             Generated Asset
-                           </div>
-                           <div className="flex justify-between items-center mb-10 pb-4 border-b border-white/10">
-                              <h4 className="text-lg font-black text-white uppercase flex items-center gap-3">
-                                 <FileSignature className="text-emerald-400 w-5 h-5" /> Zen Eco Homes Salgsmateriell
-                              </h4>
-                              <button onClick={() => navigator.clipboard.writeText(zenGuide)} className="text-[9px] font-black uppercase text-slate-400 hover:text-emerald-400 transition-all border border-white/10 px-4 py-2 hover:bg-white/5">
-                                 Kopier alt innhold
-                              </button>
-                           </div>
-                           
-                           {/* Guide Content Render */}
-                           <div className="prose prose-invert max-w-none font-sans text-slate-200 leading-relaxed whitespace-pre-wrap selection:bg-emerald-500 selection:text-black">
-                              {zenGuide}
-                           </div>
-                        </div>
-
-                        {/* CTA / Next Steps */}
-                        <div className="p-6 bg-emerald-500/5 border-l-4 border-l-emerald-500 flex flex-col md:flex-row items-center justify-between gap-6">
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-                                 <Check className="text-emerald-400" />
-                              </div>
-                              <p className="text-sm font-bold text-white uppercase tracking-tight">Guiden er klar for distribusjon.</p>
-                           </div>
-                           <CyberButton variant="ghost" onClick={handleGenerateZenGuide} className="text-[10px]">Oppdater/Regenerer</CyberButton>
-                        </div>
-                     </div>
-                  </div>
-                ) : (
-                  <div className="py-40 text-center flex flex-col items-center justify-center relative">
-                     <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
-                        <Building2 className="w-96 h-96 text-emerald-400" />
-                     </div>
-                     <div className="relative z-10 space-y-6">
-                        <BookOpen className="w-20 h-20 mx-auto text-emerald-500/20 mb-8 animate-pulse" />
-                        <h4 className="text-xl font-black text-white uppercase tracking-[0.4em]">Klar for Innholdsproduksjon</h4>
-                        <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed italic uppercase font-mono">
-                          Ved å aktivere AI-motoren vil vi generere:
-                          <br />1. Eksklusive titler
-                          <br />2. Komplett kapittelstruktur
-                          <br />3. Profesjonelle innholdsutkast
-                          <br />4. Salgstekst med høy konverteringsgrad
-                        </p>
-                        <div className="pt-10">
-                           <CyberButton onClick={handleGenerateZenGuide} variant="primary" className="px-20 py-4">Start Neural Writing</CyberButton>
-                        </div>
-                     </div>
-                  </div>
-                )}
-             </div>
-          </div>
-        )}
-
         {activeTab === 'realestate' && (
           <div className="space-y-8 animate-in fade-in">
              <div className="flex gap-2 border-b border-white/5 pb-3 overflow-x-auto no-scrollbar">
@@ -741,13 +658,59 @@ export const BusinessManager: React.FC<Props> = ({
 
              {reSubTab === 'deals' && (
                 <>
+                   {/* RealtyFlow Pro – live brand-commissions */}
+                   {realtyflow && realtyflow.brands.length > 0 && (
+                     <div className="glass-panel p-6 border-l-4 border-l-cyan-500">
+                       <div className="flex items-center justify-between mb-5">
+                         <div>
+                           <h3 className="text-sm font-black uppercase tracking-widest text-white flex items-center gap-2">
+                             <Building2 className="w-4 h-4 text-cyan-400" /> RealtyFlow Pro · Provisjoner per brand
+                           </h3>
+                           <p className="text-[11px] text-slate-400 italic mt-1">
+                             Live data fra business_financial_events. FX EUR→NOK: {realtyflow.fxRate.toFixed(2)}
+                           </p>
+                         </div>
+                         <div className="text-right">
+                           <p className="text-[10px] uppercase tracking-widest text-slate-400">Total</p>
+                           <p className="text-2xl font-black text-cyan-300 font-mono">{formatCurrency(realtyflow.totalEur, 'EUR')}</p>
+                           <p className="text-[11px] text-slate-500 font-mono">≈ {Math.round(realtyflow.totalNok).toLocaleString('nb-NO')} kr</p>
+                         </div>
+                       </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {realtyflow.brands.map((b) => {
+                           const colorByBrand: Record<string, { ring: string; text: string; bar: string }> = {
+                             Soleada: { ring: 'border-amber-500/40', text: 'text-amber-300', bar: 'bg-amber-500' },
+                             ZenEcoHomes: { ring: 'border-emerald-500/40', text: 'text-emerald-300', bar: 'bg-emerald-500' },
+                           };
+                           const c = colorByBrand[b.brand] ?? { ring: 'border-cyan-500/40', text: 'text-cyan-300', bar: 'bg-cyan-500' };
+                           const sharePct = realtyflow.totalEur > 0 ? (b.totalEur / realtyflow.totalEur) * 100 : 0;
+                           return (
+                             <div key={b.brand} className={`rounded-lg border ${c.ring} bg-black/40 p-5`}>
+                               <div className="flex items-start justify-between mb-3">
+                                 <div>
+                                   <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{b.brand}</p>
+                                   <p className={`text-2xl font-black font-mono ${c.text}`}>{formatCurrency(b.totalEur, 'EUR')}</p>
+                                   <p className="text-[11px] text-slate-500 font-mono mt-0.5">≈ {Math.round(b.totalNok).toLocaleString('nb-NO')} kr · {b.count} provisjoner</p>
+                                 </div>
+                                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{sharePct.toFixed(0)}%</span>
+                               </div>
+                               <div className="h-2 bg-white/5 rounded overflow-hidden">
+                                 <div className={`h-full ${c.bar}`} style={{ width: `${sharePct}%` }} />
+                               </div>
+                             </div>
+                           );
+                         })}
+                       </div>
+                     </div>
+                   )}
+
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="glass-panel p-6 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Totalt Salgsvolum</p>
+                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Lokale notater · Salgsvolum</p>
                          <p className="text-2xl font-black text-white font-mono">{formatCurrency(deals.reduce((acc, d) => acc + d.totalSaleValue, 0), 'EUR')}</p>
                       </div>
                       <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Netto Provisjon</p>
+                         <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Lokale notater · Netto Provisjon</p>
                          <p className="text-2xl font-black text-emerald-400 font-mono">{formatCurrency(deals.reduce((acc, d) => acc + d.ourNetCommission, 0), 'EUR')}</p>
                       </div>
                       <div className="flex items-center justify-end">

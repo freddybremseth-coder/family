@@ -463,7 +463,7 @@ const App = () => {
     : (t[activeTab] || NAVIGATION.find(n => n.id === activeTab)?.label || '');
 
   return (
-    <div className="flex min-h-screen bg-[#DDE3EE]">
+    <div className="flex min-h-screen">
       {/* Paywall */}
       {showPaywall && session?.user && (
         <PaywallModal
@@ -519,7 +519,7 @@ const App = () => {
 
       {/* SIDEBAR */}
       <aside className={`
-        fixed top-0 left-0 h-full w-64 z-50 bg-white border-r border-slate-300 shadow-lg flex flex-col
+        app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col
         transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         md:translate-x-0 md:static md:z-auto
@@ -527,16 +527,19 @@ const App = () => {
         {/* Logo */}
         <div className="p-5 border-b border-slate-100">
           <div
-            className="flex items-center gap-3 cursor-pointer"
+            className="flex items-center gap-3 cursor-pointer group"
             onClick={() => navigate('dashboard')}
           >
-            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105"
+              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }}
+            >
               <Heart className="w-5 h-5 text-white" />
             </div>
             <div>
-              <p className="font-bold text-slate-800 leading-none">FamilieHub</p>
-              <p className="text-xs text-slate-400 mt-0.5 font-medium">
-                Familie {userConfig.familyName}
+              <p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p>
+              <p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">
+                {userConfig.familyName}
               </p>
             </div>
           </div>
@@ -610,17 +613,20 @@ const App = () => {
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 bg-white border-b border-slate-300 shadow-sm px-4 md:px-8 h-14 flex items-center justify-between">
+        <header
+          className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200"
+          style={{ background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(20px)' }}
+        >
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+              className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
             >
               {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <div>
-              <h2 className="font-bold text-slate-800 text-base leading-none">{pageTitle}</h2>
-              <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
+              <h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2>
+              <p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">
                 {new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
             </div>
@@ -630,8 +636,8 @@ const App = () => {
             {familyMembers.slice(0, 3).map((m, i) => (
               <div
                 key={m.id}
-                className="w-8 h-8 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold text-white"
-                style={{ background: ['#4F46E5','#10B981','#F59E0B'][i % 3] }}
+                className="w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4] }}
                 title={m.name}
               >
                 {m.name.charAt(0)}

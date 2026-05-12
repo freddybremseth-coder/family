@@ -126,15 +126,27 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 10px 16px;
-            border-radius: 10px;
+            padding: 11px 14px;
+            border-radius: 12px;
             font-weight: 500;
             font-size: 14px;
             color: var(--text-muted);
             cursor: pointer;
             transition: all 0.15s ease;
             text-decoration: none;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
+            position: relative;
+        }
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 70%;
+            background: var(--gradient-primary);
+            border-radius: 0 4px 4px 0;
         }
 
         .nav-item:hover {
@@ -143,13 +155,21 @@
         }
 
         .nav-item.active {
-            background: #EEF2FF;
-            color: var(--primary);
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.10), rgba(236, 72, 153, 0.06));
+            color: var(--primary-dark);
             font-weight: 600;
         }
 
         .nav-item.active svg {
             color: var(--primary);
+        }
+
+        .app-sidebar {
+            background:
+              linear-gradient(180deg, rgba(99, 102, 241, 0.03) 0%, transparent 25%),
+              white;
+            border-right: 1px solid var(--border);
+            box-shadow: 4px 0 24px rgba(15, 23, 42, 0.04);
         }
 
         /* Buttons */
@@ -356,6 +376,133 @@
         .animate-slide-in { animation: slideIn 0.3s ease forwards; }
         .animate-pulse-soft { animation: pulse-soft 2s ease infinite; }
 
+        /* Hero-bokser med aurora-gradient */
+        .hero-gradient {
+            background: var(--gradient-aurora);
+            color: white;
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(99, 102, 241, 0.25);
+        }
+        .hero-gradient::before {
+            content: '';
+            position: absolute;
+            top: -100px;
+            right: -100px;
+            width: 280px;
+            height: 280px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 50%;
+            filter: blur(60px);
+            pointer-events: none;
+        }
+        .hero-gradient::after {
+            content: '';
+            position: absolute;
+            bottom: -120px;
+            left: -80px;
+            width: 320px;
+            height: 320px;
+            background: rgba(255,255,255,0.10);
+            border-radius: 50%;
+            filter: blur(70px);
+            pointer-events: none;
+        }
+        .hero-gradient > * { position: relative; z-index: 1; }
+
+        /* Section-headers */
+        .section-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text);
+            letter-spacing: -0.025em;
+            line-height: 1.1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .section-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Gradient buttons */
+        .btn-gradient {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 22px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-gradient:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 28px rgba(99, 102, 241, 0.45);
+        }
+        .btn-gradient:active { transform: translateY(0); }
+
+        /* Soft chips */
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .chip-primary  { background: rgba(99, 102, 241, 0.10); color: #4338CA; }
+        .chip-success  { background: rgba(16, 185, 129, 0.10); color: #047857; }
+        .chip-warning  { background: rgba(245, 158, 11, 0.12); color: #B45309; }
+        .chip-danger   { background: rgba(239, 68, 68, 0.10); color: #B91C1C; }
+        .chip-info     { background: rgba(14, 165, 233, 0.10); color: #0369A1; }
+        .chip-rose     { background: rgba(236, 72, 153, 0.10); color: #BE185D; }
+
+        /* Soft stat-icon containers */
+        .stat-icon-soft {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stat-icon-soft.primary { background: rgba(99, 102, 241, 0.10); color: #4338CA; }
+        .stat-icon-soft.success { background: rgba(16, 185, 129, 0.10); color: #047857; }
+        .stat-icon-soft.warning { background: rgba(245, 158, 11, 0.12); color: #B45309; }
+        .stat-icon-soft.danger  { background: rgba(239, 68, 68, 0.10); color: #B91C1C; }
+        .stat-icon-soft.info    { background: rgba(14, 165, 233, 0.10); color: #0369A1; }
+        .stat-icon-soft.rose    { background: rgba(236, 72, 153, 0.10); color: #BE185D; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 24px;
+            background: var(--bg-soft);
+            color: var(--text-muted);
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         /* Recharts override for light theme */
         .recharts-text { fill: #64748B !important; }
         .recharts-cartesian-grid line { stroke: #F1F5F9 !important; }
@@ -414,17 +561,19 @@
         /* Bottom tab nav (mobile only) */
         .bottom-nav {
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            bottom: 12px;
+            left: 12px;
+            right: 12px;
             z-index: 60;
-            background: white;
-            border-top: 1px solid var(--border);
-            box-shadow: 0 -4px 24px rgba(15,23,42,0.08);
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(226, 232, 240, 0.6);
+            border-radius: 20px;
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.10);
             display: flex;
             justify-content: space-around;
             align-items: center;
-            padding: 6px 4px calc(env(safe-area-inset-bottom, 0px) + 6px) 4px;
+            padding: 6px 6px calc(env(safe-area-inset-bottom, 0px) + 6px) 6px;
         }
 
         .bottom-nav-item {
@@ -433,22 +582,23 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 2px;
+            gap: 3px;
             padding: 8px 2px;
-            border-radius: 10px;
+            border-radius: 14px;
             color: var(--text-muted);
             font-size: 10px;
             font-weight: 600;
             background: transparent;
             border: none;
             cursor: pointer;
-            transition: color 0.15s ease, background 0.15s ease;
+            transition: all 0.15s ease;
             min-height: 52px;
         }
 
         .bottom-nav-item.active {
-            color: var(--primary);
-            background: #EEF2FF;
+            color: white;
+            background: var(--gradient-primary);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
         }
 
         .bottom-nav-item svg {

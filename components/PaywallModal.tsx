@@ -31,6 +31,10 @@ export const PaywallModal: React.FC<Props> = ({ userEmail, daysLeft, onClose, la
       <div className="absolute inset-0 modal-overlay" onClick={!isExpired && onClose ? onClose : undefined} />
 
       <div className="relative bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-6 sm:p-8 animate-fade-in">
+        <div
+          className="absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl"
+          style={{ background: 'linear-gradient(90deg, #6366F1, #8B5CF6, #EC4899, #F97316)' }}
+        />
         {!isExpired && onClose && (
           <button
             onClick={onClose}
@@ -41,9 +45,12 @@ export const PaywallModal: React.FC<Props> = ({ userEmail, daysLeft, onClose, la
           </button>
         )}
 
-        <div className="text-center mb-5">
-          <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-            <Crown className="w-7 h-7 text-indigo-600" />
+        <div className="text-center mb-5 mt-3">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg"
+            style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }}
+          >
+            <Crown className="w-7 h-7 text-white" />
           </div>
 
           {isExpired ? (
@@ -115,7 +122,11 @@ export const PaywallModal: React.FC<Props> = ({ userEmail, daysLeft, onClose, la
         <button
           onClick={handleUpgrade}
           disabled={loading}
-          className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 active:scale-[0.99]"
+          className="w-full py-3.5 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.99] hover:-translate-y-0.5"
+          style={{
+            background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)',
+            boxShadow: '0 12px 30px rgba(99, 102, 241, 0.35)',
+          }}
         >
           {loading ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> {t.connecting_stripe}</>

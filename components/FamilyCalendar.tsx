@@ -179,12 +179,17 @@ export const FamilyCalendar: React.FC<Props> = ({
                   disabled={!day}
                   onClick={() => day && setSelectedDate(day.dateStr)}
                   className={`
-                    min-h-[52px] p-1.5 rounded-xl flex flex-col items-center transition-all
+                    min-h-[56px] p-1.5 rounded-2xl flex flex-col items-center transition-all
                     ${!day ? 'pointer-events-none opacity-0' : ''}
-                    ${day?.dateStr === selectedDate ? 'bg-indigo-600 text-white shadow-md' : ''}
-                    ${day?.dateStr === todayStr && day?.dateStr !== selectedDate ? 'bg-indigo-50 text-indigo-700 font-bold' : ''}
+                    ${day?.dateStr === selectedDate ? 'text-white shadow-lg' : ''}
+                    ${day?.dateStr === todayStr && day?.dateStr !== selectedDate ? 'bg-indigo-50 text-indigo-700 font-bold ring-1 ring-indigo-200' : ''}
                     ${day && day.dateStr !== selectedDate && day.dateStr !== todayStr ? 'hover:bg-slate-100 text-slate-700' : ''}
                   `}
+                  style={
+                    day?.dateStr === selectedDate
+                      ? { background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%)' }
+                      : undefined
+                  }
                 >
                   {day && (
                     <>
@@ -232,13 +237,21 @@ export const FamilyCalendar: React.FC<Props> = ({
               <div className="flex gap-2">
                 <button
                   onClick={() => { setShowEventForm(!showEventForm); setShowTaskForm(false); }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5 text-white"
+                  style={{
+                    background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                    boxShadow: '0 6px 16px rgba(99, 102, 241, 0.25)',
+                  }}
                 >
                   <Plus className="w-4 h-4" /> Hendelse
                 </button>
                 <button
                   onClick={() => { setShowTaskForm(!showTaskForm); setShowEventForm(false); }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5 text-white"
+                  style={{
+                    background: 'linear-gradient(135deg, #F59E0B, #EF4444)',
+                    boxShadow: '0 6px 16px rgba(245, 158, 11, 0.25)',
+                  }}
                 >
                   <Plus className="w-4 h-4" /> Oppgave
                 </button>
