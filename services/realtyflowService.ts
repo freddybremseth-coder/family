@@ -1,7 +1,3 @@
-// Leser eiendomsprovisjoner fra RealtyFlow Pro sin sentrale hub.
-// FamilyHub skal ikke være master for salg/provisjoner; den viser data fra
-// RealtyFlow Pro / Supabase public-schema.
-
 import { supabasePublic, isRealtyflowSupabaseConfigured, SUPABASE_REFS } from '../supabase';
 
 export type CommissionBrandKey = 'soleada' | 'zenecohomes' | 'other';
@@ -26,29 +22,80 @@ export interface RealtyflowSummary {
 }
 
 const FALLBACK_FX = 11.55;
-const COMMISSION_STREAMS = new Set(['commission','commissions','real_estate_commission','property_commission','sales_commission','sale_commission']);
+const TABLES = ['business_financial_events', 'real_estate_deals', 'commission_payouts', 'commissions', 'deals'];
 
 function normalize(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\.com|\.no|\.es/g, '').replace(/[^a-z0-9]+/g, '');
 }
 
+function getFirst(row: any, keys: string[]): any {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row?.[key] !== null) return row[key];
+  }
+  return undefined;
+}
+
 function brandKey(row: any): CommissionBrandKey {
-  const candidates = [row.brand_id,row.brand,row.business_unit,row.source_type,row.metadata?.brand,row.metadata?.brand_id,row.metadata?.businessUnit,row.metadata?.business_unit,row.metadata?.company,row.metadata?.source]
-    .map(normalize).filter(Boolean);
+  const meta = row?.metadata || row?.meta || row?.data || {};
+  const candidates = [
+    getFirst(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'source_type', 'company', 'project_brand']),
+    meta.brand,
+    meta.brand_id,
+    meta.businessUnit,
+    meta.business_unit,
+    meta.company,
+    meta.source,
+    meta.project,
+  ].map(normalize).filter(Boolean);
+
   const joined = candidates.join(' ');
   if (joined.includes('soleada')) return 'soleada';
   if (joined.includes('zenecohomes') || joined.includes('zeneco') || joined.includes('zeneohomes') || joined.includes('zenhomes') || joined.includes('zenecohome')) return 'zenecohomes';
   return 'other';
 }
 
-function brandLabel(key: CommissionBrandKey): string {
-  if (key === 'soleada') return 'Soleada';
-  if (key === 'zenecohomes') return 'ZenEcoHomes';
-  return 'Andre / ukjent';
+function emptyBrand(key: CommissionBrandKey): BrandCommission {
+  return {
+    key,
+    brand: key === 'soleada' ? 'Soleada' : key === 'zenecohomes' ? 'ZenEcoHomes' : 'Andre / ukjent',
+    totalEur: 0,
+    totalNok: 0,
+    count: 0,
+    rawBrandIds: [],
+    monthly: [],
+  };
 }
 
-function emptyBrand(key: CommissionBrandKey): BrandCommission {
-  return { key, brand: brandLabel(key), totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] };
+function amountValue(row: any): number {
+  return Number(getFirst(row, ['amount', 'commission_amount', 'our_commission', 'ourGrossCommission', 'our_gross_commission', 'gross_commission', 'net_commission', 'ourNetCommission', 'expected_amount', 'payout_amount']) || 0);
+}
+
+function currencyValue(row: any): string {
+  return String(getFirst(row, ['currency', 'commission_currency']) || 'EUR').toUpperCase();
+}
+
+function dateValue(row: any): string {
+  return String(getFirst(row, ['event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date']) || new Date().toISOString()).slice(0, 10);
+}
+
+function isCommissionRow(row: any, table: string): boolean {
+  if (['commission_payouts', 'commissions'].includes(table)) return true;
+  const meta = row?.metadata || row?.meta || row?.data || {};
+  const text = [row?.stream, row?.type, row?.category, row?.description, row?.event_type, meta.stream, meta.type, meta.category, meta.description]
+    .map((x) => String(x || '').toLowerCase()).join(' ');
+  return text.includes('commission') || text.includes('provisjon') || text.includes('provision') || amountValue(row) > 0;
+}
+
+function isIncomeRow(row: any): boolean {
+  const direction = String(getFirst(row, ['direction', 'type', 'kind']) || '').toLowerCase();
+  if (!direction) return true;
+  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized'].some((x) => direction.includes(x));
+}
+
+async function readRows(table: string): Promise<{ rows: any[]; error?: string }> {
+  const { data, error } = await supabasePublic.from(table).select('*').limit(1000);
+  if (error) return { rows: [], error: `${table}: ${error.message}` };
+  return { rows: data || [] };
 }
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
@@ -66,73 +113,72 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       ...empty,
       diagnostics: [
         'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.',
-        `RealtyFlow URL i appen: ${SUPABASE_REFS.realtyflow || 'mangler'}`,
+        `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`,
       ],
     };
   }
 
   let fxRate = FALLBACK_FX;
   try {
-    const { data: fxRow } = await supabasePublic.from('fx_rates').select('rate').eq('pair', 'EUR_NOK').maybeSingle();
+    const { data: fxRow } = await supabasePublic.from('fx_rates').select('*').limit(1).maybeSingle();
     if (fxRow?.rate) fxRate = Number(fxRow.rate);
-  } catch {
-    // Bruk fallback-kurs.
-  }
+  } catch {}
 
-  const { data, error } = await supabasePublic
-    .from('business_financial_events')
-    .select('brand_id, brand, business_unit, source_type, amount, currency, event_date, status, direction, stream, metadata, description')
-    .in('status', ['recognized', 'paid', 'expected', 'pending']);
-
-  if (error || !data) {
-    const message = error?.message || 'Fant ingen data fra business_financial_events.';
-    return { ...empty, fxRate, diagnostics: [message, `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`] };
-  }
-
+  const diagnostics: string[] = [`RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`];
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
   byBrand.set('soleada', emptyBrand('soleada'));
   byBrand.set('zenecohomes', emptyBrand('zenecohomes'));
 
-  const diagnostics: string[] = [];
-  const rawBrandIds = new Set<string>();
-  const rawStreams = new Set<string>();
-  let commissionRows = 0;
+  let totalRows = 0;
+  let matchedRows = 0;
+  const rawBrands = new Set<string>();
 
-  for (const row of data) {
-    if (row.brand_id) rawBrandIds.add(String(row.brand_id));
-    if (row.stream) rawStreams.add(String(row.stream));
+  for (const table of TABLES) {
+    const result = await readRows(table);
+    if (result.error) {
+      diagnostics.push(result.error);
+      continue;
+    }
+    diagnostics.push(`${table}: ${result.rows.length} rader lest`);
+    totalRows += result.rows.length;
 
-    const stream = String(row.stream || '').toLowerCase();
-    const description = String(row.description || row.metadata?.description || '').toLowerCase();
-    const isCommission = COMMISSION_STREAMS.has(stream) || stream.includes('commission') || description.includes('commission') || description.includes('provisjon');
-    if (!isCommission) continue;
-    if (row.direction && !['income', 'in', 'credit'].includes(String(row.direction).toLowerCase())) continue;
+    for (const row of result.rows) {
+      const brand = brandKey(row);
+      const rawBrand = String(getFirst(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'company', 'source_type']) || '');
+      if (rawBrand) rawBrands.add(rawBrand);
+      if (brand === 'other') continue;
+      if (!isCommissionRow(row, table)) continue;
+      if (!isIncomeRow(row)) continue;
 
-    commissionRows += 1;
-    const key = brandKey(row);
-    if (key === 'other') continue;
+      const rawAmount = amountValue(row);
+      if (!rawAmount) continue;
 
-    const amountEur = row.currency === 'EUR' ? Number(row.amount || 0) : Number(row.amount || 0) / fxRate;
-    const item = byBrand.get(key) || emptyBrand(key);
-    item.totalEur += amountEur;
-    item.count += 1;
-    const rawId = String(row.brand_id || row.brand || row.business_unit || key);
-    if (rawId && !item.rawBrandIds.includes(rawId)) item.rawBrandIds.push(rawId);
+      matchedRows += 1;
+      const amountEur = currencyValue(row) === 'EUR' ? rawAmount : rawAmount / fxRate;
+      const item = byBrand.get(brand) || emptyBrand(brand);
+      item.totalEur += amountEur;
+      item.count += 1;
+      if (rawBrand && !item.rawBrandIds.includes(rawBrand)) item.rawBrandIds.push(rawBrand);
 
-    const month = (row.event_date || '').slice(0, 7) + '-01';
-    const existing = item.monthly.find((x) => x.month === month);
-    if (existing) existing.amountEur += amountEur;
-    else item.monthly.push({ month, amountEur });
-    byBrand.set(key, item);
+      const month = dateValue(row).slice(0, 7) + '-01';
+      const existing = item.monthly.find((x) => x.month === month);
+      if (existing) existing.amountEur += amountEur;
+      else item.monthly.push({ month, amountEur });
+    }
   }
 
-  const brands = Array.from(byBrand.values()).map((b) => ({ ...b, totalNok: b.totalEur * fxRate, monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)) }));
+  const brands = Array.from(byBrand.values()).map((b) => ({
+    ...b,
+    totalNok: b.totalEur * fxRate,
+    monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)),
+  }));
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
 
-  if (commissionRows === 0) diagnostics.push(`Fant ingen kommisjonsrader. Streams funnet: ${Array.from(rawStreams).join(', ') || 'ingen'}`);
-  if ((byBrand.get('zenecohomes')?.count || 0) === 0) diagnostics.push('Fant ingen ZenEcoHomes-kommisjoner. Sjekk brand_id/business_unit/metadata i RealtyFlow Pro.');
-  if ((byBrand.get('soleada')?.count || 0) === 0) diagnostics.push('Fant ingen Soleada-kommisjoner. Sjekk brand_id/business_unit/metadata i RealtyFlow Pro.');
-  if (rawBrandIds.size > 0) diagnostics.push(`Brand IDs funnet i hub: ${Array.from(rawBrandIds).join(', ')}`);
+  diagnostics.push(`Totalt leste rader: ${totalRows}`);
+  diagnostics.push(`Matchede kommisjonsrader for Soleada/ZenEcoHomes: ${matchedRows}`);
+  if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
+  if ((byBrand.get('soleada')?.count || 0) === 0) diagnostics.push('Soleada ga 0 treff. Sjekk faktisk brand/business value i listen over.');
+  if ((byBrand.get('zenecohomes')?.count || 0) === 0) diagnostics.push('ZenEcoHomes ga 0 treff. Sjekk faktisk brand/business value i listen over.');
 
   return { brands, totalEur, totalNok: totalEur * fxRate, fxRate, source: 'supabase', diagnostics };
 }
