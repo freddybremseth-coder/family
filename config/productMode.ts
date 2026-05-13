@@ -15,23 +15,22 @@ export type ModuleId =
 const env = import.meta.env;
 
 export const PRODUCT_MODE: ProductMode =
-  env.VITE_APP_MODE === 'saas' ? 'saas' : 'personal';
+  env.VITE_APP_MODE === 'personal' ? 'personal' : 'saas';
+
+const normalizeList = (value: unknown) =>
+  String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 
 const rawEnabledModules = String(env.VITE_ENABLED_MODULES || '').trim();
-const enabledModuleSet = new Set(
-  rawEnabledModules
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean),
-);
+const enabledModuleSet = new Set(normalizeList(rawEnabledModules));
 
 const rawDisabledModules = String(env.VITE_DISABLED_MODULES || '').trim();
-const disabledModuleSet = new Set(
-  rawDisabledModules
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean),
-);
+const disabledModuleSet = new Set(normalizeList(rawDisabledModules));
+
+const adminEmailSet = new Set(normalizeList(env.VITE_ADMIN_EMAILS || 'freddy.bremseth@gmail.com'));
+const businessEmailSet = new Set(normalizeList(env.VITE_BUSINESS_EMAILS || 'freddy.bremseth@gmail.com'));
 
 const SAAS_DEFAULT_MODULES = new Set<ModuleId>([
   'dashboard',
@@ -46,15 +45,37 @@ const SAAS_DEFAULT_MODULES = new Set<ModuleId>([
   'settings',
 ]);
 
+export function isAdminEmail(email?: string | null): boolean {
+  return !!email && adminEmailSet.has(email.trim().toLowerCase());
+}
+
+export function canAccessBusiness(email?: string | null): boolean {
+  if (!email) return false;
+  if (isAdminEmail(email)) return true;
+  if (String(env.VITE_ENABLE_BUSINESS_FOR_ALL || '').toLowerCase() === 'true') return true;
+  return businessEmailSet.has(email.trim().toLowerCase());
+}
+
 export function isModuleEnabled(moduleId: ModuleId): boolean {
-  if (enabledModuleSet.size > 0) return enabledModuleSet.has(moduleId);
-  if (disabledModuleSet.has(moduleId)) return false;
+  const id = moduleId.toLowerCase();
+  if (enabledModuleSet.size > 0) return enabledModuleSet.has(id);
+  if (disabledModuleSet.has(id)) return false;
   if (PRODUCT_MODE === 'saas') return SAAS_DEFAULT_MODULES.has(moduleId);
+  return true;
+}
+
+export function isModuleVisibleForUser(moduleId: ModuleId, email?: string | null): boolean {
+  if (!isModuleEnabled(moduleId)) return false;
+  if (moduleId === 'business') return canAccessBusiness(email);
   return true;
 }
 
 export function filterEnabledModules<T extends { id: string }>(items: T[]): T[] {
   return items.filter((item) => isModuleEnabled(item.id as ModuleId));
+}
+
+export function filterModulesForUser<T extends { id: string }>(items: T[], email?: string | null): T[] {
+  return items.filter((item) => isModuleVisibleForUser(item.id as ModuleId, email));
 }
 
 export const PRODUCT_COPY = {
