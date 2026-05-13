@@ -34,6 +34,16 @@ const emptySummary = (): EconomySummary => ({
   lastMonth: null,
 });
 
+async function resolveCurrentEmail(userEmail?: string | null): Promise<string | null> {
+  if (userEmail) return userEmail;
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data.user?.email || null;
+  } catch {
+    return null;
+  }
+}
+
 function buildSingleMonthSummary(oliviaNetNok: number, realtyflowNetNok: number, mondeoInterestNok = 0): EconomySummary {
   const month = new Date().toISOString().slice(0, 7) + '-01';
   const row: MonthlyEconomyRow = {
@@ -102,7 +112,8 @@ async function fetchEconomyView(): Promise<EconomySummary> {
 
 export async function fetchFamilyEconomy(userId: string, userEmail?: string | null): Promise<EconomySummary> {
   if (!userId) return emptySummary();
-  if (!canAccessBusiness(userEmail)) return emptySummary();
+  const resolvedEmail = await resolveCurrentEmail(userEmail);
+  if (!canAccessBusiness(resolvedEmail)) return emptySummary();
 
   const [viewSummary, fx, realtyflow, olivia] = await Promise.allSettled([
     fetchEconomyView(),
