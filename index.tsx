@@ -1,6 +1,6 @@
 
 import './styles/app-polish.css';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from './supabase';
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
@@ -19,7 +19,8 @@ import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { SettingsManager } from './components/SettingsManager';
 import { ResidentsManager } from './components/ResidentsManager';
 import { PaywallModal } from './components/PaywallModal';
-import { NAVIGATION } from './constants';
+import { ALL_NAVIGATION } from './constants';
+import { filterModulesForUser, isModuleVisibleForUser } from './config/productMode';
 import {
   Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission,
   FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember,
@@ -79,8 +80,14 @@ const App = () => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [userConfig, setUserConfig] = useState<UserConfig>({ familyName: 'FAMILIE', location: '', timezone: 'Europe/Oslo', preferredCurrency: 'NOK', language: 'no', role: UserRole.USER, subscriptionStatus: 'Active' });
 
+  const userEmail = session?.user?.email || null;
+  const visibleNavigation = useMemo(() => filterModulesForUser(ALL_NAVIGATION, userEmail), [userEmail]);
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
+
+  useEffect(() => {
+    if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard');
+  }, [activeTab, session, userEmail]);
 
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) return;
@@ -177,9 +184,14 @@ const App = () => {
     setCashBalance(prev => prev - data.totalAmount);
     setActiveTab('transactions');
   };
-  const navigate = (tab: string) => { setActiveTab(tab); setSidebarOpen(false); };
+  const navigate = (tab: string) => {
+    if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard');
+    setActiveTab(tab);
+    setSidebarOpen(false);
+  };
 
   const renderContent = () => {
+    if (!isModuleVisibleForUser(activeTab as any, userEmail)) return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} familyMembers={familyMembers} tasks={tasks} calendarEvents={calendarEvents} groceryCount={groceryItems.filter(i => !i.isBought).length} lang={userConfig.language} userId={session?.user?.id} />;
     switch (activeTab) {
       case 'superadmin': return <SuperAdminDashboard />;
       case 'dashboard': return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} familyMembers={familyMembers} tasks={tasks} calendarEvents={calendarEvents} groceryCount={groceryItems.filter(i => !i.isBought).length} lang={userConfig.language} userId={session?.user?.id} />;
@@ -199,21 +211,21 @@ const App = () => {
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4"><div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm"><Heart className="w-7 h-7 text-white" /></div><Loader2 className="w-6 h-6 text-slate-500 animate-spin" /><p className="text-sm text-slate-500 font-medium">Laster FamilieHub...</p></div>;
   if (!session) return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
-  const pageTitle = activeTab === 'superadmin' ? 'Admin' : labelFor(activeTab, NAVIGATION.find(n => n.id === activeTab)?.label || '');
+  const pageTitle = activeTab === 'superadmin' ? 'Admin' : labelFor(activeTab, visibleNavigation.find(n => n.id === activeTab)?.label || '');
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       {showPaywall && session?.user && <PaywallModal userEmail={session.user.email} daysLeft={trialDaysLeft} onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined} lang={userConfig.language} />}
       {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
       <nav className="bottom-nav md:hidden">
-        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}
+        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].filter(item => isModuleVisibleForUser(item.id as any, userEmail)).map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}
         <button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button>
       </nav>
       <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}>
         <div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-slate-900"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div>
         <nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">
           {userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}
-          {NAVIGATION.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}
+          {visibleNavigation.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}
         </nav>
         <div className="p-4 border-t border-slate-100"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div>
       </aside>
