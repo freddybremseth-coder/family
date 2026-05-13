@@ -1,90 +1,116 @@
 import { createClient } from '@supabase/supabase-js';
 
 const env = import.meta.env;
+const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
+const PLACEHOLDER_KEY = 'placeholder-anon-key';
 
-const familySupabaseUrl =
-  env.VITE_SUPABASE_URL ||
-  env.VITE_FAMILY_SUPABASE_URL ||
-  env.VITE_FAMILYHUB_SUPABASE_URL ||
-  '';
+function cleanEnv(value: unknown): string {
+  return String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+}
 
-const familySupabaseAnonKey =
-  env.VITE_SUPABASE_ANON_KEY ||
-  env.VITE_FAMILY_SUPABASE_ANON_KEY ||
-  env.VITE_FAMILYHUB_SUPABASE_ANON_KEY ||
-  env.VITE_FAMILY_ANON_KEY ||
-  '';
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function firstClean(values: unknown[]): string {
+  return values.map(cleanEnv).find(Boolean) || '';
+}
+
+function safeSupabaseUrl(value: string): string {
+  return isValidHttpUrl(value) ? value : PLACEHOLDER_URL;
+}
+
+function safeSupabaseKey(value: string): string {
+  return cleanEnv(value) || PLACEHOLDER_KEY;
+}
+
+const familySupabaseUrl = firstClean([
+  env.VITE_SUPABASE_URL,
+  env.VITE_FAMILY_SUPABASE_URL,
+  env.VITE_FAMILYHUB_SUPABASE_URL,
+]);
+
+const familySupabaseAnonKey = firstClean([
+  env.VITE_SUPABASE_ANON_KEY,
+  env.VITE_FAMILY_SUPABASE_ANON_KEY,
+  env.VITE_FAMILYHUB_SUPABASE_ANON_KEY,
+  env.VITE_FAMILY_ANON_KEY,
+]);
 
 const familyResolvedKeyName =
-  env.VITE_SUPABASE_ANON_KEY ? 'VITE_SUPABASE_ANON_KEY' :
-  env.VITE_FAMILY_SUPABASE_ANON_KEY ? 'VITE_FAMILY_SUPABASE_ANON_KEY' :
-  env.VITE_FAMILYHUB_SUPABASE_ANON_KEY ? 'VITE_FAMILYHUB_SUPABASE_ANON_KEY' :
-  env.VITE_FAMILY_ANON_KEY ? 'VITE_FAMILY_ANON_KEY' : '';
+  cleanEnv(env.VITE_SUPABASE_ANON_KEY) ? 'VITE_SUPABASE_ANON_KEY' :
+  cleanEnv(env.VITE_FAMILY_SUPABASE_ANON_KEY) ? 'VITE_FAMILY_SUPABASE_ANON_KEY' :
+  cleanEnv(env.VITE_FAMILYHUB_SUPABASE_ANON_KEY) ? 'VITE_FAMILYHUB_SUPABASE_ANON_KEY' :
+  cleanEnv(env.VITE_FAMILY_ANON_KEY) ? 'VITE_FAMILY_ANON_KEY' : '';
 
 // RealtyFlow Pro er hubben for eiendomssalg/provisjoner.
-const realtyflowSupabaseUrl =
-  env.VITE_REALTYFLOW_SUPABASE_URL ||
-  env.VITE_REALTYFLOW_URL ||
-  familySupabaseUrl ||
-  'https://ereapsfcsqtdmzosgnnn.supabase.co';
+const realtyflowSupabaseUrl = firstClean([
+  env.VITE_REALTYFLOW_SUPABASE_URL,
+  env.VITE_REALTYFLOW_URL,
+  familySupabaseUrl,
+  'https://ereapsfcsqtdmzosgnnn.supabase.co',
+]);
 
-const realtyflowKeyCandidates: Record<string, string | undefined> = {
-  VITE_REALTYFLOW_SUPABASE_ANON_KEY: env.VITE_REALTYFLOW_SUPABASE_ANON_KEY,
-  VITE_REALTYFLOW_ANON_KEY: env.VITE_REALTYFLOW_ANON_KEY,
-  VITE_REALTYFLOW_SUPABASE_KEY: env.VITE_REALTYFLOW_SUPABASE_KEY,
-  VITE_REALTYFLOW_KEY: env.VITE_REALTYFLOW_KEY,
+const realtyflowKeyCandidates: Record<string, string> = {
+  VITE_REALTYFLOW_SUPABASE_ANON_KEY: cleanEnv(env.VITE_REALTYFLOW_SUPABASE_ANON_KEY),
+  VITE_REALTYFLOW_ANON_KEY: cleanEnv(env.VITE_REALTYFLOW_ANON_KEY),
+  VITE_REALTYFLOW_SUPABASE_KEY: cleanEnv(env.VITE_REALTYFLOW_SUPABASE_KEY),
+  VITE_REALTYFLOW_KEY: cleanEnv(env.VITE_REALTYFLOW_KEY),
 };
 
-const realtyflowSupabaseAnonKey =
-  Object.values(realtyflowKeyCandidates).find(Boolean) ||
-  familySupabaseAnonKey ||
-  '';
+const realtyflowSupabaseAnonKey = Object.values(realtyflowKeyCandidates).find(Boolean) || familySupabaseAnonKey || '';
 const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'FamilyHub key fallback' : '');
 
 // Olivia er riktig kilde for Dona Anna/Olivia-data. Dona Anna-navn beholdes som fallback for bakoverkompatibilitet.
-const oliviaSupabaseUrl =
-  env.VITE_OLIVIA_SUPABASE_URL ||
-  env.VITE_DONAANNA_SUPABASE_URL ||
-  env.VITE_DONA_ANNA_SUPABASE_URL ||
-  'https://jvcdkclfcaccogmvvkrs.supabase.co';
+const oliviaSupabaseUrl = firstClean([
+  env.VITE_OLIVIA_SUPABASE_URL,
+  env.VITE_DONAANNA_SUPABASE_URL,
+  env.VITE_DONA_ANNA_SUPABASE_URL,
+  'https://jvcdkclfcaccogmvvkrs.supabase.co',
+]);
 
-const oliviaKeyCandidates: Record<string, string | undefined> = {
-  VITE_OLIVIA_SUPABASE_ANON_KEY: env.VITE_OLIVIA_SUPABASE_ANON_KEY,
-  VITE_OLIVIA_ANON_KEY: env.VITE_OLIVIA_ANON_KEY,
-  VITE_OLIVIA_SUPABASE_KEY: env.VITE_OLIVIA_SUPABASE_KEY,
-  VITE_DONAANNA_SUPABASE_ANON_KEY: env.VITE_DONAANNA_SUPABASE_ANON_KEY,
-  VITE_DONA_ANNA_SUPABASE_ANON_KEY: env.VITE_DONA_ANNA_SUPABASE_ANON_KEY,
-  VITE_DONAANNA_ANON_KEY: env.VITE_DONAANNA_ANON_KEY,
-  VITE_DONA_ANNA_ANON_KEY: env.VITE_DONA_ANNA_ANON_KEY,
+const oliviaKeyCandidates: Record<string, string> = {
+  VITE_OLIVIA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_OLIVIA_SUPABASE_ANON_KEY),
+  VITE_OLIVIA_ANON_KEY: cleanEnv(env.VITE_OLIVIA_ANON_KEY),
+  VITE_OLIVIA_SUPABASE_KEY: cleanEnv(env.VITE_OLIVIA_SUPABASE_KEY),
+  VITE_DONAANNA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_DONAANNA_SUPABASE_ANON_KEY),
+  VITE_DONA_ANNA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_DONA_ANNA_SUPABASE_ANON_KEY),
+  VITE_DONAANNA_ANON_KEY: cleanEnv(env.VITE_DONAANNA_ANON_KEY),
+  VITE_DONA_ANNA_ANON_KEY: cleanEnv(env.VITE_DONA_ANNA_ANON_KEY),
 };
 
 const oliviaSupabaseAnonKey = Object.values(oliviaKeyCandidates).find(Boolean) || '';
 const oliviaResolvedKeyName = Object.entries(oliviaKeyCandidates).find(([, value]) => !!value)?.[0] || '';
 
 export const supabase = createClient(
-  familySupabaseUrl || 'https://placeholder.supabase.co',
-  familySupabaseAnonKey || 'placeholder-anon-key',
+  safeSupabaseUrl(familySupabaseUrl),
+  safeSupabaseKey(familySupabaseAnonKey),
   { db: { schema: 'family' } },
 );
 
 export const supabasePublic = createClient(
-  realtyflowSupabaseUrl || 'https://placeholder.supabase.co',
-  realtyflowSupabaseAnonKey || 'placeholder-anon-key',
+  safeSupabaseUrl(realtyflowSupabaseUrl),
+  safeSupabaseKey(realtyflowSupabaseAnonKey),
 );
 
 export const supabaseDonaAnna = createClient(
-  oliviaSupabaseUrl || 'https://placeholder.supabase.co',
-  oliviaSupabaseAnonKey || 'placeholder-anon-key',
+  safeSupabaseUrl(oliviaSupabaseUrl),
+  safeSupabaseKey(oliviaSupabaseAnonKey),
 );
 
 export const isSupabaseConfigured = () =>
-  !!familySupabaseUrl && !!familySupabaseAnonKey && familySupabaseUrl !== '';
+  isValidHttpUrl(familySupabaseUrl) && !!familySupabaseAnonKey;
 
 export const isRealtyflowSupabaseConfigured = () =>
-  !!realtyflowSupabaseUrl && !!realtyflowSupabaseAnonKey && realtyflowSupabaseUrl !== '';
+  isValidHttpUrl(realtyflowSupabaseUrl) && !!realtyflowSupabaseAnonKey;
 
 export const isDonaAnnaSupabaseConfigured = () =>
-  !!oliviaSupabaseUrl && !!oliviaSupabaseAnonKey && oliviaSupabaseUrl !== '';
+  isValidHttpUrl(oliviaSupabaseUrl) && !!oliviaSupabaseAnonKey;
 
 export const SUPABASE_REFS = {
   family: familySupabaseUrl,
@@ -93,17 +119,20 @@ export const SUPABASE_REFS = {
 };
 
 export const SUPABASE_STATUS = {
-  familyUrlConfigured: !!familySupabaseUrl,
+  familyUrlConfigured: isValidHttpUrl(familySupabaseUrl),
+  familyUrlRawPresent: !!familySupabaseUrl,
   familyKeyConfigured: !!familySupabaseAnonKey,
   familyResolvedKeyName,
   familyKeyLength: familySupabaseAnonKey.length,
   familyAcceptedKeyNames: ['VITE_SUPABASE_ANON_KEY', 'VITE_FAMILY_SUPABASE_ANON_KEY', 'VITE_FAMILYHUB_SUPABASE_ANON_KEY', 'VITE_FAMILY_ANON_KEY'],
-  realtyflowUrlConfigured: !!realtyflowSupabaseUrl,
+  realtyflowUrlConfigured: isValidHttpUrl(realtyflowSupabaseUrl),
+  realtyflowUrlRawPresent: !!realtyflowSupabaseUrl,
   realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey,
   realtyflowResolvedKeyName,
   realtyflowKeyLength: realtyflowSupabaseAnonKey.length,
   realtyflowAcceptedKeyNames: Object.keys(realtyflowKeyCandidates),
-  donaAnnaUrlConfigured: !!oliviaSupabaseUrl,
+  donaAnnaUrlConfigured: isValidHttpUrl(oliviaSupabaseUrl),
+  donaAnnaUrlRawPresent: !!oliviaSupabaseUrl,
   donaAnnaKeyConfigured: !!oliviaSupabaseAnonKey,
   donaAnnaResolvedKeyName: oliviaResolvedKeyName,
   donaAnnaKeyLength: oliviaSupabaseAnonKey.length,
