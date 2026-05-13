@@ -5,7 +5,12 @@ const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
 const PLACEHOLDER_KEY = 'placeholder-anon-key';
 
 function cleanEnv(value: unknown): string {
-  return String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  let cleaned = String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  const equalsIndex = cleaned.indexOf('=');
+  if (equalsIndex > -1 && cleaned.slice(0, equalsIndex).trim().startsWith('VITE_')) {
+    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '').trim();
+  }
+  return cleaned;
 }
 
 function isValidHttpUrl(value: string): boolean {
