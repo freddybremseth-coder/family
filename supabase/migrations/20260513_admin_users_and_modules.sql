@@ -1,5 +1,8 @@
 -- FamilieHub admin users and per-user module access
--- Run in the FamilyHub Supabase project.
+-- Run in the Supabase project used as the FamilyHub main database.
+-- In your setup this can be the RealtyFlow project if VITE_SUPABASE_URL points there.
+
+create schema if not exists family;
 
 create table if not exists family.user_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -66,6 +69,22 @@ drop trigger if exists on_auth_user_created_family_profile on auth.users;
 create trigger on_auth_user_created_family_profile
   after insert or update on auth.users
   for each row execute function family.sync_user_profile();
+
+-- Backfill existing Auth users so Admin immediately shows current test users.
+insert into family.user_profiles (id, email, family_name, subscription_status, trial_started_at, created_at, updated_at)
+select
+  u.id,
+  u.email,
+  coalesce(u.raw_user_meta_data ->> 'family_name', split_part(u.email, '@', 1)),
+  'trial',
+  coalesce(u.created_at, now()),
+  coalesce(u.created_at, now()),
+  now()
+from auth.users u
+on conflict (id) do update set
+  email = excluded.email,
+  family_name = coalesce(excluded.family_name, family.user_profiles.family_name),
+  updated_at = now();
 
 alter table family.user_profiles enable row level security;
 alter table family.user_module_access enable row level security;
