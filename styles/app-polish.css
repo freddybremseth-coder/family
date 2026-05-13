@@ -93,6 +93,23 @@ main [class*="border-black"] {
   color: #1e293b !important;
 }
 
+/* Fallback for existing calendar classes before calendar-day-* classes are added. */
+main button[class*="bg-slate-900"][class*="text-white"],
+main button[class*="bg-slate-900"][class*="text-white"]:hover {
+  background: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+}
+main button[class*="bg-slate-900"][class*="text-white"] *,
+main button[class*="bg-slate-900"][class*="text-white"] [class*="text-white"],
+main button[class*="bg-slate-900"][class*="text-white"] [class*="text-slate"] {
+  color: #ffffff !important;
+}
+main button[class*="ring-indigo-300"][class*="bg-indigo-50"],
+main button[class*="ring-indigo-300"][class*="bg-indigo-50"] * {
+  color: #1e293b !important;
+}
+
 main .text-emerald-500,
 main .text-emerald-600,
 main .text-emerald-700 { color: #047857 !important; }
