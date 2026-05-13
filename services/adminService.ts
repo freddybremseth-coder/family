@@ -27,8 +27,14 @@ const DEFAULT_USER_MODULES: ModuleId[] = [
 
 export const ADMIN_MODULES = ALL_NAVIGATION.map((item) => ({ id: item.id as ModuleId, label: item.label }));
 
+function enabledFromAccess(accessRows: any[], userId: string): string[] {
+  return accessRows
+    .filter((access) => access.user_id === userId && access.enabled)
+    .map((access) => access.module_id);
+}
+
 function mapUser(row: any, accessRows: any[]): AdminUserProfile {
-  const explicit = accessRows.filter((access) => access.user_id === row.id && access.enabled).map((access) => access.module_id);
+  const explicit = enabledFromAccess(accessRows, row.id);
   return {
     id: row.id,
     email: row.email || '',
@@ -50,6 +56,22 @@ export async function fetchAdminUsers(): Promise<AdminUserProfile[]> {
   if (accessError) throw accessError;
 
   return (profiles || []).map((row) => mapUser(row, accessRows || []));
+}
+
+export async function fetchUserModuleAccess(userId: string): Promise<string[] | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from('user_module_access')
+    .select('module_id, enabled')
+    .eq('user_id', userId);
+
+  if (error) {
+    console.warn('[adminService] fetchUserModuleAccess failed', error);
+    return null;
+  }
+
+  if (!data || data.length === 0) return null;
+  return data.filter((row: any) => row.enabled).map((row: any) => row.module_id);
 }
 
 export async function setUserModuleAccess(userId: string, moduleId: string, enabled: boolean, adminUserId?: string) {
