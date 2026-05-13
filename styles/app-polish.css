@@ -24,7 +24,6 @@ main {
   color: #0f172a !important;
 }
 
-/* Cards like the loan calculator */
 .card,
 .card-vivid,
 .glass-panel,
@@ -47,7 +46,6 @@ main [class*="glass-panel"] {
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
 }
 
-/* Remove old dark/cyber surfaces globally */
 main [class*="bg-black"],
 main [class*="bg-slate-900"],
 main [class*="bg-slate-800"],
@@ -72,7 +70,29 @@ main [class*="border-black"] {
   border-color: #e2e8f0 !important;
 }
 
-/* Preserve meaning colors, but toned down */
+/* Calendar contrast exception: selected day/today must never become black-on-black. */
+.calendar-day-selected,
+.calendar-day-selected:hover {
+  background: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+}
+.calendar-day-selected *,
+.calendar-day-selected .text-white,
+.calendar-day-selected [class*="text-slate"],
+.calendar-day-selected [class*="text-white"] {
+  color: #ffffff !important;
+}
+.calendar-day-today:not(.calendar-day-selected) {
+  background: #eef2ff !important;
+  border-color: #c7d2fe !important;
+  color: #1e293b !important;
+  box-shadow: inset 0 0 0 2px #c7d2fe !important;
+}
+.calendar-day-today:not(.calendar-day-selected) * {
+  color: #1e293b !important;
+}
+
 main .text-emerald-500,
 main .text-emerald-600,
 main .text-emerald-700 { color: #047857 !important; }
@@ -92,7 +112,6 @@ main .text-indigo-500,
 main .text-indigo-600,
 main .text-indigo-700 { color: #0f172a !important; }
 
-/* Buttons: more breathing room between box and text */
 button,
 .btn-primary,
 .btn-secondary,
@@ -137,7 +156,6 @@ main button:not(.btn-primary):not(.btn-gradient):not(.bottom-nav-item):not(.nav-
   box-shadow: none !important;
 }
 
-/* Inputs: loan calculator feel */
 .input-field,
 input[type='text'],
 input[type='email'],
@@ -145,6 +163,7 @@ input[type='password'],
 input[type='number'],
 input[type='date'],
 input[type='time'],
+input[type='file'],
 textarea,
 select {
   min-height: 46px !important;
@@ -164,7 +183,6 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.10) !important;
 }
 
-/* Navigation */
 .nav-item {
   min-height: 48px !important;
   padding: 12px 16px !important;
@@ -178,7 +196,6 @@ select:focus {
   color: #0f172a !important;
 }
 
-/* Metric/card icons */
 main .rounded-2xl.bg-blue-600,
 main .rounded-2xl.bg-indigo-600,
 main .rounded-2xl.bg-slate-900 {
@@ -186,7 +203,6 @@ main .rounded-2xl.bg-slate-900 {
   color: #ffffff !important;
 }
 
-/* Tabs / pill cards */
 main button[class*="ring-2"],
 .tab-item.active {
   ring-color: transparent !important;
@@ -194,7 +210,6 @@ main button[class*="ring-2"],
   border-color: #0f172a !important;
 }
 
-/* Tables */
 th, td {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
@@ -204,7 +219,6 @@ thead tr {
   border-bottom-color: #e2e8f0 !important;
 }
 
-/* Mobile/iPad comfort */
 @media (max-width: 900px) {
   main { padding: 18px !important; }
   button,
