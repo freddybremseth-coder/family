@@ -1,12 +1,9 @@
-
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { UserConfig, Currency, Language } from '../types';
-import { CyberButton } from './CyberButton';
 import { translations } from '../translations';
-import { 
-  Settings2, Home, Globe, MapPin, Key, CreditCard, Save, 
-  Link as LinkIcon, AlertCircle, ShieldCheck, Zap
-} from 'lucide-react';
+import { Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap } from 'lucide-react';
+import { IntegrationsSettings } from './IntegrationsSettings';
+import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
 
 interface Props {
   userConfig: UserConfig;
@@ -14,125 +11,139 @@ interface Props {
   onApiUpdate: () => void;
 }
 
+type SettingsTab = 'profile' | 'ai' | 'integrations';
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className="text-sm font-medium text-slate-700">{children}</span>;
+}
+
+function SaveButton({ saved, onClick }: { saved: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="btn-primary w-full md:w-auto">
+      {saved ? <ShieldCheck className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+      {saved ? 'Lagret' : 'Lagre innstillinger'}
+    </button>
+  );
+}
+
 export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, onApiUpdate }) => {
   const [apiKey, setApiKey] = useState(localStorage.getItem('user_gemini_api_key') || '');
   const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const t = translations[userConfig.language];
 
+  const tabs = useMemo(() => [
+    { id: 'profile' as const, label: 'Familie og app', icon: <Settings2 className="h-4 w-4" /> },
+    { id: 'ai' as const, label: 'AI', icon: <Sparkles className="h-4 w-4" /> },
+    { id: 'integrations' as const, label: 'Integrasjoner', icon: <PlugZap className="h-4 w-4" /> },
+  ], []);
+
   const handleSave = () => {
-    // Lagre API-nøkkel lokalt
-    if (apiKey) {
-      localStorage.setItem('user_gemini_api_key', apiKey);
-    } else {
-      localStorage.removeItem('user_gemini_api_key');
-    }
-    
-    // Trigger re-check i hovedappen
+    if (apiKey) localStorage.setItem('user_gemini_api_key', apiKey);
+    else localStorage.removeItem('user_gemini_api_key');
     onApiUpdate();
-    
     setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setTimeout(() => setSaved(false), 2500);
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-12 animate-in slide-in-from-bottom-8 duration-500">
-      <div className="glass-panel p-10 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-        <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-10 flex items-center gap-4">
-          <Settings2 className="text-cyan-400 w-6 h-6" /> System Configuration
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.family_name}</label>
-            <div className="relative">
-              <Home className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-400" />
-              <input 
-                value={userConfig.familyName} 
-                onChange={e => setUserConfig({...userConfig, familyName: e.target.value.toUpperCase()})} 
-                className="w-full bg-black border border-white/10 pl-12 pr-6 py-4 text-white text-sm outline-none focus:border-cyan-500 transition-all font-mono" 
-                placeholder="F.eks BREMSETH"
-              />
-            </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><Settings2 className="h-5 w-5" /></div>
+            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{PRODUCT_MODE === 'saas' ? 'SaaS' : 'Privat'} modus</span>
           </div>
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.language}</label>
-            <select 
-              value={userConfig.language} 
-              onChange={e => setUserConfig({...userConfig, language: e.target.value as Language})}
-              className="w-full bg-black border border-white/10 p-4 text-white text-sm outline-none focus:border-cyan-500 transition-all font-mono"
-            >
-              <option value="no">Norsk (no)</option>
-              <option value="en">English (en)</option>
-              <option value="ru">Русский (ru)</option>
-              <option value="es">Español (es)</option>
-              <option value="fr">Français (fr)</option>
-              <option value="de">Deutsch (de)</option>
-            </select>
-          </div>
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.location}</label>
-            <div className="relative">
-              <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-400" />
-              <input value={userConfig.location} onChange={e => setUserConfig({...userConfig, location: e.target.value})} className="w-full bg-black border border-white/10 pl-12 pr-6 py-4 text-white text-sm outline-none" />
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.currency_preference}</label>
-            <select 
-              value={userConfig.preferredCurrency} 
-              onChange={e => setUserConfig({...userConfig, preferredCurrency: e.target.value as Currency})}
-              className="w-full bg-black border border-white/10 p-4 text-white text-sm outline-none focus:border-cyan-500 transition-all font-mono"
-            >
-              <option value="EUR">EUR (€)</option>
-              <option value="NOK">NOK (kr)</option>
-            </select>
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Innstillinger</h1>
+          <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">{PRODUCT_COPY[PRODUCT_MODE].tagline}</p>
         </div>
-      </div>
+        <SaveButton saved={saved} onClick={handleSave} />
+      </section>
 
-      <div className="glass-panel p-10 border-l-4 border-l-yellow-500 bg-yellow-500/5">
-        <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-8 flex items-center gap-4">
-          <Key className="text-yellow-400 w-6 h-6" /> AI & Neural Engine (BYOK)
-        </h3>
-        <div className="space-y-6">
-          <p className="text-xs text-slate-400 italic leading-relaxed">
-            For å aktivere avanserte funksjoner som kvitteringsskanning (OCR), ukemeny-generering og strategisk rådgivning, må du koble til din egen Gemini API-nøkkel.
-          </p>
-          
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">Gemini API Key</label>
-            <div className="relative">
-              <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-yellow-500" />
-              <input 
-                type="password"
-                value={apiKey} 
-                onChange={e => setApiKey(e.target.value)} 
-                className="w-full bg-black border border-white/10 pl-12 pr-6 py-4 text-white text-sm outline-none focus:border-yellow-500 transition-all font-mono" 
-                placeholder="Lim inn din nøkkel her..."
-              />
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {tabs.map((tab) => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`rounded-2xl border p-4 text-left transition ${activeTab === tab.id ? 'border-slate-900 bg-white shadow-sm ring-2 ring-slate-200' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${activeTab === tab.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{tab.icon}</div>
+              <p className="font-bold text-slate-900">{tab.label}</p>
             </div>
-            <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Nøkkelen lagres kun lokalt i din nettleser.</p>
-          </div>
+          </button>
+        ))}
+      </section>
 
-          <div className="p-5 bg-black/40 border border-yellow-500/20 space-y-4">
-            <h4 className="text-[10px] font-black uppercase text-yellow-500 tracking-widest flex items-center gap-2">
-              <AlertCircle className="w-3 h-3" /> Slik får du tak i en nøkkel:
-            </h4>
-            <ol className="text-[10px] text-slate-300 space-y-2 font-mono uppercase">
-              <li>1. Gå til <a href="https://aistudio.google.com" target="_blank" className="text-cyan-400 underline">Google AI Studio</a></li>
-              <li>2. Logg inn med din Google-konto</li>
-              <li>3. Klikk "Create API Key" og kopier koden</li>
-            </ol>
+      {activeTab === 'profile' && (
+        <Card className="p-5 md:p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-900">Familie og app</h2>
+            <p className="mt-1 text-sm text-slate-500">Grunninnstillinger for familien og visning i appen.</p>
           </div>
-        </div>
-      </div>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <label className="block space-y-2">
+              <FieldLabel>{t.family_name}</FieldLabel>
+              <div className="relative">
+                <Home className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <input value={userConfig.familyName} onChange={e => setUserConfig({ ...userConfig, familyName: e.target.value.toUpperCase() })} className="pl-12" placeholder="F.eks. BREMSETH" />
+              </div>
+            </label>
+            <label className="block space-y-2">
+              <FieldLabel>{t.language}</FieldLabel>
+              <div className="relative">
+                <Globe className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <select value={userConfig.language} onChange={e => setUserConfig({ ...userConfig, language: e.target.value as Language })} className="pl-12">
+                  <option value="no">Norsk</option>
+                  <option value="en">English</option>
+                  <option value="ru">Русский</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
+                </select>
+              </div>
+            </label>
+            <label className="block space-y-2">
+              <FieldLabel>{t.location}</FieldLabel>
+              <div className="relative">
+                <MapPin className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <input value={userConfig.location} onChange={e => setUserConfig({ ...userConfig, location: e.target.value })} className="pl-12" placeholder="By / land" />
+              </div>
+            </label>
+            <label className="block space-y-2">
+              <FieldLabel>{t.currency_preference}</FieldLabel>
+              <select value={userConfig.preferredCurrency} onChange={e => setUserConfig({ ...userConfig, preferredCurrency: e.target.value as Currency })}>
+                <option value="NOK">NOK (kr)</option>
+                <option value="EUR">EUR (€)</option>
+              </select>
+            </label>
+          </div>
+        </Card>
+      )}
 
-      <div className="flex flex-col items-center gap-4">
-        <CyberButton onClick={handleSave} className="px-20 py-5 flex items-center gap-3 shadow-[0_0_30px_rgba(0,243,255,0.2)]">
-          {saved ? <ShieldCheck className="w-5 h-5" /> : <Save className="w-5 h-5" />}
-          {saved ? 'Innstilinger Lagret!' : 'Lagre Systemoppsett'}
-        </CyberButton>
-      </div>
+      {activeTab === 'ai' && (
+        <Card className="p-5 md:p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-900">AI</h2>
+            <p className="mt-1 text-sm text-slate-500">Koble til egen AI-nøkkel for kvitteringsskanning, ukemeny og innsikt. Nøkkelen lagres kun i nettleseren.</p>
+          </div>
+          <div className="space-y-5">
+            <label className="block space-y-2">
+              <FieldLabel>Gemini API key</FieldLabel>
+              <div className="relative">
+                <Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="pl-12" placeholder="Lim inn nøkkel her" />
+              </div>
+            </label>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="font-bold text-slate-900">Slik brukes AI</p>
+              <p className="mt-1 text-sm text-slate-500">AI bør være en hjelper, ikke hovedgrensesnittet: skanne kvitteringer, forklare økonomi enkelt, foreslå ukemeny og finne uvanlige utgifter.</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === 'integrations' && <IntegrationsSettings />}
     </div>
   );
 };
