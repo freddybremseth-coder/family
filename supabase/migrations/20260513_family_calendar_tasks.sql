@@ -1,11 +1,12 @@
 -- FamilieHub calendar and task persistence
 -- Run after household foundation migration.
+-- Uses text assigned_to_id because the current app may have both Supabase UUID members and local member ids like fm-1.
 
 create table if not exists family.calendar_events (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   household_id uuid not null references family.households(id) on delete cascade,
   created_by uuid references auth.users(id) on delete set null,
-  assigned_to_member_id uuid references family.household_members(id) on delete set null,
+  assigned_to_id text,
   date date not null,
   start_time time,
   end_time time,
@@ -18,10 +19,10 @@ create table if not exists family.calendar_events (
 );
 
 create table if not exists family.tasks (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   household_id uuid not null references family.households(id) on delete cascade,
   created_by uuid references auth.users(id) on delete set null,
-  assigned_to_member_id uuid references family.household_members(id) on delete set null,
+  assigned_to_id text,
   date date not null,
   description text not null,
   priority text not null default 'Medium' check (priority in ('Low', 'Medium', 'High')),
