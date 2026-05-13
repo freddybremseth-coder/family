@@ -27,6 +27,46 @@ export const isAiAvailable = () => {
   return !!finalKey && finalKey !== 'undefined' && finalKey !== '';
 };
 
+export const fileToBase64 = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+export const analyzeFamilyDocument = async (b64: string, mimeType = 'image/jpeg') => {
+  const ai = getAi();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: [
+      { inlineData: { mimeType, data: b64 } },
+      { text: `Analyser dette familiedokumentet. Hent ut forslag til metadata for FamilieHub.
+      Svar på norsk. Ikke inkluder sensitive personnummer i notat. Hvis du ikke finner dato eller kategori, bruk tom verdi.` }
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          category: { type: Type.STRING, enum: ['Forsikring', 'Bolig', 'Bil', 'Helse', 'Barn', 'Kontrakt', 'Garanti', 'Annet'] },
+          owner: { type: Type.STRING },
+          expiryDate: { type: Type.STRING },
+          note: { type: Type.STRING },
+          summary: { type: Type.STRING }
+        },
+        required: ['title', 'category', 'owner', 'note']
+      }
+    }
+  });
+  return JSON.parse(response.text || '{"title":"","category":"Annet","owner":"Familien","note":""}');
+};
+
 /**
  * Fetches local holidays, fiestas, and events using Google Search.
  */
@@ -73,9 +113,6 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
   }
 };
 
-/**
- * AI Strategic Advice for Farm.
- */
 export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: FarmProfile, tasks: FarmTask[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
@@ -91,7 +128,7 @@ export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: Farm
     3. Kostnader: Hvor lekker det penger?
     4. Markedsføring: Hvordan skille seg ut i det norske/internasjonale markedet?
     
-    Svar på norsk i cyberpunk-stil.`,
+    Svar på norsk i en profesjonell og tydelig stil.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -116,7 +153,7 @@ export const getFinancialStatusInsight = async (stats: any, assets: Asset[]) => 
   const ai = getAi();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Analyser finansene: ${JSON.stringify(stats)}. Svar på norsk cyberpunk-stil.`,
+    contents: `Analyser finansene: ${JSON.stringify(stats)}. Svar på norsk, kort og profesjonelt.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -174,13 +211,7 @@ export const analyzeFridge = async (b64: string) => {
                 name: { type: Type.STRING },
                 description: { type: Type.STRING },
                 missingIngredients: { type: Type.ARRAY, items: { type: Type.STRING } },
-                fullIngredients: { 
-                  type: Type.ARRAY, 
-                  items: { 
-                    type: Type.OBJECT, 
-                    properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } 
-                  } 
-                },
+                fullIngredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } } },
                 instructions: { type: Type.ARRAY, items: { type: Type.STRING } }
               }
             }
@@ -326,19 +357,7 @@ export const analyzeBankStatement = async (b64: string) => {
         properties: {
           balance: { type: Type.NUMBER },
           currency: { type: Type.STRING },
-          transactions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                date: { type: Type.STRING },
-                description: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] }
-              },
-              required: ['date', 'description', 'amount', 'type']
-            }
-          }
+          transactions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, description: { type: Type.STRING }, amount: { type: Type.NUMBER }, type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] } }, required: ['date', 'description', 'amount', 'type'] } }
         },
         required: ['balance', 'transactions']
       }
@@ -353,15 +372,12 @@ export const generateZenEcoGuide = async () => {
     model: 'gemini-3-pro-preview',
     contents: `Du er en ekspert på det spanske boligmarkedet og en topp tekstforfatter for "Zen Eco Homes". Vi selger trygghet, kvalitet og livsstil til nordmenn. 
     Jeg trenger at du genererer følgende 4 deler:
-    
-    DEL 1: 5 forslag til fengende titler (Titlene må love en løsning på usikkerhet, f.eks "Veien til trygg boligdrøm...").
-    DEL 2: Innholdsfortegnelse og Struktur (5-7 hovedkapitler).
-    DEL 3: Selve innholdet (Kapittel for kapittel).
+    DEL 1: 5 forslag til fengende titler.
+    DEL 2: Innholdsfortegnelse og struktur.
+    DEL 3: Selve innholdet.
     DEL 4: Salgstekst til nettsiden.
     Svar på norsk.`,
-    config: {
-      thinkingConfig: { thinkingBudget: 4000 }
-    }
+    config: { thinkingConfig: { thinkingBudget: 4000 } }
   });
   return response.text;
 };
