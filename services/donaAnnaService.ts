@@ -42,13 +42,27 @@ function getFirst(row: any, keys: string[]): any {
   return undefined;
 }
 
+function numberValue(value: any): number {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value === 'number') return value;
+  return Number(String(value).replace(',', '.')) || 0;
+}
+
+function harvestIncomeValue(row: any): number {
+  const kg = numberValue(getFirst(row, ['kg','kilos','kilograms','olive_kg','olives_kg','harvest_kg','total_kg','weight_kg','net_weight_kg']));
+  const pricePerKg = numberValue(getFirst(row, ['price_per_kg','kg_price','price_kg','unit_price_kg','pricePerKg']));
+  if (kg > 0 && pricePerKg > 0) return kg * pricePerKg;
+  return 0;
+}
+
 function amountValue(row: any): number {
-  return Number(getFirst(row, [
+  const direct = Number(getFirst(row, [
     'amount', 'total', 'total_amount', 'subtotal', 'grand_total', 'price', 'unit_price',
     'value', 'cost', 'expense', 'net_amount', 'sales_amount', 'income_amount',
     'expense_amount', 'paid_amount', 'payment_amount', 'total_cost', 'total_income',
     'order_total', 'invoice_total', 'line_total', 'sum', 'revenue'
   ]) || 0);
+  return direct || harvestIncomeValue(row);
 }
 
 function currencyValue(row: any): 'EUR' | 'NOK' {
@@ -70,7 +84,7 @@ function descriptionValue(row: any, table: string): string {
 }
 
 function categoryValue(row: any, table: string): string {
-  return String(getFirst(row, ['stream','category','type','operation_type','activity_type','status','harvest_type','expense_type']) || table);
+  return String(getFirst(row, ['stream','category','type','operation_type','activity_type','status','harvest_type','expense_type','channel']) || table);
 }
 
 function toEur(amount: number, currency: string, eurNok: number) {
@@ -115,10 +129,11 @@ function incomeOps(rows: any[], table: string): DonaAnnaOperation[] {
 
 function harvestOps(rows: any[], table: string): DonaAnnaOperation[] {
   return rows.map((row, index) => {
-    const liters = Number(getFirst(row, ['liters','litres','oil_liters','oil_litres','yield_liters','total_liters','quantity_liters','produced_liters','production_liters']) || 0);
-    const kg = Number(getFirst(row, ['kg','kilos','kilograms','olive_kg','olives_kg','harvest_kg','total_kg','weight_kg','net_weight_kg']) || 0);
-    const bottles = Number(getFirst(row, ['bottles','bottle_count','units','quantity','total_units']) || 0);
-    const metricText = [liters ? `${liters} liter olje` : '', kg ? `${kg} kg oliven` : '', bottles ? `${bottles} flasker` : ''].filter(Boolean).join(' · ');
+    const liters = numberValue(getFirst(row, ['liters','litres','oil_liters','oil_litres','yield_liters','total_liters','quantity_liters','produced_liters','production_liters']));
+    const kg = numberValue(getFirst(row, ['kg','kilos','kilograms','olive_kg','olives_kg','harvest_kg','total_kg','weight_kg','net_weight_kg']));
+    const pricePerKg = numberValue(getFirst(row, ['price_per_kg','kg_price','price_kg','unit_price_kg','pricePerKg']));
+    const bottles = numberValue(getFirst(row, ['bottles','bottle_count','units','quantity','total_units']));
+    const metricText = [liters ? `${liters} liter olje` : '', kg ? `${kg} kg oliven` : '', pricePerKg ? `${pricePerKg} €/kg` : '', bottles ? `${bottles} flasker` : ''].filter(Boolean).join(' · ');
     const amount = amountValue(row);
     return {
       id: String(row.id || `${table}-harvest-${index}`),
@@ -129,15 +144,15 @@ function harvestOps(rows: any[], table: string): DonaAnnaOperation[] {
       amount: Math.abs(amount),
       currency: currencyValue(row),
     };
-  });
+  }).filter((op) => op.description || op.amount > 0);
 }
 
 function harvestLitersFromRows(rows: any[]): number {
-  return rows.reduce((sum, row) => sum + Number(getFirst(row, ['liters','litres','oil_liters','oil_litres','yield_liters','total_liters','quantity_liters','produced_liters','production_liters']) || 0), 0);
+  return rows.reduce((sum, row) => sum + numberValue(getFirst(row, ['liters','litres','oil_liters','oil_litres','yield_liters','total_liters','quantity_liters','produced_liters','production_liters'])), 0);
 }
 
 function treeCountFromParcels(rows: any[]): number {
-  return rows.reduce((sum, row) => sum + Number(getFirst(row, ['trees','tree_count','olive_trees','active_trees','number_of_trees']) || 0), 0);
+  return rows.reduce((sum, row) => sum + numberValue(getFirst(row, ['trees','tree_count','olive_trees','active_trees','number_of_trees'])), 0);
 }
 
 function envDiagnostics() {
@@ -154,6 +169,7 @@ async function collectFromOlivia(client: any) {
   const diagnostics: string[] = [`Olivia URL: ${SUPABASE_REFS.donaAnna}`];
   let operations: DonaAnnaOperation[] = [];
   let harvestLiters = 0;
+  let harvestIncome = 0;
   let trees = 0;
   let rowsFound = false;
 
@@ -170,12 +186,14 @@ async function collectFromOlivia(client: any) {
     else if (['subsidy_income', 'commerce_orders', 'commerce_order_items', 'commerce_invoices'].includes(table)) operations = operations.concat(incomeOps(result.rows, table));
     else if (['harvest_records', 'batches'].includes(table)) {
       harvestLiters += harvestLitersFromRows(result.rows);
+      harvestIncome += result.rows.reduce((sum, row) => sum + harvestIncomeValue(row), 0);
       operations = operations.concat(harvestOps(result.rows, table));
     } else if (table === 'parcels') {
       trees += treeCountFromParcels(result.rows);
     }
   }
 
+  diagnostics.push(`Harvest inntekt beregnet fra kg × price_per_kg: ${harvestIncome.toLocaleString('nb-NO', { maximumFractionDigits: 2 })} EUR`);
   return { operations, harvestLiters, trees, diagnostics, rowsFound };
 }
 
