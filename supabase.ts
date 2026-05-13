@@ -41,25 +41,25 @@ const realtyflowSupabaseAnonKey =
   '';
 const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'FamilyHub key fallback' : '');
 
-// Dona Anna / Olivia ligger i eget Supabase-prosjekt.
-const donaAnnaSupabaseUrl =
+// Olivia er riktig kilde for Dona Anna/Olivia-data. Dona Anna-navn beholdes som fallback for bakoverkompatibilitet.
+const oliviaSupabaseUrl =
+  env.VITE_OLIVIA_SUPABASE_URL ||
   env.VITE_DONAANNA_SUPABASE_URL ||
   env.VITE_DONA_ANNA_SUPABASE_URL ||
-  env.VITE_OLIVIA_SUPABASE_URL ||
   'https://jvcdkclfcaccogmvvkrs.supabase.co';
 
-const donaAnnaKeyCandidates: Record<string, string | undefined> = {
+const oliviaKeyCandidates: Record<string, string | undefined> = {
+  VITE_OLIVIA_SUPABASE_ANON_KEY: env.VITE_OLIVIA_SUPABASE_ANON_KEY,
+  VITE_OLIVIA_ANON_KEY: env.VITE_OLIVIA_ANON_KEY,
+  VITE_OLIVIA_SUPABASE_KEY: env.VITE_OLIVIA_SUPABASE_KEY,
   VITE_DONAANNA_SUPABASE_ANON_KEY: env.VITE_DONAANNA_SUPABASE_ANON_KEY,
   VITE_DONA_ANNA_SUPABASE_ANON_KEY: env.VITE_DONA_ANNA_SUPABASE_ANON_KEY,
   VITE_DONAANNA_ANON_KEY: env.VITE_DONAANNA_ANON_KEY,
   VITE_DONA_ANNA_ANON_KEY: env.VITE_DONA_ANNA_ANON_KEY,
-  VITE_OLIVIA_SUPABASE_ANON_KEY: env.VITE_OLIVIA_SUPABASE_ANON_KEY,
-  VITE_OLIVIA_ANON_KEY: env.VITE_OLIVIA_ANON_KEY,
-  VITE_OLIVIA_SUPABASE_KEY: env.VITE_OLIVIA_SUPABASE_KEY,
 };
 
-const donaAnnaSupabaseAnonKey = Object.values(donaAnnaKeyCandidates).find(Boolean) || '';
-const donaAnnaResolvedKeyName = Object.entries(donaAnnaKeyCandidates).find(([, value]) => !!value)?.[0] || '';
+const oliviaSupabaseAnonKey = Object.values(oliviaKeyCandidates).find(Boolean) || '';
+const oliviaResolvedKeyName = Object.entries(oliviaKeyCandidates).find(([, value]) => !!value)?.[0] || '';
 
 export const supabase = createClient(
   familySupabaseUrl || 'https://placeholder.supabase.co',
@@ -73,8 +73,8 @@ export const supabasePublic = createClient(
 );
 
 export const supabaseDonaAnna = createClient(
-  donaAnnaSupabaseUrl || 'https://placeholder.supabase.co',
-  donaAnnaSupabaseAnonKey || 'placeholder-anon-key',
+  oliviaSupabaseUrl || 'https://placeholder.supabase.co',
+  oliviaSupabaseAnonKey || 'placeholder-anon-key',
 );
 
 export const isSupabaseConfigured = () =>
@@ -84,12 +84,12 @@ export const isRealtyflowSupabaseConfigured = () =>
   !!realtyflowSupabaseUrl && !!realtyflowSupabaseAnonKey && realtyflowSupabaseUrl !== '';
 
 export const isDonaAnnaSupabaseConfigured = () =>
-  !!donaAnnaSupabaseUrl && !!donaAnnaSupabaseAnonKey && donaAnnaSupabaseUrl !== '';
+  !!oliviaSupabaseUrl && !!oliviaSupabaseAnonKey && oliviaSupabaseUrl !== '';
 
 export const SUPABASE_REFS = {
   family: familySupabaseUrl,
   realtyflow: realtyflowSupabaseUrl,
-  donaAnna: donaAnnaSupabaseUrl,
+  donaAnna: oliviaSupabaseUrl,
 };
 
 export const SUPABASE_STATUS = {
@@ -103,9 +103,9 @@ export const SUPABASE_STATUS = {
   realtyflowResolvedKeyName,
   realtyflowKeyLength: realtyflowSupabaseAnonKey.length,
   realtyflowAcceptedKeyNames: Object.keys(realtyflowKeyCandidates),
-  donaAnnaUrlConfigured: !!donaAnnaSupabaseUrl,
-  donaAnnaKeyConfigured: !!donaAnnaSupabaseAnonKey,
-  donaAnnaResolvedKeyName,
-  donaAnnaKeyLength: donaAnnaSupabaseAnonKey.length,
-  donaAnnaAcceptedKeyNames: Object.keys(donaAnnaKeyCandidates),
+  donaAnnaUrlConfigured: !!oliviaSupabaseUrl,
+  donaAnnaKeyConfigured: !!oliviaSupabaseAnonKey,
+  donaAnnaResolvedKeyName: oliviaResolvedKeyName,
+  donaAnnaKeyLength: oliviaSupabaseAnonKey.length,
+  donaAnnaAcceptedKeyNames: Object.keys(oliviaKeyCandidates),
 };
