@@ -2,7 +2,7 @@
 import './styles/app-polish.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from './supabase';
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { Dashboard } from './components/Dashboard';
 import { ShoppingList } from './components/ShoppingList';
@@ -41,6 +41,16 @@ const getTrialDaysLeft = (trialStartedAt: string): number => {
   const elapsed = (now - start) / (1000 * 60 * 60 * 24);
   return Math.ceil(TRIAL_DAYS - elapsed);
 };
+
+function authSetupError() {
+  return [
+    'FamilyHub Supabase er ikke riktig konfigurert for innlogging.',
+    `Family URL konfigurert: ${SUPABASE_STATUS.familyUrlConfigured ? 'ja' : 'nei'}`,
+    `Family key konfigurert: ${SUPABASE_STATUS.familyKeyConfigured ? 'ja' : 'nei'}`,
+    `Family URL i build: ${SUPABASE_REFS.family || 'mangler'}`,
+    `Family key-navn: ${SUPABASE_STATUS.familyResolvedKeyName || 'mangler'}`,
+  ].join('\n');
+}
 
 const App = () => {
   const [session, setSession] = useState<any>(null);
@@ -127,12 +137,36 @@ const App = () => {
 
   const handleLogin = async (credentials: { email: string; password?: string }) => {
     if (!isSupabaseConfigured()) {
-      if (credentials.email === ADMIN_EMAIL) { setSession({ user: { email: credentials.email, id: 'demo-user' } }); handleRoleAssignment({ email: credentials.email }); }
-      else alert('Demo-modus: Bruk admin-e-post for å logge inn, eller konfigurer Supabase.');
-      return;
+      if (credentials.email === ADMIN_EMAIL) {
+        setSession({ user: { email: credentials.email, id: 'demo-user' } });
+        handleRoleAssignment({ email: credentials.email });
+        return { ok: true };
+      }
+      return { ok: false, error: authSetupError() };
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password || '' });
-    if (error) alert(error.message);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: credentials.email.trim(),
+      password: credentials.password || '',
+    });
+
+    if (error) {
+      const msg = String(error.message || '').toLowerCase();
+      if (msg.includes('invalid login credentials')) {
+        return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' };
+      }
+      if (msg.includes('email not confirmed')) {
+        return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    if (data.session?.user) {
+      handleRoleAssignment(data.session.user);
+      await fetchAllData(data.session.user.id);
+      await checkSubscription(data.session.user);
+    }
+    return { ok: true };
   };
 
   const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setSession(null); };
