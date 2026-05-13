@@ -1,171 +1,168 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
+import { ADMIN_MODULES, AdminUserProfile, fetchAdminUsers, setUserModuleAccess } from '../services/adminService';
+import { supabase } from '../supabase';
 
-import React from 'react';
-import { SaaSUser, Currency } from '../types';
-import { 
-  Users, TrendingUp, TrendingDown, DollarSign, Activity, 
-  UserPlus, UserMinus, ShieldCheck, CreditCard, Search, 
-  BarChart3, PieChart, Globe, Briefcase, Zap, Star
-} from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+}
 
-const mockSaaSUsers: SaaSUser[] = [
-  { id: 'u1', email: 'john.doe@gmail.com', familyName: 'DOE', plan: 'Monthly', status: 'Paid', joinedDate: '2024-01-15', lastActive: '2024-07-20', revenue: 4 },
-  { id: 'u2', email: 'sarah.smith@outlook.com', familyName: 'SMITH', plan: 'Annual', status: 'Paid', joinedDate: '2024-02-10', lastActive: '2024-07-19', revenue: 38 },
-  { id: 'u3', email: 'kurt.vagner@gmx.de', familyName: 'VAGNER', plan: 'Monthly', status: 'Churned', joinedDate: '2024-03-05', lastActive: '2024-04-12', revenue: 0 },
-  { id: 'u4', email: 'elena.rodriguez@me.com', familyName: 'RODRIGUEZ', plan: 'Annual', status: 'Pending', joinedDate: '2024-06-20', lastActive: '2024-07-15', revenue: 0 },
-  { id: 'u5', email: 'freddy.bremseth@gmail.com', familyName: 'BREMSETH', plan: 'Lifetime', status: 'Paid', joinedDate: '2023-10-01', lastActive: '2024-07-21', revenue: 1000 },
-];
-
-const revenueData = [
-  { month: 'Jan', rev: 420 },
-  { month: 'Feb', rev: 850 },
-  { month: 'Mar', rev: 1200 },
-  { month: 'Apr', rev: 1100 },
-  { month: 'May', rev: 1650 },
-  { month: 'Jun', rev: 2100 },
-  { month: 'Jul', rev: 2850 },
-];
+function StatusBadge({ status }: { status: string }) {
+  const normalized = String(status || 'trial').toLowerCase();
+  const className = normalized.includes('paid') || normalized.includes('active') || normalized.includes('lifetime')
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : normalized.includes('trial')
+      ? 'border-blue-200 bg-blue-50 text-blue-700'
+      : 'border-slate-200 bg-slate-50 text-slate-700';
+  return <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${className}`}>{status || 'trial'}</span>;
+}
 
 export const SuperAdminDashboard = () => {
-  const stats = {
-    totalUsers: mockSaaSUsers.length,
-    activePaid: mockSaaSUsers.filter(u => u.status === 'Paid').length,
-    mrr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Monthly').reduce((acc) => acc + 6, 0),
-    arr: mockSaaSUsers.filter(u => u.status === 'Paid' && u.plan === 'Annual').reduce((acc) => acc + 57.6, 0),
-    churn: '20%',
+  const [users, setUsers] = useState<AdminUserProfile[]>([]);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const rows = await fetchAdminUsers();
+      setUsers(rows);
+    } catch (err: any) {
+      setError(err?.message || 'Klarte ikke å hente brukere. Kjør admin-migrasjonen og sjekk RLS/admin-policy.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((user) => `${user.email} ${user.familyName} ${user.subscriptionStatus}`.toLowerCase().includes(q));
+  }, [query, users]);
+
+  const stats = useMemo(() => ({
+    total: users.length,
+    trial: users.filter((user) => String(user.subscriptionStatus).toLowerCase().includes('trial')).length,
+    paid: users.filter((user) => ['paid', 'active', 'lifetime'].some((s) => String(user.subscriptionStatus).toLowerCase().includes(s))).length,
+    business: users.filter((user) => user.enabledModules.includes('business')).length,
+  }), [users]);
+
+  const toggleModule = async (user: AdminUserProfile, moduleId: string) => {
+    const enabled = !user.enabledModules.includes(moduleId);
+    const key = `${user.id}:${moduleId}`;
+    setSavingKey(key);
+    setError(null);
+    setMessage(null);
+    const previous = users;
+    setUsers((prev) => prev.map((row) => row.id === user.id ? {
+      ...row,
+      enabledModules: enabled
+        ? Array.from(new Set([...row.enabledModules, moduleId]))
+        : row.enabledModules.filter((id) => id !== moduleId),
+    } : row));
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      await setUserModuleAccess(user.id, moduleId, enabled, sessionData.session?.user?.id);
+      setMessage(`${moduleId} ${enabled ? 'aktivert' : 'deaktivert'} for ${user.email}`);
+    } catch (err: any) {
+      setUsers(previous);
+      setError(err?.message || 'Klarte ikke å oppdatere modul.');
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-panel p-6 border-l-4 border-l-purple-500 bg-purple-500/5">
-          <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Total Subscribers</p>
-          <div className="flex items-center justify-between">
-            <p className="text-3xl font-black text-white font-mono">{stats.totalUsers}</p>
-            <Users className="text-purple-400 w-6 h-6" />
+    <div className="space-y-6">
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><ShieldCheck className="h-5 w-5" /></div>
+            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Admin</span>
           </div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Brukere og moduler</h1>
+          <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">Se ekte testbrukere fra FamilyHub Supabase og styr hvilke moduler hver bruker får tilgang til.</p>
         </div>
-        <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-          <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Active Revenue (MRR)</p>
-          <div className="flex items-center justify-between">
-            <p className="text-3xl font-black text-emerald-400 font-mono">€{stats.mrr}</p>
-            <TrendingUp className="text-emerald-400 w-6 h-6" />
-          </div>
-        </div>
-        <div className="glass-panel p-6 border-l-4 border-l-cyan-500 bg-cyan-500/5">
-          <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Conversion Rate</p>
-          <div className="flex items-center justify-between">
-            <p className="text-3xl font-black text-cyan-400 font-mono">85%</p>
-            <Zap className="text-cyan-400 w-6 h-6" />
-          </div>
-        </div>
-        <div className="glass-panel p-6 border-l-4 border-l-rose-500 bg-rose-500/5">
-          <p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Churn Rate</p>
-          <div className="flex items-center justify-between">
-            <p className="text-3xl font-black text-rose-400 font-mono">{stats.churn}</p>
-            <UserMinus className="text-rose-400 w-6 h-6" />
-          </div>
-        </div>
-      </div>
+        <button onClick={loadUsers} className="btn-secondary w-full md:w-auto" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 glass-panel p-8 border-l-4 border-l-purple-500">
-          <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-2">
-            <BarChart3 className="text-purple-400" /> SaaS Revenue Growth
-          </h3>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData}>
-                <defs>
-                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                <XAxis dataKey="month" stroke="#555" fontSize={10} axisLine={false} tickLine={false} />
-                <YAxis stroke="#555" fontSize={10} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#050505', border: '1px solid #333', fontSize: '10px' }} />
-                <Area type="monotone" dataKey="rev" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
-              </AreaChart>
-            </ResponsiveContainer>
+      {message && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><div className="flex gap-2"><CheckCircle2 className="h-5 w-5 shrink-0" /><p>{message}</p></div></div>}
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><div className="flex gap-2"><AlertCircle className="h-5 w-5 shrink-0" /><p>{error}</p></div></div>}
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Card className="p-5"><p className="text-sm text-slate-500">Brukere</p><p className="mt-1 text-3xl font-black text-slate-900">{stats.total}</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Prøvebrukere</p><p className="mt-1 text-3xl font-black text-slate-900">{stats.trial}</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Betalt/aktiv</p><p className="mt-1 text-3xl font-black text-slate-900">{stats.paid}</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Business-tilgang</p><p className="mt-1 text-3xl font-black text-slate-900">{stats.business}</p></Card>
+      </section>
+
+      <Card>
+        <div className="border-b border-slate-200 p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3"><Users className="h-5 w-5 text-slate-500" /><div><h2 className="text-xl font-bold text-slate-900">Brukeroversikt</h2><p className="text-sm text-slate-500">Ingen dummy-brukere. Listen kommer fra `family.user_profiles`.</p></div></div>
+            <div className="relative w-full md:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Søk e-post eller familie" /></div>
           </div>
         </div>
 
-        <div className="glass-panel p-6 border-l-4 border-l-emerald-500 bg-emerald-500/5">
-          <h3 className="text-xs font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
-            <Activity className="text-emerald-400" /> Recent Activity Log
-          </h3>
-          <div className="space-y-4">
-            {[
-              { msg: "New subscription: Sarah Smith", time: "2h ago", type: "plus" },
-              { msg: "Payment failed: Kurt Vagner", time: "5h ago", type: "alert" },
-              { msg: "System backup completed", time: "12h ago", type: "check" },
-              { msg: "New user registered: Elena R.", time: "1d ago", type: "user" },
-            ].map((log, i) => (
-              <div key={i} className="flex gap-4 p-3 bg-black/40 border border-white/5">
-                <div className="w-1 h-full bg-slate-800" />
-                <div>
-                  <p className="text-[11px] text-white font-bold">{log.msg}</p>
-                  <p className="text-[8px] text-slate-500 uppercase font-mono">{log.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="glass-panel overflow-hidden border-l-4 border-l-purple-500">
-        <div className="p-6 border-b border-white/5 flex justify-between items-center">
-          <h3 className="text-sm font-black text-white uppercase tracking-widest">Master User Directory</h3>
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input className="w-full bg-black border border-white/10 pl-10 pr-4 py-2 text-[10px] text-white outline-none focus:border-purple-500" placeholder="Search accounts..." />
-          </div>
-        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[900px]">
-            <thead className="bg-white/5 uppercase text-[9px] font-black tracking-widest border-b border-white/5">
-              <tr>
-                <th className="px-6 py-5">Email / Family</th>
-                <th className="px-6 py-5">Plan</th>
-                <th className="px-6 py-5">Status</th>
-                <th className="px-6 py-5">Joined</th>
-                <th className="px-6 py-5 text-right">Lifetime Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {mockSaaSUsers.map(user => (
-                <tr key={user.id} className="hover:bg-purple-500/5 transition-all group">
-                  <td className="px-6 py-5">
-                    <p className="text-white font-black uppercase tracking-tight">{user.familyName}</p>
-                    <p className="text-[10px] text-slate-500 font-mono">{user.email}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className={`px-2 py-0.5 text-[8px] font-black uppercase border ${
-                      user.plan === 'Lifetime' ? 'border-yellow-500 text-yellow-500 bg-yellow-500/5' : 
-                      'border-slate-500 text-slate-400'
-                    }`}>
-                      {user.plan}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${
-                        user.status === 'Paid' ? 'bg-emerald-500' : 
-                        user.status === 'Churned' ? 'bg-rose-500' : 'bg-yellow-500'
-                      }`} />
-                      <span className="text-[10px] font-black uppercase">{user.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 text-[10px] text-slate-500 font-mono">{user.joinedDate}</td>
-                  <td className="px-6 py-5 text-right font-black text-emerald-400 font-mono">€{user.revenue}</td>
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 p-12 text-slate-500"><Loader2 className="h-5 w-5 animate-spin" /> Laster brukere...</div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 text-center text-slate-500">Ingen brukere funnet. Opprett en testbruker, eller kjør admin-migrasjonen i FamilyHub Supabase.</div>
+          ) : (
+            <table className="w-full min-w-[1050px] text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-4">Bruker</th>
+                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Opprettet</th>
+                  <th className="px-5 py-4">Moduler</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((user) => (
+                  <tr key={user.id} className="align-top hover:bg-slate-50">
+                    <td className="px-5 py-5">
+                      <p className="font-bold text-slate-900">{user.familyName}</p>
+                      <p className="mt-1 font-mono text-xs text-slate-500">{user.email || user.id}</p>
+                    </td>
+                    <td className="px-5 py-5"><StatusBadge status={user.subscriptionStatus} /></td>
+                    <td className="px-5 py-5 text-xs text-slate-500">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('nb-NO') : '—'}</td>
+                    <td className="px-5 py-5">
+                      <div className="flex max-w-3xl flex-wrap gap-2">
+                        {ADMIN_MODULES.map((module) => {
+                          const enabled = user.enabledModules.includes(module.id);
+                          const key = `${user.id}:${module.id}`;
+                          return (
+                            <button
+                              key={module.id}
+                              onClick={() => toggleModule(user, module.id)}
+                              disabled={savingKey === key}
+                              className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${enabled ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'} disabled:opacity-60`}
+                              title={module.id === 'business' ? 'Business gir tilgang til dine private RealtyFlow/Olivia-tall. Gi kun til interne brukere.' : undefined}
+                            >
+                              {savingKey === key ? <Loader2 className="h-3 w-3 animate-spin" /> : <SlidersHorizontal className="h-3 w-3" />}
+                              {module.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {user.enabledModules.includes('business') && <p className="mt-3 text-xs font-semibold text-amber-700">Denne brukeren har Business-tilgang.</p>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 };
