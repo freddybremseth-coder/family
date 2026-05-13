@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabase';
+import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from '../supabase';
 import { translations } from '../translations';
 import { Language } from '../types';
-import { ArrowRight, CalendarDays, CheckCircle2, CreditCard, FileText, Heart, Home, Loader2, LockKeyhole, Menu, ScanLine, ShieldCheck, ShoppingCart, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, CreditCard, FileText, Heart, Home, Loader2, LockKeyhole, ScanLine, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 
 interface Props {
   onLogin: (credentials: { email: string; password?: string }) => void;
@@ -13,6 +13,17 @@ interface Props {
 const LANG_LABELS: Record<Language, string> = {
   no: 'Norsk', en: 'English', es: 'Español', ru: 'Русский', fr: 'Français', de: 'Deutsch'
 };
+
+function familySupabaseMissingMessage() {
+  return [
+    'FamilyHub Supabase er ikke konfigurert for innlogging/opprettelse av familie.',
+    `Family URL konfigurert: ${SUPABASE_STATUS.familyUrlConfigured ? 'ja' : 'nei'}`,
+    `Family key konfigurert: ${SUPABASE_STATUS.familyKeyConfigured ? 'ja' : 'nei'}`,
+    `Family URL i build: ${SUPABASE_REFS.family || 'mangler'}`,
+    `Family key-navn: ${SUPABASE_STATUS.familyResolvedKeyName || 'mangler'}`,
+    'Legg inn VITE_SUPABASE_URL og VITE_SUPABASE_ANON_KEY i Vercel, eller VITE_FAMILY_SUPABASE_URL og VITE_FAMILY_SUPABASE_ANON_KEY. Redeploy etterpå.',
+  ].join('\n');
+}
 
 function AppDemo() {
   return (
@@ -49,25 +60,34 @@ export const LandingPageClean: React.FC<Props> = ({ onLogin, lang, setLang }) =>
   const [familyName, setFamilyName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const t = translations[lang];
+  translations[lang];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
-    if (authMode === 'signup') {
-      const { error } = await supabase.auth.signUp({ email, password, options: { data: { family_name: familyName } } });
-      setMessage(error ? error.message : 'Sjekk e-posten din for bekreftelseslenke.');
-    } else if (authMode === 'forgot') {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?recover=1` });
-      setMessage(error ? error.message : `Tilbakestillingslenke sendt til ${email}.`);
-    } else {
-      await onLogin({ email, password });
+    try {
+      if (!isSupabaseConfigured()) {
+        setMessage(familySupabaseMissingMessage());
+        return;
+      }
+      if (authMode === 'signup') {
+        const { error } = await supabase.auth.signUp({ email, password, options: { data: { family_name: familyName } } });
+        setMessage(error ? error.message : 'Sjekk e-posten din for bekreftelseslenke.');
+      } else if (authMode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?recover=1` });
+        setMessage(error ? error.message : `Tilbakestillingslenke sendt til ${email}.`);
+      } else {
+        await onLogin({ email, password });
+      }
+    } catch (err: any) {
+      setMessage(err?.message === 'Failed to fetch' ? `${familySupabaseMissingMessage()}\n\nTeknisk feil: Failed to fetch` : (err?.message || 'Ukjent feil ved innlogging/opprettelse.'));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const openAuth = (mode: 'login' | 'signup') => { setAuthMode(mode); setShowAuth(true); };
+  const openAuth = (mode: 'login' | 'signup') => { setAuthMode(mode); setShowAuth(true); setMessage(''); };
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -105,7 +125,7 @@ export const LandingPageClean: React.FC<Props> = ({ onLogin, lang, setLang }) =>
         <section id="security" className="mx-auto max-w-7xl px-5 py-20"><div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm md:p-10"><div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:items-center"><div><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white"><LockKeyhole className="h-6 w-6" /></div><h2 className="text-3xl font-black tracking-tight">Klar for SaaS, trygg for private familier.</h2><p className="mt-4 text-slate-600">Data skilles per household, dokumenter lagres privat, og integrasjoner kan slås av eller på etter produktmodus.</p></div><div className="grid grid-cols-1 gap-3 text-sm"><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Household / family tenant</div><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Private dokumenter i Supabase Storage</div><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Business-modul som valgfritt add-on</div></div></div></div></section>
       </main>
 
-      {showAuth && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowAuth(false)} /><div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><button onClick={() => setShowAuth(false)} className="absolute right-4 top-4 rounded-xl p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button><h2 className="text-2xl font-black">{authMode === 'login' ? 'Velkommen tilbake' : authMode === 'signup' ? 'Opprett familie' : 'Tilbakestill passord'}</h2><p className="mt-1 text-sm text-slate-500">FamilieHub</p>{message && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{message}</div>}<form onSubmit={handleSubmit} className="mt-6 space-y-4">{authMode === 'signup' && <label className="block space-y-2"><span className="text-sm font-semibold">Familienavn</span><input value={familyName} onChange={e => setFamilyName(e.target.value)} required placeholder="F.eks. Bremseth" /></label>}<label className="block space-y-2"><span className="text-sm font-semibold">E-post</span><input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="navn@epost.no" /></label>{authMode !== 'forgot' && <label className="block space-y-2"><span className="text-sm font-semibold">Passord</span><input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" /></label>}<button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-black text-white hover:bg-slate-700 disabled:opacity-60">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{authMode === 'login' ? 'Logg inn' : authMode === 'signup' ? 'Opprett konto' : 'Send lenke'}</button></form><div className="mt-5 flex justify-between text-sm font-semibold"><button onClick={() => setAuthMode(authMode === 'login' ? 'forgot' : 'login')} className="text-slate-500 hover:text-slate-900">{authMode === 'login' ? 'Glemt passord?' : 'Tilbake til login'}</button>{authMode === 'login' && <button onClick={() => setAuthMode('signup')} className="text-slate-900">Ny bruker?</button>}</div></div></div>}
+      {showAuth && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowAuth(false)} /><div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><button onClick={() => setShowAuth(false)} className="absolute right-4 top-4 rounded-xl p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button><h2 className="text-2xl font-black">{authMode === 'login' ? 'Velkommen tilbake' : authMode === 'signup' ? 'Opprett familie' : 'Tilbakestill passord'}</h2><p className="mt-1 text-sm text-slate-500">FamilieHub</p>{message && <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{message}</div>}<form onSubmit={handleSubmit} className="mt-6 space-y-4">{authMode === 'signup' && <label className="block space-y-2"><span className="text-sm font-semibold">Familienavn</span><input value={familyName} onChange={e => setFamilyName(e.target.value)} required placeholder="F.eks. Bremseth" /></label>}<label className="block space-y-2"><span className="text-sm font-semibold">E-post</span><input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="navn@epost.no" /></label>{authMode !== 'forgot' && <label className="block space-y-2"><span className="text-sm font-semibold">Passord</span><input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" /></label>}<button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-black text-white hover:bg-slate-700 disabled:opacity-60">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{authMode === 'login' ? 'Logg inn' : authMode === 'signup' ? 'Opprett konto' : 'Send lenke'}</button></form><div className="mt-5 flex justify-between text-sm font-semibold"><button onClick={() => setAuthMode(authMode === 'login' ? 'forgot' : 'login')} className="text-slate-500 hover:text-slate-900">{authMode === 'login' ? 'Glemt passord?' : 'Tilbake til login'}</button>{authMode === 'login' && <button onClick={() => setAuthMode('signup')} className="text-slate-900">Ny bruker?</button>}</div></div></div>}
     </div>
   );
 };
