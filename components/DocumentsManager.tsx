@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, FileText, Loader2, Plus, Search, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, Plus, Search, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getOrCreateHousehold, Household } from '../services/householdService';
-import { createFamilyDocument, deleteFamilyDocument, DocumentCategory, FamilyDocumentRecord, fetchFamilyDocuments } from '../services/documentService';
+import {
+  createFamilyDocument,
+  deleteFamilyDocument,
+  DocumentCategory,
+  FamilyDocumentRecord,
+  fetchFamilyDocuments,
+  getFamilyDocumentSignedUrl,
+} from '../services/documentService';
 
 const categories: DocumentCategory[] = ['Forsikring', 'Bolig', 'Bil', 'Helse', 'Barn', 'Kontrakt', 'Garanti', 'Annet'];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -27,13 +34,21 @@ function EmptyState({ loading }: { loading?: boolean }) {
   );
 }
 
+function formatFileSize(bytes?: number) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Familien' }) => {
   const [documents, setDocuments] = useState<FamilyDocumentRecord[]>([]);
   const [household, setHousehold] = useState<Household | null>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [newDoc, setNewDoc] = useState({ title: '', category: 'Annet' as DocumentCategory, owner: '', expiryDate: '', note: '', fileName: '' });
 
   const loadDocuments = async () => {
@@ -61,7 +76,7 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return documents;
-    return documents.filter((doc) => `${doc.title} ${doc.category} ${doc.owner} ${doc.note || ''}`.toLowerCase().includes(q));
+    return documents.filter((doc) => `${doc.title} ${doc.category} ${doc.owner} ${doc.note || ''} ${doc.fileName || ''}`.toLowerCase().includes(q));
   }, [documents, query]);
 
   const expiringSoon = useMemo(() => {
@@ -93,10 +108,12 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
         owner: newDoc.owner.trim() || 'Familien',
         expiryDate: newDoc.expiryDate || undefined,
         note: newDoc.note || undefined,
-        fileName: newDoc.fileName || undefined,
+        fileName: selectedFile?.name || newDoc.fileName || undefined,
+        file: selectedFile,
       });
       if (created) setDocuments((prev) => [created, ...prev]);
       setNewDoc({ title: '', category: 'Annet', owner: '', expiryDate: '', note: '', fileName: '' });
+      setSelectedFile(null);
     } catch (err: any) {
       setError(err?.message || 'Klarte ikke å lagre dokumentet.');
     } finally {
@@ -104,11 +121,25 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
     }
   };
 
-  const removeDocument = async (id: string) => {
-    const previous = documents;
-    setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+  const openDocument = async (doc: FamilyDocumentRecord) => {
+    if (!doc.storagePath) return;
+    setOpeningId(doc.id);
+    setError(null);
     try {
-      await deleteFamilyDocument(id);
+      const url = await getFamilyDocumentSignedUrl(doc.storagePath);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      setError(err?.message || 'Klarte ikke å åpne dokumentet.');
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
+  const removeDocument = async (doc: FamilyDocumentRecord) => {
+    const previous = documents;
+    setDocuments((prev) => prev.filter((item) => item.id !== doc.id));
+    try {
+      await deleteFamilyDocument(doc.id, doc.storagePath);
     } catch (err: any) {
       setDocuments(previous);
       setError(err?.message || 'Klarte ikke å slette dokumentet.');
@@ -134,7 +165,7 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="p-5"><p className="text-sm text-slate-500">Dokumenter</p><p className="mt-1 text-2xl font-bold text-slate-900">{documents.length}</p></Card>
         <Card className="p-5"><p className="text-sm text-slate-500">Utløper innen 90 dager</p><p className="mt-1 text-2xl font-bold text-slate-900">{expiringSoon}</p></Card>
-        <Card className="p-5"><p className="text-sm text-slate-500">Familie</p><p className="mt-1 truncate text-2xl font-bold text-slate-900">{household?.name || familyName}</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Filer lagret</p><p className="mt-1 text-2xl font-bold text-slate-900">{documents.filter((doc) => doc.storagePath).length}</p></Card>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -142,13 +173,15 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
           <div className="space-y-4 p-5">
             <div>
               <h2 className="text-xl font-bold text-slate-900">Legg til dokument</h2>
-              <p className="mt-1 text-sm text-slate-500">Dokumentmetadata lagres nå i Supabase på riktig household. Filopplasting kobles til Supabase Storage senere.</p>
+              <p className="mt-1 text-sm text-slate-500">Metadata lagres i Supabase, og valgfri fil lagres sikkert i privat Storage bucket.</p>
             </div>
             <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Tittel</span><input value={newDoc.title} onChange={(e) => setNewDoc({ ...newDoc, title: e.target.value })} placeholder="F.eks. Bilforsikring Mondeo" /></label>
             <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Kategori</span><select value={newDoc.category} onChange={(e) => setNewDoc({ ...newDoc, category: e.target.value as DocumentCategory })}>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
             <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Gjelder</span><input value={newDoc.owner} onChange={(e) => setNewDoc({ ...newDoc, owner: e.target.value })} placeholder="Familien, Freddy, Anna, barn, bil, bolig..." /></label>
             <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Utløpsdato, valgfritt</span><input type="date" value={newDoc.expiryDate} onChange={(e) => setNewDoc({ ...newDoc, expiryDate: e.target.value })} /></label>
-            <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Filnavn / referanse</span><input value={newDoc.fileName} onChange={(e) => setNewDoc({ ...newDoc, fileName: e.target.value })} placeholder="Valgfritt" /></label>
+            <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Filnavn / referanse</span><input value={newDoc.fileName} onChange={(e) => setNewDoc({ ...newDoc, fileName: e.target.value })} placeholder="Valgfritt hvis du ikke laster opp fil" /></label>
+            <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Last opp fil, valgfritt</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} /></label>
+            {selectedFile && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"><p className="font-semibold text-slate-800">{selectedFile.name}</p><p>{formatFileSize(selectedFile.size)} · {selectedFile.type || 'ukjent filtype'}</p></div>}
             <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Notat</span><textarea value={newDoc.note} onChange={(e) => setNewDoc({ ...newDoc, note: e.target.value })} placeholder="Hvor ligger originalen, hva må huskes?" rows={3} /></label>
             <button onClick={addDocument} className="btn-primary w-full" disabled={saving || !newDoc.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Legg til dokument</button>
           </div>
@@ -166,7 +199,7 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
                 <input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Søk dokumenter" />
               </div>
             </div>
-            {filtered.length === 0 ? <EmptyState loading={loading} /> : <div className="space-y-3">{filtered.map((doc) => <div key={doc.id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"><div className="flex gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600"><ShieldCheck className="h-5 w-5" /></div><div><p className="font-bold text-slate-900">{doc.title}</p><p className="mt-1 text-sm text-slate-500">{doc.category} · {doc.owner}</p>{doc.expiryDate && <p className="mt-1 text-sm text-slate-500">Utløper: {doc.expiryDate}</p>}{doc.fileName && <p className="mt-1 text-sm text-slate-500">Fil/referanse: {doc.fileName}</p>}{doc.note && <p className="mt-2 text-sm text-slate-600">{doc.note}</p>}</div></div><button onClick={() => removeDocument(doc.id)} className="rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button></div></div>)}</div>}
+            {filtered.length === 0 ? <EmptyState loading={loading} /> : <div className="space-y-3">{filtered.map((doc) => <div key={doc.id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"><div className="flex gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600"><ShieldCheck className="h-5 w-5" /></div><div><p className="font-bold text-slate-900">{doc.title}</p><p className="mt-1 text-sm text-slate-500">{doc.category} · {doc.owner}</p>{doc.expiryDate && <p className="mt-1 text-sm text-slate-500">Utløper: {doc.expiryDate}</p>}{doc.fileName && <p className="mt-1 text-sm text-slate-500">Fil/referanse: {doc.fileName}{doc.fileSize ? ` · ${formatFileSize(doc.fileSize)}` : ''}</p>}{doc.note && <p className="mt-2 text-sm text-slate-600">{doc.note}</p>}</div></div><div className="flex gap-2"><button disabled={!doc.storagePath || openingId === doc.id} onClick={() => openDocument(doc)} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40">{openingId === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}</button><button onClick={() => removeDocument(doc)} className="rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button></div></div></div>)}</div>}
           </div>
         </Card>
       </section>
@@ -175,8 +208,8 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-600"><Upload className="h-5 w-5" /></div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Neste steg: sikker filopplasting</h2>
-            <p className="mt-1 text-sm text-slate-500">Når metadata er stabil, kobles denne modulen til Supabase Storage med family_id, tilgangsstyring og sikker nedlasting.</p>
+            <h2 className="text-lg font-bold text-slate-900">Sikker filopplasting er aktivert</h2>
+            <p className="mt-1 text-sm text-slate-500">Filer lagres i privat Supabase Storage bucket og åpnes via signerte lenker som utløper etter 5 minutter.</p>
           </div>
         </div>
       </Card>
