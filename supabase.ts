@@ -2,8 +2,24 @@ import { createClient } from '@supabase/supabase-js';
 
 const env = import.meta.env;
 
-const familySupabaseUrl = env.VITE_SUPABASE_URL || '';
-const familySupabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+const familySupabaseUrl =
+  env.VITE_SUPABASE_URL ||
+  env.VITE_FAMILY_SUPABASE_URL ||
+  env.VITE_FAMILYHUB_SUPABASE_URL ||
+  '';
+
+const familySupabaseAnonKey =
+  env.VITE_SUPABASE_ANON_KEY ||
+  env.VITE_FAMILY_SUPABASE_ANON_KEY ||
+  env.VITE_FAMILYHUB_SUPABASE_ANON_KEY ||
+  env.VITE_FAMILY_ANON_KEY ||
+  '';
+
+const familyResolvedKeyName =
+  env.VITE_SUPABASE_ANON_KEY ? 'VITE_SUPABASE_ANON_KEY' :
+  env.VITE_FAMILY_SUPABASE_ANON_KEY ? 'VITE_FAMILY_SUPABASE_ANON_KEY' :
+  env.VITE_FAMILYHUB_SUPABASE_ANON_KEY ? 'VITE_FAMILYHUB_SUPABASE_ANON_KEY' :
+  env.VITE_FAMILY_ANON_KEY ? 'VITE_FAMILY_ANON_KEY' : '';
 
 // RealtyFlow Pro er hubben for eiendomssalg/provisjoner.
 const realtyflowSupabaseUrl =
@@ -23,7 +39,7 @@ const realtyflowSupabaseAnonKey =
   Object.values(realtyflowKeyCandidates).find(Boolean) ||
   familySupabaseAnonKey ||
   '';
-const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'VITE_SUPABASE_ANON_KEY fallback' : '');
+const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'FamilyHub key fallback' : '');
 
 // Dona Anna / Olivia ligger i eget Supabase-prosjekt.
 const donaAnnaSupabaseUrl =
@@ -79,6 +95,9 @@ export const SUPABASE_REFS = {
 export const SUPABASE_STATUS = {
   familyUrlConfigured: !!familySupabaseUrl,
   familyKeyConfigured: !!familySupabaseAnonKey,
+  familyResolvedKeyName,
+  familyKeyLength: familySupabaseAnonKey.length,
+  familyAcceptedKeyNames: ['VITE_SUPABASE_ANON_KEY', 'VITE_FAMILY_SUPABASE_ANON_KEY', 'VITE_FAMILYHUB_SUPABASE_ANON_KEY', 'VITE_FAMILY_ANON_KEY'],
   realtyflowUrlConfigured: !!realtyflowSupabaseUrl,
   realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey,
   realtyflowResolvedKeyName,
