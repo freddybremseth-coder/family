@@ -65,9 +65,9 @@ export function isModuleEnabled(moduleId: ModuleId): boolean {
 }
 
 export function isModuleVisibleForUser(moduleId: ModuleId, email?: string | null): boolean {
-  if (!isModuleEnabled(moduleId)) return false;
-  if (moduleId === 'business') return canAccessBusiness(email);
-  return true;
+  if (isAdminEmail(email)) return true;
+  if (moduleId === 'business') return canAccessBusiness(email) && isModuleEnabled(moduleId);
+  return isModuleEnabled(moduleId);
 }
 
 export function filterEnabledModules<T extends { id: string }>(items: T[]): T[] {
