@@ -3,7 +3,7 @@ import './styles/app-polish.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { LandingPage } from './components/LandingPage';
+import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { Dashboard } from './components/Dashboard';
 import { ShoppingList } from './components/ShoppingList';
 import { TransactionManager } from './components/TransactionManager';
