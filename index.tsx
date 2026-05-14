@@ -21,58 +21,19 @@ import { ResidentsManager } from './components/ResidentsManager';
 import { PaywallModal } from './components/PaywallModal';
 import { ALL_NAVIGATION } from './constants';
 import { filterModulesForUser, isModuleVisibleForUser } from './config/productMode';
-import {
-  Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission,
-  FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember,
-  CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, UserRole
-} from './types';
+import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission, FarmOperation, BankAccount, Developer, Asset, GroceryItem, FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig, ScannedReceipt, UserRole } from './types';
 import { translations } from './translations';
-import {
-  Heart, LogOut, ShieldCheck, Loader2, Menu, X,
-  LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal,
-} from 'lucide-react';
+import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 const TRIAL_DAYS = 3;
 const USER_CONFIG_KEY = 'familyhub_user_config';
 
-const defaultUserConfig: UserConfig = {
-  familyName: 'FAMILIE',
-  location: '',
-  address: '',
-  timezone: 'Europe/Oslo',
-  preferredCurrency: 'NOK',
-  language: 'no',
-  role: UserRole.USER,
-  subscriptionStatus: 'Active',
-};
-
-function loadUserConfig(): UserConfig {
-  try {
-    const saved = JSON.parse(localStorage.getItem(USER_CONFIG_KEY) || '{}');
-    return { ...defaultUserConfig, ...saved };
-  } catch {
-    return defaultUserConfig;
-  }
-}
-
-const getTrialDaysLeft = (trialStartedAt: string): number => {
-  const start = new Date(trialStartedAt).getTime();
-  const now = Date.now();
-  const elapsed = (now - start) / (1000 * 60 * 60 * 24);
-  return Math.ceil(TRIAL_DAYS - elapsed);
-};
-
-function authSetupError() {
-  return [
-    'FamilyHub Supabase er ikke riktig konfigurert for innlogging.',
-    `Family URL konfigurert: ${SUPABASE_STATUS.familyUrlConfigured ? 'ja' : 'nei'}`,
-    `Family key konfigurert: ${SUPABASE_STATUS.familyKeyConfigured ? 'ja' : 'nei'}`,
-    `Family URL i build: ${SUPABASE_REFS.family || 'mangler'}`,
-    `Family key-navn: ${SUPABASE_STATUS.familyResolvedKeyName || 'mangler'}`,
-  ].join('\n');
-}
+const defaultUserConfig: UserConfig = { familyName: 'FAMILIE', location: '', address: '', timezone: 'Europe/Oslo', preferredCurrency: 'NOK', language: 'no', role: UserRole.USER, subscriptionStatus: 'Active' };
+function loadUserConfig(): UserConfig { try { return { ...defaultUserConfig, ...JSON.parse(localStorage.getItem(USER_CONFIG_KEY) || '{}') }; } catch { return defaultUserConfig; } }
+const getTrialDaysLeft = (trialStartedAt: string): number => Math.ceil(TRIAL_DAYS - ((Date.now() - new Date(trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)));
+function authSetupError() { return ['FamilyHub Supabase er ikke riktig konfigurert for innlogging.', `Family URL konfigurert: ${SUPABASE_STATUS.familyUrlConfigured ? 'ja' : 'nei'}`, `Family key konfigurert: ${SUPABASE_STATUS.familyKeyConfigured ? 'ja' : 'nei'}`, `Family URL i build: ${SUPABASE_REFS.family || 'mangler'}`, `Family key-navn: ${SUPABASE_STATUS.familyResolvedKeyName || 'mangler'}`].join('\n'); }
 
 const App = () => {
   const [session, setSession] = useState<any>(null);
@@ -101,25 +62,15 @@ const App = () => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [userConfig, setUserConfig] = useState<UserConfig>(loadUserConfig);
 
-  useEffect(() => {
-    localStorage.setItem(USER_CONFIG_KEY, JSON.stringify({
-      familyName: userConfig.familyName,
-      location: userConfig.location,
-      address: userConfig.address || '',
-      timezone: userConfig.timezone,
-      preferredCurrency: userConfig.preferredCurrency,
-      language: userConfig.language,
-    }));
-  }, [userConfig.familyName, userConfig.location, userConfig.address, userConfig.timezone, userConfig.preferredCurrency, userConfig.language]);
+  useEffect(() => { localStorage.setItem(USER_CONFIG_KEY, JSON.stringify({ familyName: userConfig.familyName, location: userConfig.location, address: userConfig.address || '', timezone: userConfig.timezone, preferredCurrency: userConfig.preferredCurrency, language: userConfig.language })); }, [userConfig.familyName, userConfig.location, userConfig.address, userConfig.timezone, userConfig.preferredCurrency, userConfig.language]);
 
   const userEmail = session?.user?.email || null;
   const visibleNavigation = useMemo(() => filterModulesForUser(ALL_NAVIGATION, userEmail), [userEmail]);
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
+  const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps };
 
-  useEffect(() => {
-    if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard');
-  }, [activeTab, session, userEmail]);
+  useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) return;
@@ -139,32 +90,14 @@ const App = () => {
     const { data: profile } = await supabase.from('user_profiles').select('subscription_status, trial_started_at').eq('id', user.id).single();
     if (!profile) { await supabase.from('user_profiles').insert({ id: user.id }); setSubscriptionStatus('trial'); setTrialDaysLeft(TRIAL_DAYS); return; }
     setSubscriptionStatus(profile.subscription_status);
-    if (profile.subscription_status === 'trial') {
-      const daysLeft = getTrialDaysLeft(profile.trial_started_at);
-      setTrialDaysLeft(daysLeft);
-      if (daysLeft <= 0) setShowPaywall(true);
-    }
+    if (profile.subscription_status === 'trial') { const daysLeft = getTrialDaysLeft(profile.trial_started_at); setTrialDaysLeft(daysLeft); if (daysLeft <= 0) setShowPaywall(true); }
   }, []);
 
   useEffect(() => {
     try {
-      if (!isSupabaseConfigured()) {
-        setLoading(false);
-        setFamilyMembers([
-          { id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 },
-          { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 },
-        ]);
-        return;
-      }
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); }
-        setLoading(false);
-      }).catch(() => setLoading(false));
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        setSession(session);
-        if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); }
-      });
+      if (!isSupabaseConfigured()) { setLoading(false); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 }]); return; }
+      supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); } setLoading(false); }).catch(() => setLoading(false));
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); } });
       return () => subscription?.unsubscribe();
     } catch { setLoading(false); }
   }, [fetchAllData, checkSubscription]);
@@ -175,77 +108,32 @@ const App = () => {
   };
 
   const handleLogin = async (credentials: { email: string; password?: string }) => {
-    if (!isSupabaseConfigured()) {
-      if (credentials.email === ADMIN_EMAIL) {
-        setSession({ user: { email: credentials.email, id: 'demo-user' } });
-        handleRoleAssignment({ email: credentials.email });
-        return { ok: true };
-      }
-      return { ok: false, error: authSetupError() };
-    }
-
+    if (!isSupabaseConfigured()) { if (credentials.email === ADMIN_EMAIL) { setSession({ user: { email: credentials.email, id: 'demo-user' } }); handleRoleAssignment({ email: credentials.email }); return { ok: true }; } return { ok: false, error: authSetupError() }; }
     const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email.trim(), password: credentials.password || '' });
-
-    if (error) {
-      const msg = String(error.message || '').toLowerCase();
-      if (msg.includes('invalid login credentials')) return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' };
-      if (msg.includes('email not confirmed')) return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' };
-      return { ok: false, error: error.message };
-    }
-
+    if (error) { const msg = String(error.message || '').toLowerCase(); if (msg.includes('invalid login credentials')) return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' }; if (msg.includes('email not confirmed')) return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' }; return { ok: false, error: error.message }; }
     if (data.session?.user) { handleRoleAssignment(data.session.user); await fetchAllData(data.session.user.id); await checkSubscription(data.session.user); }
     return { ok: true };
   };
 
   const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setSession(null); };
-
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
     const txId = `tx-rcpt-${Date.now()}`;
     const receiptId = `receipt-${Date.now()}`;
-    const tx: Transaction = {
-      id: txId,
-      date: data.date || new Date().toISOString().split('T')[0],
-      amount: Number(data.totalAmount || 0),
-      currency: data.currency || userConfig.preferredCurrency,
-      description: data.vendor || 'Kvittering',
-      category: data.category || 'Shopping',
-      type: TransactionType.EXPENSE,
-      paymentMethod: 'Bank',
-      isAccrual: false,
-      verificationSource: 'receipt',
-      matchedReceiptId: receiptId,
-    };
-    if (isSupabaseConfigured() && session?.user) {
-      await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]);
-    }
-    const receipt: ScannedReceipt = {
-      id: receiptId,
-      imageUrl,
-      vendor: tx.description,
-      date: tx.date,
-      amount: tx.amount,
-      currency: tx.currency,
-      category: tx.category,
-      confidence: Number(data.confidence || 0.75),
-      linkedTransactionId: txId,
-    };
+    const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: data.category || 'Shopping', type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId };
+    if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]);
+    const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId };
     setScannedReceipts(prev => [receipt, ...prev]);
     setTransactions(prev => [tx, ...prev]);
     setCashBalance(prev => prev - tx.amount);
     setActiveTab('transactions');
   };
-
-  const navigate = (tab: string) => {
-    if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard');
-    setActiveTab(tab);
-    setSidebarOpen(false);
-  };
+  const navigate = (tab: string) => { if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard'); setActiveTab(tab); setSidebarOpen(false); };
 
   const renderContent = () => {
-    if (!isModuleVisibleForUser(activeTab as any, userEmail)) return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} familyMembers={familyMembers} tasks={tasks} calendarEvents={calendarEvents} groceryCount={groceryItems.filter(i => !i.isBought).length} lang={userConfig.language} userId={session?.user?.id} />;
+    if (!isModuleVisibleForUser(activeTab as any, userEmail)) return <Dashboard {...dashboardProps} />;
     switch (activeTab) {
       case 'superadmin': return <SuperAdminDashboard />;
-      case 'dashboard': return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} familyMembers={familyMembers} tasks={tasks} calendarEvents={calendarEvents} groceryCount={groceryItems.filter(i => !i.isBought).length} lang={userConfig.language} userId={session?.user?.id} />;
+      case 'dashboard': return <Dashboard {...dashboardProps} />;
       case 'shopping': return <ShoppingList cashBalance={cashBalance} groceryItems={groceryItems} setGroceryItems={setGroceryItems} weeklyMenu={weeklyMenu} setWeeklyMenu={setWeeklyMenu} lang={userConfig.language} userId={session?.user?.id} />;
       case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
       case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
@@ -256,7 +144,7 @@ const App = () => {
       case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
       case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
       case 'trends': return <BillsManager bills={bills} setBills={setBills} />;
-      default: return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} lang={userConfig.language} />;
+      default: return <Dashboard {...dashboardProps} />;
     }
   };
 
@@ -264,28 +152,13 @@ const App = () => {
   if (!session) return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
   const pageTitle = activeTab === 'superadmin' ? 'Admin' : labelFor(activeTab, visibleNavigation.find(n => n.id === activeTab)?.label || '');
 
-  return (
-    <div className="flex min-h-screen bg-slate-50">
-      {showPaywall && session?.user && <PaywallModal userEmail={session.user.email} daysLeft={trialDaysLeft} onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined} lang={userConfig.language} />}
-      {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
-      <nav className="bottom-nav md:hidden">
-        {[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].filter(item => isModuleVisibleForUser(item.id as any, userEmail)).map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}
-        <button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button>
-      </nav>
-      <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}>
-        <div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-slate-900"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div>
-        <nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">
-          {userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}
-          {visibleNavigation.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}
-        </nav>
-        <div className="p-4 border-t border-slate-100"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div>
-      </aside>
-      <div className="flex-1 flex flex-col min-w-0 md:ml-0">
-        <header className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">{sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}</button><div><h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2><p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">{new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div></div></header>
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">{renderContent()}</main>
-      </div>
-    </div>
-  );
+  return <div className="flex min-h-screen bg-slate-50">
+    {showPaywall && session?.user && <PaywallModal userEmail={session.user.email} daysLeft={trialDaysLeft} onClose={trialDaysLeft > 0 ? () => setShowPaywall(false) : undefined} lang={userConfig.language} />}
+    {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
+    <nav className="bottom-nav md:hidden">{[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].filter(item => isModuleVisibleForUser(item.id as any, userEmail)).map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}<button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button></nav>
+    <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}><div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-slate-900"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div><nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">{userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}{visibleNavigation.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}</nav><div className="p-4 border-t border-slate-100"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div></aside>
+    <div className="flex-1 flex flex-col min-w-0 md:ml-0"><header className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">{sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}</button><div><h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2><p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">{new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div></div></header><main className="flex-1 p-4 md:p-8 overflow-y-auto">{renderContent()}</main></div>
+  </div>;
 };
 
 const rootElement = document.getElementById('root');
