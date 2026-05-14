@@ -41,15 +41,25 @@ function cleanEnv(value: unknown): string {
 }
 function env() { return typeof import.meta !== 'undefined' ? import.meta.env : {}; }
 function isPdf(mimeType = '') { return mimeType.toLowerCase().includes('pdf'); }
+function timeoutMs(kind: 'receipt' | 'statement') { return kind === 'statement' ? 45000 : 25000; }
+
+async function withTimeout<T>(promise: Promise<T>, label: string, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} brukte for lang tid og ble avbrutt etter ${Math.round(ms / 1000)} sekunder.`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function claudeModelCandidates() {
   const configured = cleanEnv(env().VITE_CLAUDE_VISION_MODEL || env().VITE_ANTHROPIC_MODEL || '');
-  return Array.from(new Set([
-    configured,
-    'claude-3-5-haiku-20241022',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-haiku-20240307',
-  ].filter(Boolean)));
+  return Array.from(new Set([configured, 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'].filter(Boolean)));
 }
 
 export function getOpenAIKey() { return cleanEnv(localStorage.getItem('user_openai_api_key')) || cleanEnv(env().VITE_OPENAI_API_KEY) || cleanEnv(env().OPENAI_API_KEY); }
@@ -60,6 +70,7 @@ export function hasClaude() { return !!getClaudeKey(); }
 export function friendlyProviderError(err: any) {
   const raw = typeof err === 'string' ? err : JSON.stringify(err?.error || err?.message || err || {});
   const lower = raw.toLowerCase();
+  if (lower.includes('brukte for lang tid') || lower.includes('aborted') || lower.includes('timeout')) return raw.replace(/^"|"$/g, '');
   if (lower.includes('not_found_error') && lower.includes('model')) return 'Claude-modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
   if (lower.includes('model') && (raw.includes('404') || lower.includes('not found'))) return 'Modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
   if (raw.includes('PERMISSION_DENIED') || raw.includes('denied access') || raw.includes('403')) return 'AI-provideren avviste nøkkelen eller prosjektet har ikke tilgang.';
@@ -69,16 +80,25 @@ export function friendlyProviderError(err: any) {
   return raw.slice(0, 300) || 'Ukjent AI-feil.';
 }
 
-async function postJson(url: string, headers: Record<string, string>, body: any) {
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-  const text = await res.text();
-  let data: any = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) throw new Error(JSON.stringify(data || { status: res.status }));
-  return data;
+async function postJson(url: string, headers: Record<string, string>, body: any, timeoutLabel = 'AI-kall', timeout = 45000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+    const text = await res.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!res.ok) throw new Error(JSON.stringify(data || { status: res.status }));
+    return data;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw new Error(`${timeoutLabel} brukte for lang tid og ble avbrutt etter ${Math.round(timeout / 1000)} sekunder.`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string) => any) {
+async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string) => any, timeout = 45000) {
   const errors: string[] = [];
   for (const model of claudeModelCandidates()) {
     try {
@@ -87,7 +107,7 @@ async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
-      }, bodyFactory(model));
+      }, bodyFactory(model), `Claude ${model}`, timeout);
     } catch (err: any) {
       const message = typeof err === 'string' ? err : err?.message || JSON.stringify(err || {});
       errors.push(`${model}: ${friendlyProviderError(err)}`);
@@ -114,7 +134,7 @@ export async function analyzeReceiptWithOpenAI(b64: string, mimeType = 'image/jp
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
   if (isPdf(mimeType)) throw new Error('OpenAI-fallback for kvittering støtter bildeformat i denne appen.');
   const dataUrl = `data:${mimeType};base64,${b64}`;
-  const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] });
+  const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] }, 'OpenAI kvittering', timeoutMs('receipt'));
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
 }
 
@@ -122,7 +142,7 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
   const key = getClaudeKey();
   if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
   if (isPdf(mimeType)) throw new Error('Claude-fallback for kvittering støtter bildeformat i denne appen.');
-  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 1200, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } }] }] }));
+  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 1200, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } }] }] }), timeoutMs('receipt'));
   const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
   return parseJsonText(text || '{}');
 }
@@ -132,20 +152,7 @@ async function analyzeBankStatementPdfWithOpenAI(b64: string, mimeType = 'applic
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
   const model = cleanEnv(env().VITE_OPENAI_PDF_MODEL || env().VITE_OPENAI_VISION_MODEL) || 'gpt-4.1-mini';
   const dataUrl = `data:${mimeType};base64,${b64}`;
-  const data = await postJson('https://api.openai.com/v1/responses', {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${key}`,
-  }, {
-    model,
-    temperature: 0,
-    input: [{
-      role: 'user',
-      content: [
-        { type: 'input_text', text: BANK_STATEMENT_INSTRUCTIONS },
-        { type: 'input_file', filename: 'kontoutskrift.pdf', file_data: dataUrl },
-      ],
-    }],
-  });
+  const data = await postJson('https://api.openai.com/v1/responses', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model, temperature: 0, input: [{ role: 'user', content: [{ type: 'input_text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'input_file', filename: 'kontoutskrift.pdf', file_data: dataUrl }] }] }, 'OpenAI PDF-kontoutskrift', timeoutMs('statement'));
   const text = data?.output_text || (Array.isArray(data?.output) ? data.output.flatMap((item: any) => item.content || []).map((part: any) => part.text || '').join('\n') : '');
   return parseJsonText(text || '{}');
 }
@@ -155,7 +162,7 @@ export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'im
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
   if (isPdf(mimeType)) return analyzeBankStatementPdfWithOpenAI(b64, mimeType);
   const dataUrl = `data:${mimeType};base64,${b64}`;
-  const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] });
+  const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] }, 'OpenAI bilde-kontoutskrift', timeoutMs('statement'));
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
 }
 
@@ -163,7 +170,7 @@ export async function analyzeBankStatementWithClaude(b64: string, mimeType = 'im
   const key = getClaudeKey();
   if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
   const filePart = isPdf(mimeType) ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } } : { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } };
-  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 2000, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, filePart] }] }));
+  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 2000, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, filePart] }] }), timeoutMs('statement'));
   const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
   return parseJsonText(text || '{}');
 }
@@ -174,7 +181,7 @@ export async function runReceiptFallback(b64: string, mimeType: string, geminiFn
   for (const provider of providers) {
     try {
       let result: any = null;
-      if (provider === 'gemini') result = await geminiFn();
+      if (provider === 'gemini') result = await withTimeout(geminiFn(), 'Gemini kvittering', timeoutMs('receipt'));
       if (provider === 'openai' && hasOpenAI()) result = await analyzeReceiptWithOpenAI(b64, mimeType);
       if (provider === 'claude' && hasClaude()) result = await analyzeReceiptWithClaude(b64, mimeType);
       if (!result) continue;
@@ -191,7 +198,7 @@ export async function runBankStatementFallback(b64: string, mimeType: string, ge
   for (const provider of providers) {
     try {
       let result: any = null;
-      if (provider === 'gemini') result = await geminiFn();
+      if (provider === 'gemini') result = await withTimeout(geminiFn(), 'Gemini kontoutskrift', timeoutMs('statement'));
       if (provider === 'openai' && hasOpenAI()) result = await analyzeBankStatementWithOpenAI(b64, mimeType);
       if (provider === 'claude' && hasClaude()) result = await analyzeBankStatementWithClaude(b64, mimeType);
       if (!result) continue;
