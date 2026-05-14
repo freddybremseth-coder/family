@@ -4,8 +4,13 @@ import { translations } from '../translations';
 import { Language } from '../types';
 import { ArrowRight, CalendarDays, CheckCircle2, CreditCard, FileText, Heart, Home, Loader2, LockKeyhole, ScanLine, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 
+interface LoginResult {
+  ok?: boolean;
+  error?: string;
+}
+
 interface Props {
-  onLogin: (credentials: { email: string; password?: string }) => void;
+  onLogin: (credentials: { email: string; password?: string }) => Promise<LoginResult | void> | LoginResult | void;
   lang: Language;
   setLang: (l: Language) => void;
 }
@@ -72,13 +77,21 @@ export const LandingPageClean: React.FC<Props> = ({ onLogin, lang, setLang }) =>
         return;
       }
       if (authMode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password, options: { data: { family_name: familyName } } });
-        setMessage(error ? error.message : 'Sjekk e-posten din for bekreftelseslenke.');
+        const { error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: { family_name: familyName },
+            emailRedirectTo: `${window.location.origin}/`,
+          },
+        });
+        setMessage(error ? error.message : 'Sjekk e-posten din for bekreftelseslenke. Etter bekreftelse kan du logge inn.');
       } else if (authMode === 'forgot') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?recover=1` });
-        setMessage(error ? error.message : `Tilbakestillingslenke sendt til ${email}.`);
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/?recover=1` });
+        setMessage(error ? error.message : `Hvis ${email} finnes i FamilyHub, sendes en tilbakestillingslenke.`);
       } else {
-        await onLogin({ email, password });
+        const result = await onLogin({ email: email.trim(), password });
+        if (result && result.ok === false) setMessage(result.error || 'Innlogging feilet.');
       }
     } catch (err: any) {
       setMessage(err?.message === 'Failed to fetch' ? `${familySupabaseMissingMessage()}\n\nTeknisk feil: Failed to fetch` : (err?.message || 'Ukjent feil ved innlogging/opprettelse.'));
@@ -125,7 +138,7 @@ export const LandingPageClean: React.FC<Props> = ({ onLogin, lang, setLang }) =>
         <section id="security" className="mx-auto max-w-7xl px-5 py-20"><div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm md:p-10"><div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:items-center"><div><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white"><LockKeyhole className="h-6 w-6" /></div><h2 className="text-3xl font-black tracking-tight">Klar for SaaS, trygg for private familier.</h2><p className="mt-4 text-slate-600">Data skilles per household, dokumenter lagres privat, og integrasjoner kan slås av eller på etter produktmodus.</p></div><div className="grid grid-cols-1 gap-3 text-sm"><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Household / family tenant</div><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Private dokumenter i Supabase Storage</div><div className="rounded-2xl bg-slate-50 p-4 font-semibold">Business-modul som valgfritt add-on</div></div></div></div></section>
       </main>
 
-      {showAuth && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowAuth(false)} /><div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><button onClick={() => setShowAuth(false)} className="absolute right-4 top-4 rounded-xl p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button><h2 className="text-2xl font-black">{authMode === 'login' ? 'Velkommen tilbake' : authMode === 'signup' ? 'Opprett familie' : 'Tilbakestill passord'}</h2><p className="mt-1 text-sm text-slate-500">FamilieHub</p>{message && <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{message}</div>}<form onSubmit={handleSubmit} className="mt-6 space-y-4">{authMode === 'signup' && <label className="block space-y-2"><span className="text-sm font-semibold">Familienavn</span><input value={familyName} onChange={e => setFamilyName(e.target.value)} required placeholder="F.eks. Bremseth" /></label>}<label className="block space-y-2"><span className="text-sm font-semibold">E-post</span><input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="navn@epost.no" /></label>{authMode !== 'forgot' && <label className="block space-y-2"><span className="text-sm font-semibold">Passord</span><input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" /></label>}<button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-black text-white hover:bg-slate-700 disabled:opacity-60">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{authMode === 'login' ? 'Logg inn' : authMode === 'signup' ? 'Opprett konto' : 'Send lenke'}</button></form><div className="mt-5 flex justify-between text-sm font-semibold"><button onClick={() => setAuthMode(authMode === 'login' ? 'forgot' : 'login')} className="text-slate-500 hover:text-slate-900">{authMode === 'login' ? 'Glemt passord?' : 'Tilbake til login'}</button>{authMode === 'login' && <button onClick={() => setAuthMode('signup')} className="text-slate-900">Ny bruker?</button>}</div></div></div>}
+      {showAuth && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowAuth(false)} /><div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><button onClick={() => setShowAuth(false)} className="absolute right-4 top-4 rounded-xl p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button><h2 className="text-2xl font-black">{authMode === 'login' ? 'Velkommen tilbake' : authMode === 'signup' ? 'Opprett familie' : 'Tilbakestill passord'}</h2><p className="mt-1 text-sm text-slate-500">FamilieHub</p>{message && <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{message}</div>}<form onSubmit={handleSubmit} className="mt-6 space-y-4">{authMode === 'signup' && <label className="block space-y-2"><span className="text-sm font-semibold">Familienavn</span><input value={familyName} onChange={e => setFamilyName(e.target.value)} required placeholder="F.eks. Bremseth" /></label>}<label className="block space-y-2"><span className="text-sm font-semibold">E-post</span><input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="navn@epost.no" /></label>{authMode !== 'forgot' && <label className="block space-y-2"><span className="text-sm font-semibold">Passord</span><input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" /></label>}<button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-black text-white hover:bg-slate-700 disabled:opacity-60">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{authMode === 'login' ? 'Logg inn' : authMode === 'signup' ? 'Opprett konto' : 'Send lenke'}</button></form><div className="mt-5 flex justify-between text-sm font-semibold"><button onClick={() => { setAuthMode(authMode === 'login' ? 'forgot' : 'login'); setMessage(''); }} className="text-slate-500 hover:text-slate-900">{authMode === 'login' ? 'Glemt passord?' : 'Tilbake til login'}</button>{authMode === 'login' && <button onClick={() => { setAuthMode('signup'); setMessage(''); }} className="text-slate-900">Ny bruker?</button>}</div></div></div>}
     </div>
   );
 };
