@@ -2,9 +2,10 @@ create schema if not exists family;
 
 create table if not exists family.user_ai_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  gemini_api_key text,
-  openai_api_key text,
-  claude_api_key text,
+  gemini_ciphertext text,
+  openai_ciphertext text,
+  claude_ciphertext text,
+  encryption_version integer not null default 1,
   updated_at timestamptz not null default now()
 );
 
