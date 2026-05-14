@@ -53,8 +53,10 @@ function inferCategory(description: string) {
 function parseAmount(value: any) {
   const raw = String(value ?? '').trim();
   if (!raw) return 0;
+  const negativeBySuffix = /-$/.test(raw) || /^-/.test(raw) || /\b(debet|ut|trekk)\b/i.test(raw);
   const cleaned = raw.replace(/\s/g, '').replace(/[A-Z]{3}|kr|nok|eur|€/gi, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
-  return Number(cleaned || 0);
+  const valueNum = Number(cleaned.replace(/-$/, '') || 0);
+  return negativeBySuffix ? -Math.abs(valueNum) : valueNum;
 }
 
 function normalizeDate(value: any) {
@@ -116,24 +118,34 @@ function parseDelimitedStatement(text: string) {
 function parsePlainTextStatement(text: string): BankStatementLine[] {
   const rawLines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const rows: BankStatementLine[] = [];
-  const amountPattern = /([-+]?\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})|[-+]?\d+[,.]\d{2})\s*(?:NOK|EUR|kr|€)?/gi;
+  const amountPattern = /[-+]?\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})-?|[-+]?\d+[,.]\d{2}-?/g;
   const datePattern = /(\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/;
   rawLines.forEach((line, index) => {
     const dateMatch = line.match(datePattern);
     if (!dateMatch) return;
     const amounts = Array.from(line.matchAll(amountPattern)).map((m) => ({ text: m[0], index: m.index || 0, value: parseAmount(m[0]) })).filter((m) => Math.abs(m.value) > 0);
     if (amounts.length === 0) return;
-    const amountHit = amounts[amounts.length - 1];
+    const meaningfulAmounts = amounts.filter((m) => Math.abs(m.value) >= 0.01);
+    const amountHit = meaningfulAmounts[meaningfulAmounts.length - 1];
     const beforeAmount = line.slice(0, amountHit.index).replace(dateMatch[0], '').trim();
     const description = beforeAmount || line.replace(dateMatch[0], '').replace(amountHit.text, '').trim() || 'Banktransaksjon';
     const lower = line.toLowerCase();
-    const explicitOut = /\b(ut|debet|trekk|betaling|kortkjop|varekjop|withdrawal)\b/.test(lower);
-    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower);
-    const signed = amountHit.value;
-    const type = explicitIn || signed > 0 && !explicitOut ? TransactionType.INCOME : TransactionType.EXPENSE;
-    rows.push({ id: `pdf-text-${Date.now()}-${index}`, date: normalizeDate(dateMatch[0]), description, amount: Math.abs(signed), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.8, status: 'unmatched' });
+    const explicitOut = /\b(ut|debet|trekk|betaling|kortkjop|kortkjøp|varekjop|varekjøp|withdrawal)\b/.test(lower) || amountHit.value < 0;
+    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower) || amountHit.value > 0 && /\binn\b/.test(lower);
+    const type = explicitIn && !explicitOut ? TransactionType.INCOME : TransactionType.EXPENSE;
+    rows.push({ id: `pdf-text-${Date.now()}-${index}`, date: normalizeDate(dateMatch[0]), description, amount: Math.abs(amountHit.value), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.85, status: 'unmatched' });
   });
-  return rows;
+  return dedupeLines(rows);
+}
+
+function dedupeLines(lines: BankStatementLine[]) {
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = `${line.date}|${Math.round(line.amount * 100)}|${normalizeText(line.description).slice(0, 40)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function extractPdfText(file: File): Promise<string> {
@@ -146,8 +158,21 @@ async function extractPdfText(file: File): Promise<string> {
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
     const page = await pdf.getPage(pageNo);
     const content = await page.getTextContent();
-    const text = content.items.map((item: any) => item.str || '').join(' ');
-    pageTexts.push(text);
+    const items = content.items
+      .map((item: any) => ({ text: String(item.str || '').trim(), x: Number(item.transform?.[4] || 0), y: Number(item.transform?.[5] || 0) }))
+      .filter((item: any) => item.text);
+    const rows = new Map<number, { x: number; text: string }[]>();
+    items.forEach((item: any) => {
+      const yBucket = Math.round(item.y / 3) * 3;
+      const existingKey = Array.from(rows.keys()).find((key) => Math.abs(key - yBucket) <= 3);
+      const key = existingKey ?? yBucket;
+      rows.set(key, [...(rows.get(key) || []), { x: item.x, text: item.text }]);
+    });
+    const lines = Array.from(rows.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([, row]) => row.sort((a, b) => a.x - b.x).map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    pageTexts.push(lines.join('\n'));
   }
   return pageTexts.join('\n');
 }
@@ -193,7 +218,7 @@ function reconcileLines(lines: BankStatementLine[], transactions: Transaction[],
   let matchedCount = 0;
   let createdCount = 0;
   let unmatchedCount = 0;
-  const processed = lines.map((line) => {
+  const processed = dedupeLines(lines).map((line) => {
     const match = findBestMatch(line, transactions, receipts);
     if (match?.tx) { matchedCount += 1; return { ...line, status: 'matched' as const, matchedTransactionId: match.tx.id, matchedReceiptId: match.receipt?.id }; }
     if (line.amount > 0) { createdCount += 1; return { ...line, status: 'created' as const }; }
