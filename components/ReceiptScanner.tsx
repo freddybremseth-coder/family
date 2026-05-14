@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AlertCircle, Camera, CheckCircle2, FileImage, Loader2, ScanLine, Upload } from 'lucide-react';
-import { analyzeReceipt, fileToBase64, isAiAvailable } from '../services/geminiService';
+import { analyzeReceipt, fileToBase64 } from '../services/geminiService';
 import { runReceiptFallback } from '../services/aiProviderService';
 import { Currency, ScannedReceipt } from '../types';
 
@@ -11,9 +11,7 @@ interface Props {
 
 const CATEGORIES = ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'];
 
-const formatCurrency = (amount: number, currency: Currency = 'NOK') => {
-  return new Intl.NumberFormat('nb-NO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
-};
+const formatCurrency = (amount: number, currency: Currency = 'NOK') => new Intl.NumberFormat('nb-NO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
 
 function fallbackCategory(vendor = '', items: any[] = []) {
   const text = `${vendor} ${items.map((i) => `${i.name || ''} ${i.category || ''}`).join(' ')}`.toLowerCase();
@@ -56,11 +54,9 @@ async function enhanceReceiptImage(file: File): Promise<File> {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return file;
-
   ctx.drawImage(bitmap, 0, 0, width, height);
   const image = ctx.getImageData(0, 0, width, height);
   const data = image.data;
-
   for (let i = 0; i < data.length; i += 4) {
     const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
     const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 138));
@@ -69,7 +65,6 @@ async function enhanceReceiptImage(file: File): Promise<File> {
     data[i + 1] = sharpened;
     data[i + 2] = sharpened;
   }
-
   ctx.putImageData(image, 0, 0);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
   if (!blob) return file;
@@ -108,10 +103,6 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
       setError('Velg eller ta bilde av en kvittering først.');
       return;
     }
-    if (!isAiAvailable()) {
-      setError('AI er ikke konfigurert. Legg inn Gemini, OpenAI eller Claude API-nøkkel under Innstillinger → AI.');
-      return;
-    }
     setScanning(true);
     setError(null);
     setSuccess(null);
@@ -129,7 +120,7 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
       onScan(receipt, imageUrl || '');
       setSuccess(`Transaksjon opprettet med ${receipt.providerUsed}: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)} · ${receipt.category}`);
     } catch (err: any) {
-      setError(err?.message || 'AI-analyse feilet. Prøv å beskjære kvitteringen eller last opp originalbildet fra galleri.');
+      setError(err?.message || 'AI-analyse feilet. Legg inn Gemini, OpenAI eller Claude API-nøkkel under Innstillinger → AI, eller prøv et tydeligere bilde.');
     } finally {
       setScanning(false);
     }
@@ -139,51 +130,16 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><ScanLine className="h-5 w-5" /></div>
-            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Kvitteringer</span>
-          </div>
+          <div className="mb-2 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><ScanLine className="h-5 w-5" /></div><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Kvitteringer</span></div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Scan eller last opp kvittering</h1>
           <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">AI forbedrer bildet først og leser butikk, dato, beløp og kategori. Transaksjonen legges inn med riktig kategori for analyse av utgiftene.</p>
         </div>
       </section>
-
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><div className="flex gap-2"><AlertCircle className="h-5 w-5 shrink-0" /><p>{error}</p></div></div>}
       {success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><div className="flex gap-2"><CheckCircle2 className="h-5 w-5 shrink-0" /><p>{success}</p></div></div>}
-
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <div className="space-y-4 p-5">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Ny kvittering</h2>
-              <p className="mt-1 text-sm text-slate-500">Ta bilde på mobil eller last opp bilde fra galleri/filer.</p>
-            </div>
-
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <button onClick={() => cameraRef.current?.click()} className="btn-primary justify-center"><Camera className="h-4 w-4" /> Scan med kamera</button>
-              <button onClick={() => fileRef.current?.click()} className="btn-secondary justify-center"><Upload className="h-4 w-4" /> Last opp bilde</button>
-            </div>
-
-            {imageUrl ? <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"><img src={imageUrl} alt="Valgt kvittering" className="max-h-[420px] w-full object-contain" /></div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500"><FileImage className="mx-auto mb-3 h-10 w-10 text-slate-400" />Ingen kvittering valgt.</div>}
-
-            <button onClick={analyzeSelected} disabled={!selectedFile || scanning} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
-              {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
-              Analyser og opprett transaksjon
-            </button>
-
-            {lastResult && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-900">Siste analyse</p><div className="mt-2 space-y-1 text-slate-600"><p>AI: {lastResult.providerUsed || 'ukjent'}</p><p>Butikk: {lastResult.vendor}</p><p>Beløp: {formatCurrency(lastResult.totalAmount, lastResult.currency)}</p><p>Kategori: {lastResult.category}</p><p>Dato: {lastResult.date}</p>{lastResult.note && <p>Notat: {lastResult.note}</p>}</div></div>}
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <div className="p-5">
-            <div className="mb-5 flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900">Kvitteringsarkiv</h2><p className="mt-1 text-sm text-slate-500">Skannede kvitteringer og kategorier.</p></div><span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{receipts.length} stk</span></div>
-            {receipts.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">Ingen kvitteringer skannet ennå.</div> : <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{receipts.map((receipt) => <div key={receipt.id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex gap-4">{receipt.imageUrl && <img src={receipt.imageUrl} alt={receipt.vendor} className="h-20 w-20 rounded-2xl object-cover" />}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div><p className="font-bold text-slate-900">{receipt.vendor}</p><p className="mt-1 text-xs text-slate-500">{receipt.date}</p></div><p className="font-bold text-slate-900">{formatCurrency(receipt.amount, receipt.currency)}</p></div><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{receipt.category}</span><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Transaksjon opprettet</span></div></div></div></div>)}</div>}
-          </div>
-        </Card>
+        <Card className="lg:col-span-1"><div className="space-y-4 p-5"><div><h2 className="text-xl font-bold text-slate-900">Ny kvittering</h2><p className="mt-1 text-sm text-slate-500">Ta bilde på mobil eller last opp bilde fra galleri/filer.</p></div><input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} /><input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1"><button onClick={() => cameraRef.current?.click()} className="btn-primary justify-center"><Camera className="h-4 w-4" /> Scan med kamera</button><button onClick={() => fileRef.current?.click()} className="btn-secondary justify-center"><Upload className="h-4 w-4" /> Last opp bilde</button></div>{imageUrl ? <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"><img src={imageUrl} alt="Valgt kvittering" className="max-h-[420px] w-full object-contain" /></div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500"><FileImage className="mx-auto mb-3 h-10 w-10 text-slate-400" />Ingen kvittering valgt.</div>}<button onClick={analyzeSelected} disabled={!selectedFile || scanning} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">{scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}Analyser og opprett transaksjon</button>{lastResult && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-900">Siste analyse</p><div className="mt-2 space-y-1 text-slate-600"><p>AI: {lastResult.providerUsed || 'ukjent'}</p><p>Butikk: {lastResult.vendor}</p><p>Beløp: {formatCurrency(lastResult.totalAmount, lastResult.currency)}</p><p>Kategori: {lastResult.category}</p><p>Dato: {lastResult.date}</p>{lastResult.note && <p>Notat: {lastResult.note}</p>}</div></div>}</div></Card>
+        <Card className="lg:col-span-2"><div className="p-5"><div className="mb-5 flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900">Kvitteringsarkiv</h2><p className="mt-1 text-sm text-slate-500">Skannede kvitteringer og kategorier.</p></div><span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{receipts.length} stk</span></div>{receipts.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">Ingen kvitteringer skannet ennå.</div> : <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{receipts.map((receipt) => <div key={receipt.id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex gap-4">{receipt.imageUrl && <img src={receipt.imageUrl} alt={receipt.vendor} className="h-20 w-20 rounded-2xl object-cover" />}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div><p className="font-bold text-slate-900">{receipt.vendor}</p><p className="mt-1 text-xs text-slate-500">{receipt.date}</p></div><p className="font-bold text-slate-900">{formatCurrency(receipt.amount, receipt.currency)}</p></div><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{receipt.category}</span><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Transaksjon opprettet</span></div></div></div></div>)}</div>}</div></Card>
       </section>
     </div>
   );
