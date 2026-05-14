@@ -80,15 +80,20 @@ const App = () => {
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) { setPersistentReady(true); return; }
     setPersistentReady(false);
-    const persistent = await loadFamilyPersistentData(userId);
-    setTransactions(persistent.transactions);
-    setFamilyMembers(persistent.members);
+    try {
+      const persistent = await loadFamilyPersistentData(userId);
+      setTransactions(persistent.transactions);
+      setFamilyMembers(persistent.members);
 
-    const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
-    if (reData) setRealEstateDeals(reData);
-    const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
-    if (farmData) setFarmOps(farmData);
-    setPersistentReady(true);
+      const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
+      if (reData) setRealEstateDeals(reData);
+      const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
+      if (farmData) setFarmOps(farmData);
+    } catch (err) {
+      console.warn('[App] fetchAllData failed', err);
+    } finally {
+      setPersistentReady(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -115,10 +120,39 @@ const App = () => {
   useEffect(() => {
     try {
       if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 }]); return; }
-      supabase.auth.getSession().then(async ({ data: { session } }) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); await fetchAllData(session.user.id); await checkSubscription(session.user); } else { setPersistentReady(false); } setLoading(false); }).catch(() => { setPersistentReady(false); setLoading(false); });
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); await fetchAllData(session.user.id); await checkSubscription(session.user); } else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); } });
-      return () => subscription?.unsubscribe();
-    } catch { setPersistentReady(false); setLoading(false); }
+      let cancelled = false;
+      const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false); }, 3500);
+
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (cancelled) return;
+        setSession(session);
+        setLoading(false);
+        if (session?.user) {
+          handleRoleAssignment(session.user);
+          fetchAllData(session.user.id).catch((err) => console.warn('[App] startup data load failed', err));
+          checkSubscription(session.user).catch((err) => console.warn('[App] subscription check failed', err));
+        } else {
+          setPersistentReady(false);
+        }
+      }).catch((err) => {
+        console.warn('[App] getSession failed', err);
+        if (!cancelled) { setPersistentReady(false); setLoading(false); }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        setSession(session);
+        if (session?.user) {
+          handleRoleAssignment(session.user);
+          fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err));
+          checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err));
+        } else {
+          setPersistentReady(false);
+          setTransactions([]);
+          setFamilyMembers([]);
+        }
+      });
+      return () => { cancelled = true; clearTimeout(safetyTimer); subscription?.unsubscribe(); };
+    } catch (err) { console.warn('[App] startup failed', err); setPersistentReady(false); setLoading(false); }
   }, [fetchAllData, checkSubscription]);
 
   const handleRoleAssignment = (user: any) => {
@@ -130,7 +164,11 @@ const App = () => {
     if (!isSupabaseConfigured()) { if (credentials.email === ADMIN_EMAIL) { setSession({ user: { email: credentials.email, id: 'demo-user' } }); handleRoleAssignment({ email: credentials.email }); return { ok: true }; } return { ok: false, error: authSetupError() }; }
     const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email.trim(), password: credentials.password || '' });
     if (error) { const msg = String(error.message || '').toLowerCase(); if (msg.includes('invalid login credentials')) return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' }; if (msg.includes('email not confirmed')) return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' }; return { ok: false, error: error.message }; }
-    if (data.session?.user) { handleRoleAssignment(data.session.user); await fetchAllData(data.session.user.id); await checkSubscription(data.session.user); }
+    if (data.session?.user) {
+      handleRoleAssignment(data.session.user);
+      fetchAllData(data.session.user.id).catch((err) => console.warn('[App] login data load failed', err));
+      checkSubscription(data.session.user).catch((err) => console.warn('[App] login subscription check failed', err));
+    }
     return { ok: true };
   };
 
