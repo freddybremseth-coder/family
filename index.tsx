@@ -26,6 +26,7 @@ import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission
 import { translations } from './translations';
 import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
+import { loadFamilyPersistentData, syncMembers, syncTransactions } from './services/familyPersistenceService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 const TRIAL_DAYS = 3;
@@ -39,6 +40,7 @@ function authSetupError() { return ['FamilyHub Supabase er ikke riktig konfigure
 const App = () => {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [persistentReady, setPersistentReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cashBalance, setCashBalance] = useState(4250);
@@ -75,16 +77,30 @@ const App = () => {
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
   const fetchAllData = useCallback(async (userId: string) => {
-    if (!isSupabaseConfigured()) return;
-    const { data: txData } = await supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false });
-    if (txData) setTransactions(txData.map((row: any) => ({ ...row, paymentMethod: row.paymentMethod || row.payment_method || 'Bank', isAccrual: !!row.isAccrual })));
+    if (!isSupabaseConfigured()) { setPersistentReady(true); return; }
+    setPersistentReady(false);
+    const persistent = await loadFamilyPersistentData(userId);
+    setTransactions(persistent.transactions);
+    setFamilyMembers(persistent.members);
+
     const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
     if (reData) setRealEstateDeals(reData);
     const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
     if (farmData) setFarmOps(farmData);
-    const { data: residentData } = await supabase.from('members').select('*').eq('user_id', userId);
-    if (residentData && residentData.length > 0) setFamilyMembers(residentData);
+    setPersistentReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id || !persistentReady) return;
+    const timer = setTimeout(() => { syncTransactions(session.user.id, transactions); }, 800);
+    return () => clearTimeout(timer);
+  }, [transactions, session?.user?.id, persistentReady]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !persistentReady) return;
+    const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800);
+    return () => clearTimeout(timer);
+  }, [familyMembers, session?.user?.id, persistentReady]);
 
   const checkSubscription = useCallback(async (user: any) => {
     if (user.email === ADMIN_EMAIL) { setSubscriptionStatus('lifetime'); return; }
@@ -97,11 +113,11 @@ const App = () => {
 
   useEffect(() => {
     try {
-      if (!isSupabaseConfigured()) { setLoading(false); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 }]); return; }
-      supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); } setLoading(false); }).catch(() => setLoading(false));
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id); checkSubscription(session.user); } });
+      if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 }]); return; }
+      supabase.auth.getSession().then(async ({ data: { session } }) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); await fetchAllData(session.user.id); await checkSubscription(session.user); } else { setPersistentReady(false); } setLoading(false); }).catch(() => { setPersistentReady(false); setLoading(false); });
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => { setSession(session); if (session?.user) { handleRoleAssignment(session.user); await fetchAllData(session.user.id); await checkSubscription(session.user); } else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); } });
       return () => subscription?.unsubscribe();
-    } catch { setLoading(false); }
+    } catch { setPersistentReady(false); setLoading(false); }
   }, [fetchAllData, checkSubscription]);
 
   const handleRoleAssignment = (user: any) => {
@@ -117,7 +133,7 @@ const App = () => {
     return { ok: true };
   };
 
-  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setSession(null); };
+  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); };
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
     const txId = `tx-rcpt-${Date.now()}`;
     const receiptId = `receipt-${Date.now()}`;
