@@ -3,10 +3,10 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Asset, FarmOperation, Bill, FamilyMember, FarmProfile, FarmTask, CryptoAsset } from "../types";
 
 function cleanEnv(value: unknown): string {
-  let cleaned = String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  let cleaned = String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   const equalsIndex = cleaned.indexOf('=');
   if (equalsIndex > -1 && cleaned.slice(0, equalsIndex).trim().startsWith('VITE_')) {
-    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '').trim();
+    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   }
   return cleaned;
 }
@@ -296,7 +296,8 @@ export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
         { text: `Analyser denne kvitteringen for FamilieHub.
         Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori.
         Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet.
-        Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU.` }
+        Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU.
+        Ikke avvis bildet som uklart før du har forsøkt beste tolkning av synlige tall.` }
       ],
       config: {
         responseMimeType: "application/json",
@@ -398,13 +399,17 @@ export const getFarmYieldForecast = async (profile: FarmProfile) => {
   return JSON.parse(response.text || '{}');
 };
 
-export const analyzeBankStatement = async (b64: string) => {
+export const analyzeBankStatement = async (b64: string, mimeType = 'image/jpeg') => {
   const ai = getAi();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: [
-      { inlineData: { mimeType: 'image/jpeg', data: b64 } },
-      { text: "Analyser denne bankutskriften eller kontooversikten. Hent ut nåværende saldo og de siste transaksjonene." }
+      { inlineData: { mimeType, data: b64 } },
+      { text: `Analyser kontoutskriften eller kontooversikten.
+      Returner alle synlige transaksjonslinjer, ikke bare saldo.
+      Bruk negativt beløp eller type EXPENSE for utgifter/trekk/kortkjøp, og type INCOME for innbetalinger.
+      Hvis dato mangler år, bruk mest sannsynlig år fra dokumentet. Valuta må være NOK eller EUR.
+      Returner kun gyldig JSON med feltene balance, currency og transactions.` }
     ],
     config: {
       responseMimeType: "application/json",
@@ -412,8 +417,22 @@ export const analyzeBankStatement = async (b64: string) => {
         type: Type.OBJECT,
         properties: {
           balance: { type: Type.NUMBER },
-          currency: { type: Type.STRING },
-          transactions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, description: { type: Type.STRING }, amount: { type: Type.NUMBER }, type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] } }, required: ['date', 'description', 'amount', 'type'] } }
+          currency: { type: Type.STRING, enum: ['NOK', 'EUR'] },
+          transactions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING },
+                description: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                currency: { type: Type.STRING, enum: ['NOK', 'EUR'] },
+                type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] },
+                confidence: { type: Type.NUMBER }
+              },
+              required: ['date', 'description', 'amount', 'type']
+            }
+          }
         },
         required: ['balance', 'transactions']
       }
