@@ -13,11 +13,11 @@ function formatAmount(amount: number, currency: string) {
   return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: currency === 'NOK' ? 'NOK' : 'EUR' }).format(Number(amount || 0));
 }
 
-function mobileFriendlyError(message: string) {
+function friendlyImportError(message: string) {
   const raw = String(message || 'Klarte ikke å lese kontoutskriften.');
   const aiAccessError = raw.includes('AI-provideren avviste nøkkelen') || raw.includes('AI-nøkkelen') || raw.includes('Gemini') || raw.includes('Claude') || raw.includes('OpenAI');
   if (!aiAccessError) return raw;
-  return `${raw}\n\nDette betyr vanligvis at PDF-en ikke kunne leses lokalt på denne enheten og at appen derfor forsøkte AI. AI-nøkler som er lagt inn i nettleseren på desktop følger ikke automatisk med til mobil. På mobil: gå til Innstillinger → AI og legg inn nøklene der også, eller last opp CSV/TXT fra banken. Hvis PDF-en er skannet bilde uten tekstlag, må den enten lastes opp som bilde med fungerende AI-nøkkel eller eksporteres som CSV.`;
+  return `${raw}\n\nPDF-en ble ikke tolket sikkert nok lokalt, og appen forsøkte derfor AI-fallback. Feilen over betyr at AI-providerne som er konfigurert ikke har fungerende tilgang for denne filen. Prøv CSV/TXT fra banken for import uten AI, eller sjekk at minst én AI-provider har gyldig nøkkel, kvote og tilgang. Hvis du bruker en ny enhet, må synkroniserte AI-nøkler være aktivert/deployet, eller nøklene må legges inn på enheten.`;
 }
 
 export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransactions, receipts }) => {
@@ -37,7 +37,7 @@ export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransa
       const next = await importBankStatementFile(file, transactions, receipts);
       setResult(next);
     } catch (err: any) {
-      setError(mobileFriendlyError(err?.message || 'Klarte ikke å lese kontoutskriften.'));
+      setError(friendlyImportError(err?.message || 'Klarte ikke å lese kontoutskriften.'));
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransa
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h3 className="text-lg font-bold uppercase tracking-tighter flex items-center gap-2 text-white"><ShieldCheck className="w-5 h-5 text-emerald-400" /> Kontoutskrift og verifisering</h3>
-          <p className="mt-1 text-xs text-slate-400 uppercase tracking-wider">Last opp kontoutskrift som CSV/TXT/PDF/bilde. CSV/TXT og tekstbaserte PDF-er leses uten AI. Skannede PDF-er/bilder trenger fungerende AI-nøkkel på enheten du bruker.</p>
+          <p className="mt-1 text-xs text-slate-400 uppercase tracking-wider">Last opp kontoutskrift som CSV/TXT/PDF/bilde. CSV/TXT og tekstbaserte PDF-er leses uten AI. Skannede PDF-er/bilder trenger fungerende AI-nøkkel.</p>
         </div>
         <label className="btn-secondary cursor-pointer justify-center">
           <FileUp className="h-4 w-4" /> Velg fil
@@ -64,7 +64,7 @@ export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransa
 
       <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100 flex gap-2 whitespace-pre-line">
         <Info className="h-4 w-4 shrink-0" />
-        <span>Mobil og desktop har hver sin lokale AI-innstilling. Nøkler lagt inn på desktop ligger ikke automatisk på mobil. Mest stabil import er CSV fra banken.</span>
+        <span>Mest stabil import er CSV/TXT fra banken. PDF forsøkes først lokalt; hvis PDF-en ikke har lesbart tekstlag eller formatet ikke gjenkjennes, brukes AI-fallback.</span>
       </div>
 
       {file && <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-xs text-slate-300"><span className="font-bold text-white">Valgt:</span> {file.name} {file.type ? `· ${file.type}` : '· ukjent filtype'}</div>}
