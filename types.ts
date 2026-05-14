@@ -19,6 +19,7 @@ export type BusinessDomain = 'Soleada' | 'Pinosoecolife' | 'ZenEcoHomes' | 'Afte
 export interface UserConfig {
   familyName: string;
   location: string;
+  address?: string;
   timezone: string;
   preferredCurrency: Currency;
   language: Language;
@@ -62,6 +63,8 @@ export interface ScannedReceipt {
   category: string;
   confidence: number;
   linkedTransactionId?: string;
+  verifiedByBankStatement?: boolean;
+  verifiedAt?: string;
 }
 
 export interface CryptoAsset {
@@ -103,6 +106,11 @@ export interface Transaction {
   taxAmount?: number;
   fromAccountId?: string;
   toAccountId?: string;
+  isVerified?: boolean;
+  verifiedAt?: string;
+  verificationSource?: 'receipt' | 'bank_statement' | 'manual';
+  matchedReceiptId?: string;
+  bankStatementRef?: string;
 }
 
 export interface Bill {
