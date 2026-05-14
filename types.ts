@@ -118,68 +118,12 @@ export interface Bill {
   name: string;
   amount: number;
   currency: Currency;
-  dueDate: string;
-  isPaid: boolean;
+  dueDay: number;
   category: string;
-  isRecurring?: boolean;
-  frequency?: 'monthly' | 'yearly';
+  isAutoPay: boolean;
+  isPaid?: boolean;
+  paidDate?: string;
 }
-
-export interface BankAccount {
-  id: string;
-  name: string;
-  balance: number;
-  currency: Currency;
-  lastReconciledDate: string;
-}
-
-export interface Asset {
-  id: string;
-  name: string;
-  type: 'Property' | 'Vehicle' | 'Land' | 'Other';
-  location: string;
-  purchasePrice: number;
-  currentValue: number;
-  currency: Currency;
-  annualGrowthRate: number;
-  purchaseDate: string;
-  notes?: string;
-}
-
-export interface GroceryItem {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  frequency: 'low' | 'medium' | 'high';
-  store: string;
-  isBought: boolean;
-  isSuggestion?: boolean;
-  category?: string;
-  notes?: string;
-}
-
-export interface PurchaseHistoryEntry {
-  id: string;
-  itemName: string;
-  normalizedName: string;
-  purchasedAt: string;
-  quantity: number;
-  unit: string;
-  store?: string;
-}
-
-export interface SmartSuggestion {
-  name: string;
-  reason: string;
-  source: 'frequency' | 'recent' | 'ai' | 'staple';
-  confidence: number;
-  daysSinceLast?: number;
-  averageInterval?: number;
-  added?: boolean;
-}
-
-export type SubscriptionPlan = 'monthly' | 'annual';
 
 export interface FamilyMember {
   id: string;
@@ -188,177 +132,94 @@ export interface FamilyMember {
   monthlySalary: number;
   monthlyBenefits: number;
   monthlyChildBenefit: number;
+  salaryDay?: number;
+  salaryAccountId?: string;
+}
+
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountName: string;
+  accountNumber?: string;
+  balance: number;
+  currency: Currency;
+  type: 'CHECKING' | 'SAVINGS' | 'CREDIT' | 'LOAN' | 'INVESTMENT';
+  interestRate?: number;
+  creditLimit?: number;
+}
+
+export interface Asset {
+  id: string;
+  name: string;
+  category: 'REAL_ESTATE' | 'VEHICLE' | 'CRYPTO' | 'STOCKS' | 'FUND' | 'OTHER';
+  value: number;
+  currency: Currency;
+  purchasePrice?: number;
+  purchaseDate?: string;
+  linkedLoanAccountId?: string;
+}
+
+export interface GroceryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  category: string;
+  isBought: boolean;
+  price?: number;
 }
 
 export interface CalendarEvent {
   id: string;
+  title: string;
   date: string;
-  startTime?: string;
-  endTime?: string;
-  description: string;
-  assignedToId: string;
-  type: 'Appointment' | 'Meeting' | 'Social' | 'Travel';
+  type: string;
+  assignedTo?: string;
 }
 
 export interface Task {
   id: string;
-  date: string;
-  description: string;
-  assignedToId: string;
-  priority: 'Low' | 'Medium' | 'High';
-  isComplete: boolean;
-}
-
-export interface TreeBatch {
-  variety: string;
-  count: number;
-  age: number;
-  irrigated: boolean;
-  notes?: string;
-}
-
-export interface FarmProfile {
-  totalTrees: number;
-  batches: TreeBatch[];
-  irrigationSource: string;
-  location: string;
-  country: string;
-  yieldHistory: { year: number; liters: number }[];
-}
-
-export interface FarmOperation {
-  id: string;
-  date: string;
-  type: 'Income' | 'Expense';
-  category: FarmCategory;
-  amount: number;
-  description: string;
-  currency: Currency;
-}
-
-export type FarmCategory = 'Picking' | 'Pruning' | 'Maintenance' | 'Cooperativa' | 'Market' | 'Export' | 'Other' | 'Utilities';
-
-export enum CommissionTrigger {
-  RESERVATION = 'Reservation',
-  CONTRACT = 'Contract',
-  BUILD_START = 'Build Start',
-  COMPLETION = 'Completion'
-}
-
-export interface PayoutPhase {
-  id: string;
-  name: string;
-  percentage: number;
-  trigger: CommissionTrigger;
-  offsetDays: number;
+  title: string;
+  dueDate?: string;
+  isDone: boolean;
+  assignedTo?: string;
 }
 
 export interface Developer {
   id: string;
   name: string;
   defaultCommissionPct: number;
-  payoutPhases: PayoutPhase[];
-}
-
-export enum CommissionPayoutStatus {
-  PENDING = 'Pending',
-  EXPECTED = 'Expected',
-  PAID = 'Paid',
-  OVERDUE = 'Overdue'
-}
-
-export interface CommissionPayout {
-  id: string;
-  phaseName: string;
-  expectedDate: string;
-  amount: number;
-  currency: Currency;
-  status: CommissionPayoutStatus;
-  paidDate?: string;
-  linkedTransactionId?: string;
+  payoutPhases: any[];
 }
 
 export interface RealEstateDeal {
   id: string;
-  developerId: string;
-  customerName: string;
-  leadSource: string;
-  totalSaleValue: number;
-  grossCommissionBase: number;
-  commissionPct: number;
-  ourGrossCommission: number;
-  ourNetCommission: number;
-  status: DealStatus;
+  user_id?: string;
+  propertyName: string;
+  clientName: string;
+  developerId?: string;
+  status: DealStatus | string;
+  salePrice: number;
   currency: Currency;
-  businessUnit: BusinessDomain;
-  saleDate: string;
-  reservationDate?: string;
-  contractDate?: string;
-  completionDate?: string;
-  commissionPayouts: CommissionPayout[];
-  customerPayments: any[];
+  commissionPct: number;
+  expectedPayoutDate?: string;
+  createdAt?: string;
 }
 
 export interface AfterSaleCommission {
   id: string;
-  partnerId: string;
-  customer: string;
-  product: string;
-  vendor: string;
-  amount: number;
-  commissionPct: number;
-  ourCommissionAmount: number;
-  isPaid: boolean;
-  paymentDate: string;
-  currency: Currency;
-}
-
-export interface AfterSalePartner {
-  id: string;
-  name: string;
-  category: string;
-}
-
-export interface FarmTask {
-  id: string;
+  partnerName: string;
   description: string;
-  dueDate: string;
-  status: 'Pending' | 'Completed';
-}
-
-// ── Mondeo Eiendom AS – salgsfinansiering ──────────────────────────
-// Salget av Mondeo Eiendom AS (4.8M NOK) finansieres som lån til kjøper.
-// Rente = Norges Bank styringsrente + 6 % margin (årlig nominell).
-// Kjøper bestemmer selv avdrag → saldo kan øke eller synke per måned.
-
-export interface MondeoLoanSettings {
-  id: string;
-  initialPrincipal: number;
-  startDate: string;
-  marginPct: number;
-  norgesBankRatePct: number;
-  norgesBankRateObservedAt?: string;
-  buyerName?: string;
-  notes?: string;
-}
-
-export interface MondeoLoanPayment {
-  id: string;
-  date: string;
   amount: number;
-  note?: string;
-  postedTransactionId?: string;
+  currency: Currency;
+  expectedPayoutDate?: string;
+  status?: string;
 }
 
-export interface MondeoLedgerRow {
+export interface FarmOperation {
   id: string;
-  nr: number;
-  fromDate: string;
   date: string;
-  openingBalance: number;
-  interestDue: number;
-  paid: number;
-  principalChange: number;
-  closingBalance: number;
-  status: 'Avdrag' | 'Lånet øker';
+  description: string;
+  income: number;
+  expense: number;
+  currency: Currency;
 }
