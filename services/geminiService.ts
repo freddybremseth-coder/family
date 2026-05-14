@@ -253,13 +253,16 @@ export const generateSmartMenu = async (inv: string[], cra: string) => {
   return JSON.parse(response.text || '[]');
 };
 
-export const analyzeReceipt = async (b64: string) => {
+export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
   const ai = getAi();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: [
-      { inlineData: { mimeType: 'image/jpeg', data: b64 } },
-      { text: "Analyser denne kvitteringen." }
+      { inlineData: { mimeType, data: b64 } },
+      { text: `Analyser denne kvitteringen for FamilieHub.
+      Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori.
+      Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet.
+      Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU.` }
     ],
     config: {
       responseMimeType: "application/json",
@@ -268,13 +271,29 @@ export const analyzeReceipt = async (b64: string) => {
         properties: {
           vendor: { type: Type.STRING },
           date: { type: Type.STRING },
-          totalAmount: { type: Type.NUMBER }
+          totalAmount: { type: Type.NUMBER },
+          currency: { type: Type.STRING, enum: ['NOK', 'EUR'] },
+          category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] },
+          paymentMethod: { type: Type.STRING },
+          confidence: { type: Type.NUMBER },
+          note: { type: Type.STRING },
+          items: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                category: { type: Type.STRING }
+              }
+            }
+          }
         },
-        required: ['vendor', 'totalAmount']
+        required: ['vendor', 'date', 'totalAmount', 'currency', 'category']
       }
     }
   });
-  return JSON.parse(response.text || '{"vendor": "Ukjent", "totalAmount": 0}');
+  return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
 };
 
 export const getBillsSmartAdvice = async (bills: Bill[]) => {
