@@ -45,6 +45,37 @@ function normalizeReceiptResult(result: any) {
   };
 }
 
+async function enhanceReceiptImage(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const maxSide = 2200;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return file;
+
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  const image = ctx.getImageData(0, 0, width, height);
+  const data = image.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 138));
+    const sharpened = contrasted > 190 ? 255 : contrasted < 75 ? 0 : contrasted;
+    data[i] = sharpened;
+    data[i + 1] = sharpened;
+    data[i + 2] = sharpened;
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+  if (!blob) return file;
+  return new File([blob], file.name.replace(/\.[^.]+$/, '') + '-ocr.jpg', { type: 'image/jpeg' });
+}
+
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
 }
@@ -85,19 +116,20 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
     setError(null);
     setSuccess(null);
     try {
-      const mimeType = selectedFile.type || 'image/jpeg';
-      const b64 = await fileToBase64(selectedFile);
+      const ocrFile = await enhanceReceiptImage(selectedFile).catch(() => selectedFile);
+      const mimeType = ocrFile.type || 'image/jpeg';
+      const b64 = await fileToBase64(ocrFile);
       const fallback = await runReceiptFallback(b64, mimeType, () => analyzeReceipt(b64, mimeType));
       const receipt = normalizeReceiptResult({ ...fallback.result, providerUsed: fallback.provider });
       if (!receipt.totalAmount || receipt.totalAmount <= 0) {
-        setError('Jeg klarte ikke å lese totalbeløpet. Prøv et skarpere bilde eller beskjær kvitteringen.');
+        setError('Jeg fant ikke totalbeløpet. Prøv å beskjære bildet tett rundt kvitteringen, men bildet trenger ikke være perfekt.');
         return;
       }
       setLastResult(receipt);
       onScan(receipt, imageUrl || '');
       setSuccess(`Transaksjon opprettet med ${receipt.providerUsed}: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)} · ${receipt.category}`);
     } catch (err: any) {
-      setError(err?.message || 'AI-analyse feilet. Prøv et tydeligere bilde eller last opp fra galleri.');
+      setError(err?.message || 'AI-analyse feilet. Prøv å beskjære kvitteringen eller last opp originalbildet fra galleri.');
     } finally {
       setScanning(false);
     }
@@ -112,7 +144,7 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
             <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Kvitteringer</span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Scan eller last opp kvittering</h1>
-          <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">AI leser butikk, dato, beløp og kategori. Transaksjonen legges inn med riktig kategori for analyse av utgiftene.</p>
+          <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">AI forbedrer bildet først og leser butikk, dato, beløp og kategori. Transaksjonen legges inn med riktig kategori for analyse av utgiftene.</p>
         </div>
       </section>
 
@@ -142,7 +174,7 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
               Analyser og opprett transaksjon
             </button>
 
-            {lastResult && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-900">Siste analyse</p><div className="mt-2 space-y-1 text-slate-600"><p>AI: {lastResult.providerUsed || 'ukjent'}</p><p>Butikk: {lastResult.vendor}</p><p>Beløp: {formatCurrency(lastResult.totalAmount, lastResult.currency)}</p><p>Kategori: {lastResult.category}</p><p>Dato: {lastResult.date}</p></div></div>}
+            {lastResult && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-900">Siste analyse</p><div className="mt-2 space-y-1 text-slate-600"><p>AI: {lastResult.providerUsed || 'ukjent'}</p><p>Butikk: {lastResult.vendor}</p><p>Beløp: {formatCurrency(lastResult.totalAmount, lastResult.currency)}</p><p>Kategori: {lastResult.category}</p><p>Dato: {lastResult.date}</p>{lastResult.note && <p>Notat: {lastResult.note}</p>}</div></div>}
           </div>
         </Card>
 
