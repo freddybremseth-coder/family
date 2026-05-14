@@ -59,7 +59,7 @@ async function withTimeout<T>(promise: Promise<T>, label: string, ms: number): P
 
 function claudeModelCandidates() {
   const configured = cleanEnv(env().VITE_CLAUDE_VISION_MODEL || env().VITE_ANTHROPIC_MODEL || '');
-  return Array.from(new Set([configured, 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'].filter(Boolean)));
+  return Array.from(new Set([configured, 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'].filter(Boolean)));
 }
 
 export function getOpenAIKey() { return cleanEnv(localStorage.getItem('user_openai_api_key')) || cleanEnv(env().VITE_OPENAI_API_KEY) || cleanEnv(env().OPENAI_API_KEY); }
@@ -81,6 +81,12 @@ export function friendlyProviderError(err: any) {
   return raw.slice(0, 300) || 'Ukjent AI-feil.';
 }
 
+function isModelNotFoundError(err: any) {
+  const raw = typeof err === 'string' ? err : err?.message || JSON.stringify(err?.error || err || {});
+  const lower = raw.toLowerCase();
+  return lower.includes('not_found_error') || (lower.includes('model') && (lower.includes('404') || lower.includes('not found')));
+}
+
 async function postJson(url: string, headers: Record<string, string>, body: any, timeoutLabel = 'AI-kall', timeout = 45000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -100,23 +106,19 @@ async function postJson(url: string, headers: Record<string, string>, body: any,
 }
 
 async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string) => any, timeout = 45000) {
-  const errors: string[] = [];
-  for (const model of claudeModelCandidates()) {
-    try {
-      return await postJson('https://api.anthropic.com/v1/messages', {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      }, bodyFactory(model), `Claude ${model}`, timeout);
-    } catch (err: any) {
-      const message = typeof err === 'string' ? err : err?.message || JSON.stringify(err || {});
-      errors.push(`${model}: ${friendlyProviderError(err)}`);
-      const lower = message.toLowerCase();
-      if (!(lower.includes('not_found_error') || lower.includes('model'))) break;
-    }
+  const models = claudeModelCandidates();
+  const model = models[0];
+  try {
+    return await postJson('https://api.anthropic.com/v1/messages', {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    }, bodyFactory(model), `Claude ${model}`, timeout);
+  } catch (err: any) {
+    const suffix = isModelNotFoundError(err) && models.length > 1 ? ` Sett VITE_CLAUDE_VISION_MODEL til en modell kontoen din har tilgang til. Forsøkte: ${model}.` : '';
+    throw new Error(`${friendlyProviderError(err)}${suffix}`);
   }
-  throw new Error(errors.join(' | ') || 'Claude-kall feilet.');
 }
 
 function parseJsonText(text: string) {
