@@ -53,12 +53,7 @@ function inferCategory(description: string) {
 function parseAmount(value: any) {
   const raw = String(value ?? '').trim();
   if (!raw) return 0;
-  const cleaned = raw
-    .replace(/\s/g, '')
-    .replace(/[A-Z]{3}|kr|nok|eur|€/gi, '')
-    .replace(/\.(?=\d{3}(\D|$))/g, '')
-    .replace(',', '.')
-    .replace(/[^0-9.-]/g, '');
+  const cleaned = raw.replace(/\s/g, '').replace(/[A-Z]{3}|kr|nok|eur|€/gi, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
   return Number(cleaned || 0);
 }
 
@@ -105,7 +100,6 @@ function parseDelimitedStatement(text: string) {
   const outIndex = findIndex([/ut|debet|withdrawal|paid|trekk/]);
   const inIndex = findIndex([/inn|kredit|credit|deposit|mottatt/]);
   const currencyIndex = findIndex([/valuta|currency/]);
-
   return lines.slice(1).map((line, index) => {
     const cells = splitCsvLine(line, delimiter);
     const outAmount = outIndex >= 0 ? parseAmount(cells[outIndex]) : 0;
@@ -119,22 +113,67 @@ function parseDelimitedStatement(text: string) {
   }).filter((line) => line.amount > 0 && line.description);
 }
 
+function parsePlainTextStatement(text: string): BankStatementLine[] {
+  const rawLines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const rows: BankStatementLine[] = [];
+  const amountPattern = /([-+]?\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})|[-+]?\d+[,.]\d{2})\s*(?:NOK|EUR|kr|€)?/gi;
+  const datePattern = /(\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/;
+  rawLines.forEach((line, index) => {
+    const dateMatch = line.match(datePattern);
+    if (!dateMatch) return;
+    const amounts = Array.from(line.matchAll(amountPattern)).map((m) => ({ text: m[0], index: m.index || 0, value: parseAmount(m[0]) })).filter((m) => Math.abs(m.value) > 0);
+    if (amounts.length === 0) return;
+    const amountHit = amounts[amounts.length - 1];
+    const beforeAmount = line.slice(0, amountHit.index).replace(dateMatch[0], '').trim();
+    const description = beforeAmount || line.replace(dateMatch[0], '').replace(amountHit.text, '').trim() || 'Banktransaksjon';
+    const lower = line.toLowerCase();
+    const explicitOut = /\b(ut|debet|trekk|betaling|kortkjop|varekjop|withdrawal)\b/.test(lower);
+    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower);
+    const signed = amountHit.value;
+    const type = explicitIn || signed > 0 && !explicitOut ? TransactionType.INCOME : TransactionType.EXPENSE;
+    rows.push({ id: `pdf-text-${Date.now()}-${index}`, date: normalizeDate(dateMatch[0]), description, amount: Math.abs(signed), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.8, status: 'unmatched' });
+  });
+  return rows;
+}
+
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjs = await import('pdfjs-dist');
+  const worker = await import('pdfjs-dist/build/pdf.worker.mjs?url');
+  (pdfjs as any).GlobalWorkerOptions.workerSrc = (worker as any).default;
+  const buffer = await file.arrayBuffer();
+  const pdf = await (pdfjs as any).getDocument({ data: buffer }).promise;
+  const pageTexts: string[] = [];
+  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+    const page = await pdf.getPage(pageNo);
+    const content = await page.getTextContent();
+    const text = content.items.map((item: any) => item.str || '').join(' ');
+    pageTexts.push(text);
+  }
+  return pageTexts.join('\n');
+}
+
+async function tryParsePdfStatement(file: File) {
+  const name = file.name.toLowerCase();
+  const isPdf = file.type.includes('pdf') || name.endsWith('.pdf');
+  if (!isPdf) return [];
+  try {
+    const text = await extractPdfText(file);
+    const delimited = parseDelimitedStatement(text);
+    if (delimited.length > 0) return delimited;
+    return parsePlainTextStatement(text);
+  } catch (err) {
+    console.warn('[bankStatementService] local PDF text parse failed, using AI fallback', err);
+    return [];
+  }
+}
+
 function normalizeStatementLine(row: any, index: number): BankStatementLine {
   const rawAmount = Number(row?.amount ?? row?.belop ?? row?.value ?? 0);
   const amount = Math.abs(rawAmount);
   const rawType = String(row?.type || '').toUpperCase();
   const type = rawType === 'INCOME' || rawAmount > 0 ? TransactionType.INCOME : TransactionType.EXPENSE;
   const currency = (row?.currency === 'NOK' || row?.currency === 'EUR') ? row.currency : 'EUR';
-  return {
-    id: `stmt-line-${Date.now()}-${index}`,
-    date: row?.date || new Date().toISOString().slice(0, 10),
-    description: row?.description || row?.text || row?.merchant || 'Ukjent banktransaksjon',
-    amount,
-    currency,
-    type,
-    confidence: Number(row?.confidence || 0.75),
-    status: 'unmatched',
-  };
+  return { id: `stmt-line-${Date.now()}-${index}`, date: row?.date || new Date().toISOString().slice(0, 10), description: row?.description || row?.text || row?.merchant || 'Ukjent banktransaksjon', amount, currency, type, confidence: Number(row?.confidence || 0.75), status: 'unmatched' };
 }
 
 function findBestMatch(line: BankStatementLine, transactions: Transaction[], receipts: ScannedReceipt[]) {
@@ -156,14 +195,8 @@ function reconcileLines(lines: BankStatementLine[], transactions: Transaction[],
   let unmatchedCount = 0;
   const processed = lines.map((line) => {
     const match = findBestMatch(line, transactions, receipts);
-    if (match?.tx) {
-      matchedCount += 1;
-      return { ...line, status: 'matched' as const, matchedTransactionId: match.tx.id, matchedReceiptId: match.receipt?.id };
-    }
-    if (line.amount > 0) {
-      createdCount += 1;
-      return { ...line, status: 'created' as const };
-    }
+    if (match?.tx) { matchedCount += 1; return { ...line, status: 'matched' as const, matchedTransactionId: match.tx.id, matchedReceiptId: match.receipt?.id }; }
+    if (line.amount > 0) { createdCount += 1; return { ...line, status: 'created' as const }; }
     unmatchedCount += 1;
     return line;
   });
@@ -182,6 +215,8 @@ export async function importBankStatementFile(file: File, transactions: Transact
   const statementRef = `${file.name}-${Date.now()}`;
   const textLines = await tryParseTextStatement(file);
   if (textLines.length > 0) return reconcileLines(textLines, transactions, receipts, statementRef);
+  const pdfLines = await tryParsePdfStatement(file);
+  if (pdfLines.length > 0) return reconcileLines(pdfLines, transactions, receipts, statementRef);
 
   const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
   const b64 = await fileToBase64(file);
@@ -200,20 +235,6 @@ export function applyBankStatementImport(result: BankStatementImportResult, tran
       byId.set(line.matchedTransactionId, { ...existing, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
     }
   });
-  const createdTransactions = result.lines.filter((line) => line.status === 'created').map((line): Transaction => ({
-    id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    date: line.date,
-    amount: line.amount,
-    currency: line.currency,
-    description: line.description,
-    category: inferCategory(line.description),
-    type: line.type,
-    paymentMethod: 'Bank',
-    isAccrual: false,
-    isVerified: true,
-    verifiedAt,
-    verificationSource: 'bank_statement',
-    bankStatementRef: result.statementRef,
-  }));
+  const createdTransactions = result.lines.filter((line) => line.status === 'created').map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferCategory(line.description), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
   return [...createdTransactions, ...Array.from(byId.values())];
 }
