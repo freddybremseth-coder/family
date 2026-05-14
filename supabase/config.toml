@@ -1,0 +1,17 @@
+# Supabase prosjektkonfigurasjon
+# Sjekkes inn i git slik at `supabase functions deploy` plukker opp
+# innstillinger automatisk. Hemmeligheter ligger i Supabase Dashboard →
+# Edge Functions → Secrets, ikke her.
+
+project_id = "ereapsfcsqtdmzosgnnn"
+
+[functions.analyze-bank-statement]
+# JWT-verifisering deaktivert slik at OPTIONS-preflight returnerer 200.
+# Funksjonen er beskyttet av apikey-headeren (Supabase legger den til
+# automatisk via supabase.functions.invoke), og selve PDF-analysen er
+# stateless. Hvis du heller vil kreve innlogget bruker, sett til true.
+verify_jwt = false
+
+# Eksisterende funksjon – sett en sikker default selv om den ikke er ny.
+[functions.ai-settings]
+verify_jwt = true

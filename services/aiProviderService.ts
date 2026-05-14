@@ -59,7 +59,16 @@ async function withTimeout<T>(promise: Promise<T>, label: string, ms: number): P
 
 function claudeModelCandidates() {
   const configured = cleanEnv(env().VITE_CLAUDE_VISION_MODEL || env().VITE_ANTHROPIC_MODEL || '');
-  return Array.from(new Set([configured, 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'].filter(Boolean)));
+  // Liste fra nyeste til mest sannsynlig tilgjengelig på Anthropic-kontoen.
+  // claude-3-5-sonnet-20241022 ga 404 hos brukeren — sannsynlig deprekert/utilgjengelig.
+  return Array.from(new Set([
+    configured,
+    'claude-haiku-4-5-20251001',  // Haiku 4.5 – billig, støtter PDF + bilder
+    'claude-sonnet-4-5',           // Sonnet 4.5 alias
+    'claude-3-5-sonnet-latest',    // alias-form (siste sonnet 3.5)
+    'claude-3-5-haiku-latest',     // alias-form
+    'claude-3-haiku-20240307',     // gammel fallback
+  ].filter(Boolean)));
 }
 
 export function getOpenAIKey() { return cleanEnv(localStorage.getItem('user_openai_api_key')) || cleanEnv(env().VITE_OPENAI_API_KEY) || cleanEnv(env().OPENAI_API_KEY); }
@@ -107,18 +116,29 @@ async function postJson(url: string, headers: Record<string, string>, body: any,
 
 async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string) => any, timeout = 45000) {
   const models = claudeModelCandidates();
-  const model = models[0];
-  try {
-    return await postJson('https://api.anthropic.com/v1/messages', {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    }, bodyFactory(model), `Claude ${model}`, timeout);
-  } catch (err: any) {
-    const suffix = isModelNotFoundError(err) && models.length > 1 ? ` Sett VITE_CLAUDE_VISION_MODEL til en modell kontoen din har tilgang til. Forsøkte: ${model}.` : '';
-    throw new Error(`${friendlyProviderError(err)}${suffix}`);
+  const tried: string[] = [];
+  let lastErr: any = null;
+  for (const model of models) {
+    tried.push(model);
+    try {
+      return await postJson('https://api.anthropic.com/v1/messages', {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      }, bodyFactory(model), `Claude ${model}`, timeout);
+    } catch (err: any) {
+      lastErr = err;
+      // Bare prøv neste modell hvis denne ble avvist som ukjent modell.
+      if (isModelNotFoundError(err)) continue;
+      // Andre feiltyper (auth, kvote, nett) er ikke noe vi løser ved å bytte modell.
+      break;
+    }
   }
+  const suffix = isModelNotFoundError(lastErr)
+    ? ` Sett VITE_CLAUDE_VISION_MODEL til en modell kontoen din har tilgang til. Forsøkte: ${tried.join(', ')}.`
+    : '';
+  throw new Error(`${friendlyProviderError(lastErr)}${suffix}`);
 }
 
 function parseJsonText(text: string) {

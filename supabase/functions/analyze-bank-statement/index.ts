@@ -15,7 +15,9 @@
 // Hemmeligheter i Supabase Edge Functions (Project → Edge Functions → Secrets):
 //   ANTHROPIC_API_KEY       (anbefalt – Claude støtter PDF direkte)
 //   OPENAI_API_KEY          (valgfri – kreves for bilde-fallback)
-//   ANTHROPIC_MODEL         (valgfri, default claude-3-5-sonnet-20241022)
+//   ANTHROPIC_MODEL         (valgfri, default claude-haiku-4-5-20251001)
+//                           Komma-separert liste støttes for retry: f.eks.
+//                           "claude-haiku-4-5-20251001,claude-sonnet-4-5"
 //   OPENAI_VISION_MODEL     (valgfri, default gpt-4o-mini)
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -59,7 +61,13 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-async function callClaude(b64: string, mimeType: string, model: string, apiKey: string) {
+function isClaudeModelNotFound(text: string, status: number) {
+  if (status !== 404 && status !== 400) return false;
+  const lower = text.toLowerCase();
+  return lower.includes('not_found_error') || (lower.includes('model') && lower.includes('not found'));
+}
+
+async function callClaudeOnce(b64: string, mimeType: string, model: string, apiKey: string) {
   const isPdf = mimeType.toLowerCase().includes('pdf');
   const filePart = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
@@ -84,12 +92,36 @@ async function callClaude(b64: string, mimeType: string, model: string, apiKey: 
   });
 
   const text = await res.text();
-  if (!res.ok) throw new Error(`Claude ${res.status}: ${text.slice(0, 400)}`);
+  if (!res.ok) {
+    const err: any = new Error(`Claude ${res.status} (${model}): ${text.slice(0, 400)}`);
+    err.status = res.status;
+    err.modelNotFound = isClaudeModelNotFound(text, res.status);
+    throw err;
+  }
   const data = JSON.parse(text);
   const merged = Array.isArray(data?.content)
     ? data.content.map((part: any) => part.text || '').join('\n')
     : '';
   return parseJsonText(merged || '{}');
+}
+
+async function callClaude(b64: string, mimeType: string, modelList: string[], apiKey: string) {
+  const tried: string[] = [];
+  let lastErr: any = null;
+  for (const model of modelList) {
+    tried.push(model);
+    try {
+      return await callClaudeOnce(b64, mimeType, model, apiKey);
+    } catch (err: any) {
+      lastErr = err;
+      if (err?.modelNotFound) continue;
+      break;
+    }
+  }
+  if (lastErr?.modelNotFound) {
+    throw new Error(`Ingen av Claude-modellene er tilgjengelig på denne kontoen. Forsøkte: ${tried.join(', ')}. Sett ANTHROPIC_MODEL i Edge Function-secrets.`);
+  }
+  throw lastErr || new Error('Ukjent Claude-feil');
 }
 
 async function callOpenAIImage(b64: string, mimeType: string, model: string, apiKey: string) {
@@ -138,7 +170,10 @@ serve(async (req) => {
 
   const claudeKey = Deno.env.get('ANTHROPIC_API_KEY') || '';
   const openaiKey = Deno.env.get('OPENAI_API_KEY') || '';
-  const claudeModel = Deno.env.get('ANTHROPIC_MODEL') || 'claude-3-5-sonnet-20241022';
+  const claudeModelEnv = Deno.env.get('ANTHROPIC_MODEL') || '';
+  const claudeModelList = claudeModelEnv
+    ? claudeModelEnv.split(',').map((m) => m.trim()).filter(Boolean)
+    : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest'];
   const openaiModel = Deno.env.get('OPENAI_VISION_MODEL') || 'gpt-4o-mini';
 
   const isPdf = mimeType.toLowerCase().includes('pdf');
@@ -153,7 +188,7 @@ serve(async (req) => {
     try {
       if (provider === 'claude') {
         if (!claudeKey) { attempts.push({ provider, status: 'skipped', message: 'ANTHROPIC_API_KEY ikke satt på serveren' }); continue; }
-        const result = await callClaude(b64, mimeType, claudeModel, claudeKey);
+        const result = await callClaude(b64, mimeType, claudeModelList, claudeKey);
         const rows = Array.isArray(result?.transactions) ? result.transactions : [];
         if (rows.length === 0) { attempts.push({ provider, status: 'no-rows', message: 'Ingen transaksjoner i svaret' }); continue; }
         attempts.push({ provider, status: 'success' });
