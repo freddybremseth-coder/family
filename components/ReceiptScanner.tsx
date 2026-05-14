@@ -1,206 +1,205 @@
-
-import React, { useRef, useState, useEffect } from 'react';
-import { CyberButton } from './CyberButton';
-import { Camera, RefreshCw, Check, AlertCircle, Library, Scan, Trash2, Calendar, FileText, ExternalLink, BrainCircuit } from 'lucide-react';
-import { analyzeReceipt } from '../services/geminiService';
-import { ScannedReceipt, Currency } from '../types';
+import React, { useRef, useState } from 'react';
+import { AlertCircle, Camera, CheckCircle2, FileImage, Loader2, RefreshCw, ScanLine, Upload } from 'lucide-react';
+import { analyzeReceipt, fileToBase64, isAiAvailable } from '../services/geminiService';
+import { Currency, ScannedReceipt } from '../types';
 
 interface Props {
   receipts: ScannedReceipt[];
   onScan: (data: any, imageUrl: string) => void;
 }
 
-const formatCurrency = (amount: number, currency: Currency) => {
-  const symbol = currency === 'NOK' ? 'kr' : '€';
-  return `${symbol} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const CATEGORIES = ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'];
+
+const formatCurrency = (amount: number, currency: Currency = 'NOK') => {
+  return new Intl.NumberFormat('nb-NO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
 };
 
+function fallbackCategory(vendor = '', items: any[] = []) {
+  const text = `${vendor} ${items.map((i) => `${i.name || ''} ${i.category || ''}`).join(' ')}`.toLowerCase();
+  if (/rema|kiwi|meny|coop|spar|mercadona|carrefour|aldi|lidl|supermercado|grocery|mat/.test(text)) return 'Dagligvarer';
+  if (/restaurant|cafe|bar|pizza|burger|takeaway|kebab|sushi/.test(text)) return 'Restaurant';
+  if (/fuel|diesel|gasolina|bensin|parking|parkering|taxi|uber|bolt|transport/.test(text)) return 'Transport';
+  if (/pharmacy|apotek|farmacia|lege|doctor|health|helse/.test(text)) return 'Helse';
+  if (/zara|hm|h&m|clothes|klær|sko|shoes/.test(text)) return 'Klær';
+  if (/ikea|leroy|brico|bygg|home|bolig/.test(text)) return 'Bolig';
+  if (/car|bil|taller|verksted|service|dekk/.test(text)) return 'Bil';
+  return 'Annet';
+}
+
+function normalizeReceiptResult(result: any) {
+  const vendor = result?.vendor || result?.merchant || 'Ukjent butikk';
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const category = CATEGORIES.includes(result?.category) ? result.category : fallbackCategory(vendor, items);
+  return {
+    vendor,
+    date: result?.date || new Date().toISOString().slice(0, 10),
+    totalAmount: Number(result?.totalAmount || result?.amount || 0),
+    currency: result?.currency === 'EUR' ? 'EUR' : 'NOK',
+    category,
+    paymentMethod: result?.paymentMethod || '',
+    confidence: Number(result?.confidence || 0.75),
+    items,
+    note: result?.note || result?.summary || `Kvittering kategorisert som ${category}`,
+  };
+}
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+}
+
 export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'scanner' | 'archive'>('scanner');
+  const [success, setSuccess] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<any | null>(null);
 
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
+  const handleFile = (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Last opp et bilde av kvitteringen, for eksempel JPG, PNG eller HEIC fra mobilen.');
+      return;
     }
-  }, [stream]);
-
-  const startCamera = async () => {
-    try {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
-      });
-      setStream(mediaStream);
-      setCapturedImage(null);
-      setError(null);
-    } catch (err) {
-      setError("Kunne ikke få tilgang til kameraet.");
-    }
+    setSelectedFile(file);
+    setImageUrl(URL.createObjectURL(file));
+    setError(null);
+    setSuccess(null);
+    setLastResult(null);
   };
 
-  const capture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
-      if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        context.drawImage(videoRef.current, 0, 0);
-        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
-        setCapturedImage(dataUrl);
-        stream?.getTracks().forEach(track => track.stop());
-        setStream(null);
-      }
+  const analyzeSelected = async () => {
+    if (!selectedFile) {
+      setError('Velg eller ta bilde av en kvittering først.');
+      return;
     }
-  };
-
-  const processImage = async () => {
-    if (!capturedImage) return;
+    if (!isAiAvailable()) {
+      setError('AI er ikke konfigurert. Legg inn Gemini API-nøkkel under Innstillinger → AI.');
+      return;
+    }
     setScanning(true);
+    setError(null);
+    setSuccess(null);
     try {
-      const base64 = capturedImage.split(',')[1];
-      const result = await analyzeReceipt(base64);
-      onScan(result, capturedImage);
-      setView('archive');
-    } catch (err) {
-      setError("AI-analyse feilet. Prøv igjen.");
+      const b64 = await fileToBase64(selectedFile);
+      const raw = await analyzeReceipt(b64, selectedFile.type || 'image/jpeg');
+      const receipt = normalizeReceiptResult(raw);
+      if (!receipt.totalAmount || receipt.totalAmount <= 0) {
+        setError('Jeg klarte ikke å lese totalbeløpet. Prøv et skarpere bilde eller beskjær kvitteringen.');
+        return;
+      }
+      setLastResult(receipt);
+      onScan(receipt, imageUrl || '');
+      setSuccess(`Transaksjon opprettet: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)} · ${receipt.category}`);
+    } catch (err: any) {
+      setError(err?.message || 'AI-analyse feilet. Prøv et tydeligere bilde eller last opp fra galleri.');
     } finally {
       setScanning(false);
     }
   };
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      {/* TABS VELGER */}
-      <div className="flex gap-4 border-b border-white/10 pb-4 overflow-x-auto no-scrollbar">
-        {[
-          { id: 'scanner', label: 'Scanner', icon: <Scan className="w-4 h-4" /> },
-          { id: 'archive', label: 'Digitalt Arkiv', icon: <Library className="w-4 h-4" /> },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setView(t.id as any)}
-            className={`flex items-center gap-2 px-6 py-2 text-xs font-black uppercase tracking-widest transition-all shrink-0 ${
-              view === t.id ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><ScanLine className="h-5 w-5" /></div>
+            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Kvitteringer</span>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Scan eller last opp kvittering</h1>
+          <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">AI leser butikk, dato, beløp og kategori. Transaksjonen legges inn med riktig kategori for analyse av utgiftene.</p>
+        </div>
+      </section>
 
-      {view === 'scanner' && (
-        <div className="glass-panel p-8 border-l-4 border-l-cyan-500 animate-in fade-in duration-500">
-           <h2 className="text-xl font-bold mb-8 flex items-center gap-3">
-            <Camera className="text-cyan-400" /> NY KVITTERINGSSCAN
-          </h2>
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><div className="flex gap-2"><AlertCircle className="h-5 w-5 shrink-0" /><p>{error}</p></div></div>}
+      {success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><div className="flex gap-2"><CheckCircle2 className="h-5 w-5 shrink-0" /><p>{success}</p></div></div>}
 
-          <div className="relative aspect-[3/4] max-w-sm mx-auto bg-black border border-cyan-500/30 overflow-hidden mb-8 shadow-[0_0_30px_rgba(0,243,255,0.1)]">
-            {!stream && !capturedImage && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                <Scan className="w-16 h-16 text-cyan-500/20 mb-6 animate-pulse" />
-                <CyberButton onClick={startCamera}>Aktiver Optikk</CyberButton>
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <div className="space-y-4 p-5">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Ny kvittering</h2>
+              <p className="mt-1 text-sm text-slate-500">Ta bilde på mobil eller last opp bilde fra galleri/filer.</p>
+            </div>
+
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <button onClick={() => cameraRef.current?.click()} className="btn-primary justify-center"><Camera className="h-4 w-4" /> Scan med kamera</button>
+              <button onClick={() => fileRef.current?.click()} className="btn-secondary justify-center"><Upload className="h-4 w-4" /> Last opp bilde</button>
+            </div>
+
+            {imageUrl ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                <img src={imageUrl} alt="Valgt kvittering" className="max-h-[420px] w-full object-contain" />
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                <FileImage className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+                Ingen kvittering valgt.
               </div>
             )}
 
-            {stream && (
-              <>
-                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                <div className="absolute inset-0 pointer-events-none border-[30px] border-black/50">
-                   <div className="w-full h-0.5 bg-cyan-400 shadow-[0_0_15px_#00f3ff] animate-bounce opacity-50"></div>
+            <button onClick={analyzeSelected} disabled={!selectedFile || scanning} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+              {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+              Analyser og opprett transaksjon
+            </button>
+
+            {lastResult && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                <p className="font-bold text-slate-900">Siste analyse</p>
+                <div className="mt-2 space-y-1 text-slate-600">
+                  <p>Butikk: {lastResult.vendor}</p>
+                  <p>Beløp: {formatCurrency(lastResult.totalAmount, lastResult.currency)}</p>
+                  <p>Kategori: {lastResult.category}</p>
+                  <p>Dato: {lastResult.date}</p>
                 </div>
-              </>
-            )}
-
-            {capturedImage && (
-              <img src={capturedImage} className="w-full h-full object-contain" alt="Captured" />
-            )}
-
-            {scanning && (
-              <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20">
-                <RefreshCw className="w-12 h-12 text-cyan-400 animate-spin mb-4" />
-                <p className="text-cyan-400 uppercase tracking-[0.3em] text-xs font-black animate-pulse text-center px-6">
-                  Dekrypterer kvitteringsdata via Neural Engine...
-                </p>
               </div>
             )}
           </div>
+        </Card>
 
-          <div className="flex justify-center gap-4">
-            {stream && <CyberButton onClick={capture}>Ta Bilde</CyberButton>}
-            {capturedImage && !scanning && (
-              <>
-                <CyberButton onClick={startCamera} variant="ghost">Prøv på nytt</CyberButton>
-                <CyberButton onClick={processImage} variant="primary">Analyser & Arkiver</CyberButton>
-              </>
+        <Card className="lg:col-span-2">
+          <div className="p-5">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Kvitteringsarkiv</h2>
+                <p className="mt-1 text-sm text-slate-500">Skannede kvitteringer og kategorier.</p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{receipts.length} stk</span>
+            </div>
+            {receipts.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">Ingen kvitteringer skannet ennå.</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {receipts.map((receipt) => (
+                  <div key={receipt.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex gap-4">
+                      {receipt.imageUrl && <img src={receipt.imageUrl} alt={receipt.vendor} className="h-20 w-20 rounded-2xl object-cover" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-900">{receipt.vendor}</p>
+                            <p className="mt-1 text-xs text-slate-500">{receipt.date}</p>
+                          </div>
+                          <p className="font-bold text-slate-900">{formatCurrency(receipt.amount, receipt.currency)}</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{receipt.category}</span>
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Transaksjon opprettet</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
-      )}
-
-      {view === 'archive' && (
-        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-           {receipts.length === 0 ? (
-             <div className="glass-panel p-20 text-center border-2 border-dashed border-white/5 opacity-30">
-                <Library className="w-16 h-16 mx-auto mb-6" />
-                <p className="uppercase tracking-[0.4em] text-xs font-black">Arkivet er tomt // Ingen data funnet</p>
-             </div>
-           ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {receipts.map(rcpt => (
-                 <div key={rcpt.id} className="glass-panel overflow-hidden border-l-2 border-l-magenta-500 group hover:border-l-4 transition-all bg-magenta-500/5">
-                    <div className="aspect-[4/3] relative overflow-hidden bg-black/50">
-                       <img src={rcpt.imageUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt={rcpt.vendor} />
-                       <div className="absolute top-0 right-0 p-3 bg-black/80 border-b border-l border-magenta-500/30 text-[9px] font-black uppercase text-magenta-400 tracking-widest">
-                          {rcpt.category}
-                       </div>
-                    </div>
-                    <div className="p-5 space-y-4">
-                       <div className="flex justify-between items-start">
-                          <div>
-                             <h4 className="text-sm font-black text-white uppercase tracking-tight">{rcpt.vendor}</h4>
-                             <p className="text-[9px] text-slate-500 font-mono mt-1">{rcpt.date}</p>
-                          </div>
-                          <p className="text-lg font-black text-white font-mono">{formatCurrency(rcpt.amount, rcpt.currency)}</p>
-                       </div>
-                       
-                       <div className="p-3 bg-black/40 border border-white/5 space-y-2">
-                          <div className="flex items-center gap-2 mb-1">
-                             <BrainCircuit className="w-3 h-3 text-magenta-500" />
-                             <span className="text-[8px] font-black text-magenta-400 uppercase tracking-widest">AI Extraction Summary</span>
-                          </div>
-                          <div className="flex justify-between text-[9px] uppercase font-bold">
-                             <span className="text-slate-500">Confidence Score</span>
-                             <span className="text-emerald-400">{(rcpt.confidence * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="flex justify-between text-[9px] uppercase font-bold">
-                             <span className="text-slate-500">Status</span>
-                             <span className="text-cyan-400">Transaksjon Opprettet</span>
-                          </div>
-                       </div>
-
-                       <div className="flex justify-between pt-2 border-t border-white/5">
-                          <button className="text-[9px] font-black uppercase text-slate-500 hover:text-white transition-colors flex items-center gap-1">
-                             <FileText className="w-3 h-3" /> Detaljer
-                          </button>
-                          <button className="text-[9px] font-black uppercase text-rose-500/50 hover:text-rose-500 transition-colors flex items-center gap-1">
-                             <Trash2 className="w-3 h-3" /> Fjern
-                          </button>
-                       </div>
-                    </div>
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
-      )}
+        </Card>
+      </section>
     </div>
   );
 };
