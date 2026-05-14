@@ -42,6 +42,16 @@ function cleanEnv(value: unknown): string {
 function env() { return typeof import.meta !== 'undefined' ? import.meta.env : {}; }
 function isPdf(mimeType = '') { return mimeType.toLowerCase().includes('pdf'); }
 
+function claudeModelCandidates() {
+  const configured = cleanEnv(env().VITE_CLAUDE_VISION_MODEL || env().VITE_ANTHROPIC_MODEL || '');
+  return Array.from(new Set([
+    configured,
+    'claude-3-5-haiku-20241022',
+    'claude-3-5-sonnet-20241022',
+    'claude-3-haiku-20240307',
+  ].filter(Boolean)));
+}
+
 export function getOpenAIKey() { return cleanEnv(localStorage.getItem('user_openai_api_key')) || cleanEnv(env().VITE_OPENAI_API_KEY) || cleanEnv(env().OPENAI_API_KEY); }
 export function getClaudeKey() { return cleanEnv(localStorage.getItem('user_claude_api_key')) || cleanEnv(env().VITE_ANTHROPIC_API_KEY) || cleanEnv(env().VITE_CLAUDE_API_KEY) || cleanEnv(env().ANTHROPIC_API_KEY); }
 export function hasOpenAI() { return !!getOpenAIKey(); }
@@ -53,6 +63,7 @@ export function friendlyProviderError(err: any) {
   if (raw.includes('PERMISSION_DENIED') || raw.includes('denied access') || raw.includes('403')) return 'AI-provideren avviste nøkkelen eller prosjektet har ikke tilgang.';
   if (lower.includes('invalid') || raw.includes('401')) return 'AI-nøkkelen er ugyldig eller mangler tilgang.';
   if (lower.includes('quota') || raw.includes('429')) return 'AI-kvoten er brukt opp eller rate limit er nådd.';
+  if (lower.includes('not_found_error') && lower.includes('model')) return 'Claude-modellen finnes ikke for denne API-kontoen. Prøver alternativ modell.';
   if (raw.includes('400') || lower.includes('bad request')) return 'AI-provideren avviste filformatet eller request-formatet.';
   return raw.slice(0, 300) || 'Ukjent AI-feil.';
 }
@@ -64,6 +75,26 @@ async function postJson(url: string, headers: Record<string, string>, body: any)
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!res.ok) throw new Error(JSON.stringify(data || { status: res.status }));
   return data;
+}
+
+async function postClaudeWithModelRetry(key: string, bodyFactory: (model: string) => any) {
+  const errors: string[] = [];
+  for (const model of claudeModelCandidates()) {
+    try {
+      return await postJson('https://api.anthropic.com/v1/messages', {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      }, bodyFactory(model));
+    } catch (err: any) {
+      const message = typeof err === 'string' ? err : err?.message || JSON.stringify(err || {});
+      errors.push(`${model}: ${friendlyProviderError(err)}`);
+      const lower = message.toLowerCase();
+      if (!(lower.includes('not_found_error') || lower.includes('model'))) break;
+    }
+  }
+  throw new Error(errors.join(' | ') || 'Claude-kall feilet.');
 }
 
 function parseJsonText(text: string) {
@@ -90,7 +121,7 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
   const key = getClaudeKey();
   if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
   if (isPdf(mimeType)) throw new Error('Claude-fallback for kvittering støtter bildeformat i denne appen.');
-  const data = await postJson('https://api.anthropic.com/v1/messages', { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, { model: cleanEnv(env().VITE_CLAUDE_VISION_MODEL) || 'claude-3-5-haiku-latest', max_tokens: 1200, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } }] }] });
+  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 1200, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } }] }] }));
   const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
   return parseJsonText(text || '{}');
 }
@@ -107,10 +138,8 @@ export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'im
 export async function analyzeBankStatementWithClaude(b64: string, mimeType = 'image/jpeg') {
   const key = getClaudeKey();
   if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
-  const filePart = isPdf(mimeType)
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
-    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } };
-  const data = await postJson('https://api.anthropic.com/v1/messages', { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, { model: cleanEnv(env().VITE_CLAUDE_VISION_MODEL) || 'claude-3-5-haiku-latest', max_tokens: 2000, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, filePart] }] });
+  const filePart = isPdf(mimeType) ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } } : { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } };
+  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 2000, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, filePart] }] }));
   const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
   return parseJsonText(text || '{}');
 }
