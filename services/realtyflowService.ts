@@ -24,8 +24,20 @@ export interface RealtyflowSummary {
 }
 
 const FALLBACK_FX = 11.55;
-const TABLES = ['business_financial_events', 'real_estate_deals', 'commission_payouts', 'commissions', 'deals'];
 const READ_TIMEOUT_MS = 8000;
+
+function cleanEnv(value: unknown): string {
+  return String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+}
+
+function env() {
+  return typeof import.meta !== 'undefined' ? import.meta.env : {};
+}
+
+function configuredTables(): string[] {
+  const raw = cleanEnv(env().VITE_REALTYFLOW_COMMISSION_TABLES || env().VITE_REALTYFLOW_TABLES || '');
+  return raw.split(',').map((table) => table.trim()).filter(Boolean);
+}
 
 function normalize(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\.com|\.no|\.es/g, '').replace(/[^a-z0-9]+/g, '');
@@ -95,19 +107,17 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const fxRate = fx.rate || FALLBACK_FX;
   const baseDiagnostics = [`App-versjon: ${APP_VERSION}`, ...fx.diagnostics];
   const empty: RealtyflowSummary = { brands: [emptyBrand('soleada'), emptyBrand('zenecohomes')], totalEur: 0, totalNok: 0, fxRate, source: 'fallback', diagnostics: baseDiagnostics };
+  const tables = configuredTables();
 
   if (!isRealtyflowSupabaseConfigured()) {
     return { ...empty, diagnostics: [...baseDiagnostics, 'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.', `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`] };
   }
 
-  const diagnostics: string[] = [
-    ...baseDiagnostics,
-    `EUR/NOK-kilde: ${fx.source}`,
-    `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`,
-    `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`,
-    `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`,
-    `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`,
-  ];
+  if (tables.length === 0) {
+    return { ...empty, diagnostics: [...baseDiagnostics, 'RealtyFlow tabell-probing er deaktivert for å unngå 404 i produksjon. Sett VITE_REALTYFLOW_COMMISSION_TABLES=tabellnavn1,tabellnavn2 hvis ekstern RealtyFlow-summering skal leses direkte. Oversikt bruker fortsatt lokale Business-data fra app-state.'] };
+  }
+
+  const diagnostics: string[] = [...baseDiagnostics, `EUR/NOK-kilde: ${fx.source}`, `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`, `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`, `RealtyFlow-tabeller: ${tables.join(', ')}`];
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
   byBrand.set('soleada', emptyBrand('soleada'));
   byBrand.set('zenecohomes', emptyBrand('zenecohomes'));
@@ -117,14 +127,11 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const rawBrands = new Set<string>();
   let invalidKeySeen = false;
 
-  for (const table of TABLES) {
+  for (const table of tables) {
     const result = await readRows(table);
     if (result.error) {
       diagnostics.push(result.error);
-      if (result.error.toLowerCase().includes('invalid api key')) {
-        invalidKeySeen = true;
-        break;
-      }
+      if (result.error.toLowerCase().includes('invalid api key')) { invalidKeySeen = true; break; }
       continue;
     }
     diagnostics.push(`${table}: ${result.rows.length} rader lest`);
@@ -156,8 +163,6 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
   diagnostics.push(`Matchede kommisjonsrader for Soleada/ZenEcoHomes: ${matchedRows}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
-  if ((byBrand.get('soleada')?.count || 0) === 0) diagnostics.push('Soleada ga 0 treff. Sjekk faktisk brand/business value i listen over.');
-  if ((byBrand.get('zenecohomes')?.count || 0) === 0) diagnostics.push('ZenEcoHomes ga 0 treff. Sjekk faktisk brand/business value i listen over.');
 
   return { brands, totalEur, totalNok: totalEur * fxRate, fxRate, source: invalidKeySeen ? 'fallback' : 'supabase', diagnostics };
 }
