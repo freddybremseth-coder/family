@@ -1,5 +1,6 @@
 import { supabasePublic, isRealtyflowSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from '../supabase';
 import { getEurToNokRate } from './fxService';
+import { APP_VERSION } from '../config/appVersion';
 
 export type CommissionBrandKey = 'soleada' | 'zenecohomes' | 'other';
 
@@ -92,14 +93,15 @@ async function readRows(table: string): Promise<{ rows: any[]; error?: string }>
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const fx = await getEurToNokRate();
   const fxRate = fx.rate || FALLBACK_FX;
-  const empty: RealtyflowSummary = { brands: [emptyBrand('soleada'), emptyBrand('zenecohomes')], totalEur: 0, totalNok: 0, fxRate, source: 'fallback', diagnostics: fx.diagnostics };
+  const baseDiagnostics = [`App-versjon: ${APP_VERSION}`, ...fx.diagnostics];
+  const empty: RealtyflowSummary = { brands: [emptyBrand('soleada'), emptyBrand('zenecohomes')], totalEur: 0, totalNok: 0, fxRate, source: 'fallback', diagnostics: baseDiagnostics };
 
   if (!isRealtyflowSupabaseConfigured()) {
-    return { ...empty, diagnostics: [...fx.diagnostics, 'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.', `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`] };
+    return { ...empty, diagnostics: [...baseDiagnostics, 'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.', `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`] };
   }
 
   const diagnostics: string[] = [
-    ...fx.diagnostics,
+    ...baseDiagnostics,
     `EUR/NOK-kilde: ${fx.source}`,
     `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`,
     `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`,
@@ -147,7 +149,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     }
   }
 
-  if (invalidKeySeen) diagnostics.push('RealtyFlow-nøkkelen er ugyldig for dette prosjektet. Sjekk at VITE_REALTYFLOW_SUPABASE_ANON_KEY er anon/public key fra ereapsfcsqtdmzosgnnn, og redeploy uten cache.');
+  if (invalidKeySeen) diagnostics.push('RealtyFlow-nøkkelen er ugyldig i denne builden/cachet nettleser. Hvis desktop fungerer men mobil feiler, slett mobilens nettstedsdata eller åpne etter ny Vercel-deploy.');
 
   const brands = Array.from(byBrand.values()).map((b) => ({ ...b, totalNok: b.totalEur * fxRate, monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)) }));
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
