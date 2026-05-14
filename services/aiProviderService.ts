@@ -70,6 +70,7 @@ export function hasClaude() { return !!getClaudeKey(); }
 export function friendlyProviderError(err: any) {
   const raw = typeof err === 'string' ? err : JSON.stringify(err?.error || err?.message || err || {});
   const lower = raw.toLowerCase();
+  if (lower.includes('failed to fetch') || lower.includes('err_connection_closed')) return 'Nettleseren mistet forbindelsen til AI-tjenesten. PDF bør ikke sendes direkte fra frontend; bruk CSV/TXT eller server-side import.';
   if (lower.includes('brukte for lang tid') || lower.includes('aborted') || lower.includes('timeout')) return raw.replace(/^"|"$/g, '');
   if (lower.includes('not_found_error') && lower.includes('model')) return 'Claude-modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
   if (lower.includes('model') && (raw.includes('404') || lower.includes('not found'))) return 'Modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
@@ -147,20 +148,10 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
   return parseJsonText(text || '{}');
 }
 
-async function analyzeBankStatementPdfWithOpenAI(b64: string, mimeType = 'application/pdf') {
-  const key = getOpenAIKey();
-  if (!key) throw new Error('OpenAI API-nøkkel mangler.');
-  const model = cleanEnv(env().VITE_OPENAI_PDF_MODEL || env().VITE_OPENAI_VISION_MODEL) || 'gpt-4.1-mini';
-  const dataUrl = `data:${mimeType};base64,${b64}`;
-  const data = await postJson('https://api.openai.com/v1/responses', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model, temperature: 0, input: [{ role: 'user', content: [{ type: 'input_text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'input_file', filename: 'kontoutskrift.pdf', file_data: dataUrl }] }] }, 'OpenAI PDF-kontoutskrift', timeoutMs('statement'));
-  const text = data?.output_text || (Array.isArray(data?.output) ? data.output.flatMap((item: any) => item.content || []).map((part: any) => part.text || '').join('\n') : '');
-  return parseJsonText(text || '{}');
-}
-
 export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'image/jpeg') {
   const key = getOpenAIKey();
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
-  if (isPdf(mimeType)) return analyzeBankStatementPdfWithOpenAI(b64, mimeType);
+  if (isPdf(mimeType)) throw new Error('OpenAI PDF-fallback er deaktivert i frontend fordi store PDF-er ofte gir net::ERR_CONNECTION_CLOSED / Failed to fetch i nettleseren. Bruk CSV/TXT fra banken, eller server-side import via Edge Function.');
   const dataUrl = `data:${mimeType};base64,${b64}`;
   const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] }, 'OpenAI bilde-kontoutskrift', timeoutMs('statement'));
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
