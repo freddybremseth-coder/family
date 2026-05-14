@@ -26,17 +26,15 @@ export interface RealtyflowSummary {
 const FALLBACK_FX = 11.55;
 const READ_TIMEOUT_MS = 8000;
 
-// Trygge standardtabeller. 404 på enkelt-tabeller håndteres stille og blokkerer ikke dashboard.
 const DEFAULT_TABLE_CANDIDATES = [
+  'business_financial_events',
+  'family_economy_realtyflow',
+  'family_economy_monthly',
+  'realtyflow_payouts',
+  'realtyflow_deals',
   'real_estate_deals',
-  'property_deals',
-  'deals',
-  'sales',
-  'house_sales',
-  'commissions',
-  'commission_payouts',
-  'after_sales',
   'transactions',
+  'properties',
 ];
 
 function cleanEnv(value: unknown): string {
@@ -64,7 +62,7 @@ function getFirst(row: any, keys: string[]): any {
 }
 
 function nestedCandidates(row: any) {
-  return [row?.metadata, row?.meta, row?.data, row?.project, row?.developer, row?.brand, row?.company, row?.customer].filter(Boolean);
+  return [row?.metadata, row?.meta, row?.data, row?.details, row?.payload, row?.project, row?.developer, row?.brand, row?.company, row?.customer].filter(Boolean);
 }
 
 function getAny(row: any, keys: string[]): any {
@@ -78,10 +76,9 @@ function getAny(row: any, keys: string[]): any {
 }
 
 function brandKey(row: any): CommissionBrandKey {
-  const meta = row?.metadata || row?.meta || row?.data || {};
   const candidates = [
-    getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'source_type', 'company', 'project_brand', 'developer_name', 'developer', 'builder', 'project_name', 'project']),
-    meta.brand, meta.brand_id, meta.businessUnit, meta.business_unit, meta.company, meta.source, meta.project, meta.developer,
+    getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'source_type', 'company', 'project_brand', 'developer_name', 'developer', 'builder', 'project_name', 'project', 'source', 'tenant', 'tenant_id']),
+    JSON.stringify(row || {}),
   ].flatMap((value) => Array.isArray(value) ? value : [value]).map(normalize).filter(Boolean);
   const joined = candidates.join(' ');
   if (joined.includes('soleada')) return 'soleada';
@@ -95,30 +92,32 @@ function emptyBrand(key: CommissionBrandKey): BrandCommission {
 
 function amountValue(row: any): number {
   const value = getAny(row, [
+    'amount_eur', 'net_eur', 'total_eur', 'realtyflow_net_eur', 'value_eur',
     'amount', 'commission_amount', 'our_commission', 'ourGrossCommission', 'our_gross_commission',
     'gross_commission', 'net_commission', 'ourNetCommission', 'our_net_commission', 'expected_amount',
     'payout_amount', 'commission', 'total_commission', 'sales_commission', 'sale_commission', 'value', 'price_commission',
+    'realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok',
   ]);
   return Number(value || 0);
 }
 
 function currencyValue(row: any): string { return String(getAny(row, ['currency', 'commission_currency', 'amount_currency']) || 'EUR').toUpperCase(); }
-function dateValue(row: any): string { return String(getAny(row, ['event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
+function amountIsNok(row: any) {
+  if (getAny(row, ['realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok']) !== undefined) return true;
+  return currencyValue(row) === 'NOK';
+}
+function dateValue(row: any): string { return String(getAny(row, ['month', 'event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
 
 function isCommissionRow(row: any, table: string): boolean {
-  if (['commission_payouts', 'commissions'].includes(table)) return true;
-  const meta = row?.metadata || row?.meta || row?.data || {};
-  const text = [
-    table, row?.stream, row?.type, row?.category, row?.description, row?.event_type, row?.status,
-    meta.stream, meta.type, meta.category, meta.description, meta.status,
-  ].map((x) => String(x || '').toLowerCase()).join(' ');
-  return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || amountValue(row) > 0;
+  if (['business_financial_events', 'family_economy_realtyflow', 'realtyflow_payouts'].includes(table)) return true;
+  const text = [table, JSON.stringify(row || {})].map((x) => String(x || '').toLowerCase()).join(' ');
+  return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || text.includes('realtyflow') || amountValue(row) > 0;
 }
 
 function isIncomeRow(row: any): boolean {
-  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status']) || '').toLowerCase();
+  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type']) || '').toLowerCase();
   if (!direction) return true;
-  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'sold', 'commission'].some((x) => direction.includes(x));
+  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'sold', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
 }
 
 async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
@@ -135,7 +134,7 @@ function isMissingTableError(errorText = '') {
 
 async function readRows(table: string): Promise<{ rows: any[]; error?: string; missing?: boolean }> {
   try {
-    const result: any = await withTimeout(supabasePublic.from(table).select('*').limit(1000), table);
+    const result: any = await withTimeout(supabasePublic.from(table).select('*').limit(2000), table);
     if (result.error) {
       const error = `${table}: ${result.error.message}`;
       return { rows: [], error, missing: isMissingTableError(error) };
@@ -145,6 +144,15 @@ async function readRows(table: string): Promise<{ rows: any[]; error?: string; m
     const error = `${table}: ${err?.message || 'ukjent feil'}`;
     return { rows: [], error, missing: isMissingTableError(error) };
   }
+}
+
+function rawBrandValue(row: any) {
+  return String(getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'company', 'source_type', 'developer_name', 'developer', 'project_name', 'source', 'tenant', 'tenant_id']) || '');
+}
+
+function shouldIncludeOtherAsRealtyflow(table: string, row: any) {
+  const text = `${table} ${JSON.stringify(row || {})}`.toLowerCase();
+  return table === 'family_economy_realtyflow' || text.includes('realtyflow');
 }
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
@@ -166,7 +174,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`,
     `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`,
     `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`,
-    usingExplicitTables ? `RealtyFlow-tabeller fra env: ${tables.join(', ')}` : `RealtyFlow-tabeller autodetekteres trygt: ${tables.join(', ')}`,
+    usingExplicitTables ? `RealtyFlow-tabeller fra env: ${tables.join(', ')}` : `RealtyFlow-tabeller autodetekteres: ${tables.join(', ')}`,
   ];
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
   byBrand.set('soleada', emptyBrand('soleada'));
@@ -182,10 +190,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   for (const table of tables) {
     const result = await readRows(table);
     if (result.error) {
-      if (result.missing && !usingExplicitTables) {
-        missingTables += 1;
-        continue;
-      }
+      if (result.missing && !usingExplicitTables) { missingTables += 1; continue; }
       diagnostics.push(result.error);
       if (result.error.toLowerCase().includes('invalid api key')) { invalidKeySeen = true; break; }
       continue;
@@ -194,14 +199,15 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     diagnostics.push(`${table}: ${result.rows.length} rader lest`);
     totalRows += result.rows.length;
     for (const row of result.rows) {
-      const brand = brandKey(row);
-      const rawBrand = String(getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'company', 'source_type', 'developer_name', 'developer', 'project_name']) || '');
+      const rawBrand = rawBrandValue(row);
       if (rawBrand) rawBrands.add(rawBrand);
-      if (brand === 'other' || !isCommissionRow(row, table) || !isIncomeRow(row)) continue;
+      const brand = brandKey(row);
+      if (brand === 'other' && !shouldIncludeOtherAsRealtyflow(table, row)) continue;
+      if (!isCommissionRow(row, table) || !isIncomeRow(row)) continue;
       const rawAmount = amountValue(row);
       if (!rawAmount) continue;
       matchedRows += 1;
-      const amountEur = currencyValue(row) === 'EUR' ? rawAmount : rawAmount / fxRate;
+      const amountEur = amountIsNok(row) ? rawAmount / fxRate : rawAmount;
       const item = byBrand.get(brand) || emptyBrand(brand);
       item.totalEur += amountEur;
       item.count += 1;
@@ -210,6 +216,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       const existing = item.monthly.find((x) => x.month === month);
       if (existing) existing.amountEur += amountEur;
       else item.monthly.push({ month, amountEur });
+      byBrand.set(brand, item);
     }
   }
 
@@ -220,7 +227,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const brands = Array.from(byBrand.values()).map((b) => ({ ...b, totalNok: b.totalEur * fxRate, monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)) }));
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
-  diagnostics.push(`Matchede kommisjonsrader for Soleada/ZenEcoHomes: ${matchedRows}`);
+  diagnostics.push(`Matchede kommisjons-/RealtyFlow-rader: ${matchedRows}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
 
   return { brands, totalEur, totalNok: totalEur * fxRate, fxRate, source: invalidKeySeen || existingTables === 0 ? 'fallback' : 'supabase', diagnostics };
