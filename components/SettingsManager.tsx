@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { UserConfig, Currency, Language } from '../types';
 import { translations } from '../translations';
-import { Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap } from 'lucide-react';
+import { Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
 
@@ -12,6 +12,8 @@ interface Props {
 }
 
 type SettingsTab = 'profile' | 'ai' | 'integrations';
+
+type AiKeyName = 'user_gemini_api_key' | 'user_openai_api_key' | 'user_claude_api_key';
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
@@ -30,8 +32,18 @@ function SaveButton({ saved, onClick }: { saved: boolean; onClick: () => void })
   );
 }
 
+function maskedStatus(value: string) {
+  if (!value) return 'Ikke lagt inn';
+  if (value.length <= 8) return 'Lagt inn';
+  return `Lagt inn · ${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
 export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, onApiUpdate }) => {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('user_gemini_api_key') || '');
+  const [aiKeys, setAiKeys] = useState<Record<AiKeyName, string>>({
+    user_gemini_api_key: localStorage.getItem('user_gemini_api_key') || '',
+    user_openai_api_key: localStorage.getItem('user_openai_api_key') || '',
+    user_claude_api_key: localStorage.getItem('user_claude_api_key') || '',
+  });
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const t = translations[userConfig.language];
@@ -43,11 +55,26 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
   ], []);
 
   const handleSave = () => {
-    if (apiKey) localStorage.setItem('user_gemini_api_key', apiKey);
-    else localStorage.removeItem('user_gemini_api_key');
+    Object.entries(aiKeys).forEach(([key, value]) => {
+      const cleaned = String(value || '').trim();
+      if (cleaned) localStorage.setItem(key, cleaned);
+      else localStorage.removeItem(key);
+    });
     onApiUpdate();
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const clearAiKey = (key: AiKeyName) => {
+    setAiKeys(prev => ({ ...prev, [key]: '' }));
+    localStorage.removeItem(key);
+    onApiUpdate();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const updateAiKey = (key: AiKeyName, value: string) => {
+    setAiKeys(prev => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -124,20 +151,39 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
       {activeTab === 'ai' && (
         <Card className="p-5 md:p-6">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-slate-900">AI</h2>
-            <p className="mt-1 text-sm text-slate-500">Koble til egen AI-nøkkel for kvitteringsskanning, ukemeny og innsikt. Nøkkelen lagres kun i nettleseren.</p>
+            <h2 className="text-xl font-bold text-slate-900">AI-nøkler</h2>
+            <p className="mt-1 text-sm text-slate-500">Hver bruker/familie kan bruke egne nøkler. Kvitteringsscan bruker fallback i denne rekkefølgen: Gemini → OpenAI → Claude.</p>
           </div>
+
           <div className="space-y-5">
-            <label className="block space-y-2">
-              <FieldLabel>Gemini API key</FieldLabel>
-              <div className="relative">
-                <Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="pl-12" placeholder="Lim inn nøkkel her" />
+            {[
+              { key: 'user_gemini_api_key' as AiKeyName, label: 'Gemini API key', placeholder: 'AIza…', help: 'Brukes først for kvittering, dokumenter, kalender og AI-innsikt.' },
+              { key: 'user_openai_api_key' as AiKeyName, label: 'OpenAI API key', placeholder: 'sk-…', help: 'Fallback for kvitteringsscan dersom Gemini feiler.' },
+              { key: 'user_claude_api_key' as AiKeyName, label: 'Claude / Anthropic API key', placeholder: 'sk-ant-…', help: 'Siste fallback for kvitteringsscan dersom Gemini og OpenAI feiler.' },
+            ].map((field) => (
+              <div key={field.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <FieldLabel>{field.label}</FieldLabel>
+                    <p className="mt-1 text-xs text-slate-500">{field.help}</p>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">{maskedStatus(aiKeys[field.key])}</span>
+                </div>
+                <div className="flex flex-col gap-3 md:flex-row">
+                  <div className="relative flex-1">
+                    <Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <input type="password" value={aiKeys[field.key]} onChange={e => updateAiKey(field.key, e.target.value)} className="pl-12" placeholder={field.placeholder} autoComplete="off" />
+                  </div>
+                  <button type="button" onClick={() => clearAiKey(field.key)} className="btn-secondary justify-center text-red-600 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4" /> Fjern
+                  </button>
+                </div>
               </div>
-            </label>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="font-bold text-slate-900">Slik brukes AI</p>
-              <p className="mt-1 text-sm text-slate-500">AI bør være en hjelper, ikke hovedgrensesnittet: skanne kvitteringer, forklare økonomi enkelt, foreslå ukemeny og finne uvanlige utgifter.</p>
+            ))}
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-bold text-amber-900">SaaS-notat</p>
+              <p className="mt-1 text-sm text-amber-800">Nøklene lagres nå lokalt i nettleseren for hver bruker. Før full SaaS-lansering bør de lagres kryptert per household i Supabase og brukes via Edge Function, slik at nøkler ikke eksponeres i frontend.</p>
             </div>
           </div>
         </Card>
