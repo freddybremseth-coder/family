@@ -6,6 +6,7 @@ import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from '
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { Dashboard } from './components/Dashboard';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { LiquidityForecastCard } from './components/LiquidityForecastCard';
 import { ShoppingList } from './components/ShoppingList';
 import { TransactionManager } from './components/TransactionManager';
 import { ReceiptScanner } from './components/ReceiptScanner';
@@ -73,7 +74,7 @@ const App = () => {
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
   const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills };
-  const dashboardView = <AppErrorBoundary label="Oversikt"><Dashboard {...dashboardProps} /></AppErrorBoundary>;
+  const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} /><Dashboard {...dashboardProps} /></div></AppErrorBoundary>;
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
@@ -119,7 +120,7 @@ const App = () => {
 
   useEffect(() => {
     try {
-      if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0 }]); return; }
+      if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0, salaryDay: 25 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0, salaryDay: 25 }]); return; }
       let cancelled = false;
       const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false); }, 3500);
 
