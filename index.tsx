@@ -27,6 +27,7 @@ import { translations } from './translations';
 import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
 import { loadFamilyPersistentData, syncMembers, syncTransactions } from './services/familyPersistenceService';
+import { inferTransactionCategory } from './services/categoryService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 const TRIAL_DAYS = 3;
@@ -137,7 +138,8 @@ const App = () => {
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
     const txId = `tx-rcpt-${Date.now()}`;
     const receiptId = `receipt-${Date.now()}`;
-    const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: data.category || 'Shopping', type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId };
+    const smartCategory = inferTransactionCategory({ vendor: data.vendor, description: data.vendor || 'Kvittering', category: data.category, amount: data.totalAmount, items: data.items });
+    const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: smartCategory, type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId };
     if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]);
     const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId };
     setScannedReceipts(prev => [receipt, ...prev]);
