@@ -21,6 +21,18 @@ Ikke bruk mellomsummer, MVA/IVA eller rabatt som total hvis en tydelig total fin
 Hvis noen felter er usikre, returner beste estimat, sett lavere confidence og forklar usikkerheten kort i note.
 ${RECEIPT_SCHEMA_HINT}`;
 
+const BANK_STATEMENT_INSTRUCTIONS = `
+Du er en bankavstemming-assistent. Les kontoutskriften/kontooversikten og returner alle synlige transaksjonslinjer.
+Ta med kortkjøp, overføringer, gebyrer, innbetalinger og uttak. Ikke ta med tekstlinjer uten beløp.
+Bruk type EXPENSE for trekk/utgifter og INCOME for innbetalinger. Beløp skal returneres som positivt tall i amount, type bestemmer retning.
+Hvis dato mangler år, bruk mest sannsynlig år fra dokumentet. Valuta må være NOK eller EUR.
+Returner kun gyldig JSON:
+{
+  "balance": number,
+  "currency": "NOK" | "EUR",
+  "transactions": [{ "date": "YYYY-MM-DD", "description": string, "amount": number, "currency": "NOK" | "EUR", "type": "INCOME" | "EXPENSE" | "TRANSFER", "confidence": number }]
+}`;
+
 function cleanEnv(value: unknown): string {
   let cleaned = String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   const equalsIndex = cleaned.indexOf('=');
@@ -83,6 +95,10 @@ function unusableReceiptReason(result: any) {
   return 'fant ikke totalbeløp';
 }
 
+function hasBankStatementRows(result: any) {
+  return Array.isArray(result?.transactions) && result.transactions.length > 0;
+}
+
 export async function analyzeReceiptWithOpenAI(b64: string, mimeType = 'image/jpeg') {
   const key = getOpenAIKey();
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
@@ -129,6 +145,52 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
   return parseJsonText(text || '{}');
 }
 
+export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'image/jpeg') {
+  const key = getOpenAIKey();
+  if (!key) throw new Error('OpenAI API-nøkkel mangler.');
+  const dataUrl = `data:${mimeType};base64,${b64}`;
+  const data = await postJson('https://api.openai.com/v1/chat/completions', {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+  }, {
+    model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini',
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: BANK_STATEMENT_INSTRUCTIONS },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ],
+    }],
+  });
+  return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
+}
+
+export async function analyzeBankStatementWithClaude(b64: string, mimeType = 'image/jpeg') {
+  const key = getClaudeKey();
+  if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
+  const data = await postJson('https://api.anthropic.com/v1/messages', {
+    'Content-Type': 'application/json',
+    'x-api-key': key,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  }, {
+    model: cleanEnv(env().VITE_CLAUDE_VISION_MODEL) || 'claude-3-5-haiku-latest',
+    max_tokens: 2000,
+    temperature: 0,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: BANK_STATEMENT_INSTRUCTIONS },
+        { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } },
+      ],
+    }],
+  });
+  const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
+  return parseJsonText(text || '{}');
+}
+
 export async function runReceiptFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
   const errors: string[] = [];
   const providers: ProviderName[] = ['gemini', 'openai', 'claude'];
@@ -149,4 +211,26 @@ export async function runReceiptFallback(b64: string, mimeType: string, geminiFn
   }
 
   throw new Error(`Jeg klarte ikke å lese totalbeløpet sikkert nok. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
+}
+
+export async function runBankStatementFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
+  const errors: string[] = [];
+  const providers: ProviderName[] = ['gemini', 'openai', 'claude'];
+
+  for (const provider of providers) {
+    try {
+      let result: any = null;
+      if (provider === 'gemini') result = await geminiFn();
+      if (provider === 'openai' && hasOpenAI()) result = await analyzeBankStatementWithOpenAI(b64, mimeType);
+      if (provider === 'claude' && hasClaude()) result = await analyzeBankStatementWithClaude(b64, mimeType);
+      if (!result) continue;
+
+      if (hasBankStatementRows(result)) return { provider, result };
+      errors.push(`${provider}: fant ingen transaksjonslinjer`);
+    } catch (err) {
+      errors.push(`${provider}: ${friendlyProviderError(err)}`);
+    }
+  }
+
+  throw new Error(`Jeg klarte ikke å lese kontoutskriften. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
 }
