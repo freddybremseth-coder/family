@@ -13,11 +13,19 @@ const RECEIPT_SCHEMA_HINT = `Returner kun gyldig JSON med feltene:
   "items": [{ "name": string, "amount": number, "category": string }]
 }`;
 
+const RECEIPT_OCR_INSTRUCTIONS = `
+Du er en robust kvitteringsleser. Les kvitteringen selv om bildet er litt mørkt, skrått, beskåret eller har gjenskinn.
+Ikke avvis bildet som uklart før du har forsøkt beste tolkning av synlige tall.
+Finn totalbeløpet ved å prioritere felt som TOTAL, SUM, Å BETALE, BETALT, TOTALT, Amount, Importe, Total, Bankkort/Kort.
+Ikke bruk mellomsummer, MVA/IVA eller rabatt som total hvis en tydelig total finnes.
+Hvis noen felter er usikre, returner beste estimat, sett lavere confidence og forklar usikkerheten kort i note.
+${RECEIPT_SCHEMA_HINT}`;
+
 function cleanEnv(value: unknown): string {
-  let cleaned = String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  let cleaned = String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   const equalsIndex = cleaned.indexOf('=');
   if (equalsIndex > -1 && cleaned.slice(0, equalsIndex).trim().startsWith('VITE_')) {
-    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '').trim();
+    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   }
   return cleaned;
 }
@@ -62,6 +70,19 @@ function parseJsonText(text: string) {
   throw new Error('AI returnerte ikke gyldig JSON.');
 }
 
+function hasUsableReceiptTotal(result: any) {
+  const total = Number(result?.totalAmount ?? result?.amount ?? 0);
+  return Number.isFinite(total) && total > 0;
+}
+
+function unusableReceiptReason(result: any) {
+  const note = String(result?.note || result?.message || '').toLowerCase();
+  if (note.includes('uklar') || note.includes('klart') || note.includes('blur') || note.includes('unclear')) {
+    return 'returnerte uklart bilde / ingen sikker total';
+  }
+  return 'fant ikke totalbeløp';
+}
+
 export async function analyzeReceiptWithOpenAI(b64: string, mimeType = 'image/jpeg') {
   const key = getOpenAIKey();
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
@@ -76,7 +97,7 @@ export async function analyzeReceiptWithOpenAI(b64: string, mimeType = 'image/jp
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: `Analyser kvitteringen for FamilieHub. Finn butikk, dato, totalbeløp, valuta, kategori og linjer. ${RECEIPT_SCHEMA_HINT}` },
+        { type: 'text', text: RECEIPT_OCR_INSTRUCTIONS },
         { type: 'image_url', image_url: { url: dataUrl } },
       ],
     }],
@@ -99,7 +120,7 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: `Analyser kvitteringen for FamilieHub. Finn butikk, dato, totalbeløp, valuta, kategori og linjer. ${RECEIPT_SCHEMA_HINT}` },
+        { type: 'text', text: RECEIPT_OCR_INSTRUCTIONS },
         { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } },
       ],
     }],
@@ -114,13 +135,18 @@ export async function runReceiptFallback(b64: string, mimeType: string, geminiFn
 
   for (const provider of providers) {
     try {
-      if (provider === 'gemini') return { provider, result: await geminiFn() };
-      if (provider === 'openai' && hasOpenAI()) return { provider, result: await analyzeReceiptWithOpenAI(b64, mimeType) };
-      if (provider === 'claude' && hasClaude()) return { provider, result: await analyzeReceiptWithClaude(b64, mimeType) };
+      let result: any = null;
+      if (provider === 'gemini') result = await geminiFn();
+      if (provider === 'openai' && hasOpenAI()) result = await analyzeReceiptWithOpenAI(b64, mimeType);
+      if (provider === 'claude' && hasClaude()) result = await analyzeReceiptWithClaude(b64, mimeType);
+      if (!result) continue;
+
+      if (hasUsableReceiptTotal(result)) return { provider, result };
+      errors.push(`${provider}: ${unusableReceiptReason(result)}`);
     } catch (err) {
       errors.push(`${provider}: ${friendlyProviderError(err)}`);
     }
   }
 
-  throw new Error(`Alle AI-providerne feilet. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
+  throw new Error(`Jeg klarte ikke å lese totalbeløpet sikkert nok. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
 }
