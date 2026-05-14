@@ -2,6 +2,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Asset, FarmOperation, Bill, FamilyMember, FarmProfile, FarmTask, CryptoAsset } from "../types";
 
+// Gemini-modeller: tidligere brukt "gemini-3-flash-preview" / "gemini-3-pro-preview"
+// var ikke gyldige model-IDer og førte til 404 NOT_FOUND. Bruker stabile navn
+// som kan overstyres via .env hvis Google introduserer nyere modeller.
+const envVite = typeof import.meta !== 'undefined' ? (import.meta as any).env : {};
+const GEMINI_FLASH = String(envVite.VITE_GEMINI_FLASH_MODEL || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash';
+const GEMINI_PRO   = String(envVite.VITE_GEMINI_PRO_MODEL   || 'gemini-2.5-pro').trim()   || 'gemini-2.5-pro';
+
 function cleanEnv(value: unknown): string {
   let cleaned = String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim();
   const equalsIndex = cleaned.indexOf('=');
@@ -75,7 +82,7 @@ export const fileToBase64 = async (file: File): Promise<string> => {
 export const analyzeFamilyDocument = async (b64: string, mimeType = 'image/jpeg') => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: [
       { inlineData: { mimeType, data: b64 } },
       { text: `Analyser dette familiedokumentet. Hent ut forslag til metadata for FamilieHub.
@@ -107,7 +114,7 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
   const ai = getAi();
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: GEMINI_FLASH,
       contents: `Finn alle helligdager (bank holidays), nasjonale fridager, og lokale fiestas i ${location} for året ${year}.
       
       Spesifikke krav:
@@ -149,7 +156,7 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
 export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: FarmProfile, tasks: FarmTask[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_PRO,
     contents: `Du er en ekspert på landbruksøkonomi og strategisk ledelse for olivenproduksjon i Spania. 
     Analyser Dona Anna-gården basert på følgende data:
     Profil: ${JSON.stringify(profile)}
@@ -185,7 +192,7 @@ export const getFarmStrategicAdvice = async (ops: FarmOperation[], profile: Farm
 export const getFinancialStatusInsight = async (stats: any, assets: Asset[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: `Analyser finansene: ${JSON.stringify(stats)}. Svar på norsk, kort og profesjonelt.`,
     config: {
       responseMimeType: "application/json",
@@ -202,7 +209,7 @@ export const getFinancialStatusInsight = async (stats: any, assets: Asset[]) => 
 export const getSmartShoppingSuggestions = async (history: string[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: `Forslag basert på: ${history.join(', ')}. Svar på norsk.`,
     config: {
       responseMimeType: "application/json",
@@ -225,7 +232,7 @@ export const getSmartShoppingSuggestions = async (history: string[]) => {
 export const analyzeFridge = async (b64: string) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: [
       { inlineData: { mimeType: 'image/jpeg', data: b64 } },
       { text: "Hva ser du i dette kjøleskapet? Lag en liste over ingredienser og foreslå 2 retter man kan lage." }
@@ -259,7 +266,7 @@ export const analyzeFridge = async (b64: string) => {
 export const generateSmartMenu = async (inv: string[], cra: string) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: `Lag en ukemeny (7 dager). Lager: ${inv.join(', ')}. Preferanser: ${cra}. Svar på norsk.`,
     config: {
       responseMimeType: "application/json",
@@ -290,7 +297,7 @@ export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
   try {
     const ai = getAi();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: GEMINI_FLASH,
       contents: [
         { inlineData: { mimeType, data: b64 } },
         { text: `Analyser denne kvitteringen for FamilieHub.
@@ -337,7 +344,7 @@ export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
 export const getBillsSmartAdvice = async (bills: Bill[]) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: `Analyser disse regningene: ${JSON.stringify(bills)}. Svar på norsk.`,
     config: {
       responseMimeType: "application/json",
@@ -361,7 +368,7 @@ export const getBillsSmartAdvice = async (bills: Bill[]) => {
 export const estimateAssetGrowth = async (type: string, loc: string) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: `Vekstestimat for ${type} i ${loc}. Svar på norsk.`,
     config: {
       responseMimeType: "application/json",
@@ -378,7 +385,7 @@ export const estimateAssetGrowth = async (type: string, loc: string) => {
 export const getFarmYieldForecast = async (profile: FarmProfile) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_PRO,
     contents: `Lag en avlingsprognose for 2026 for Dona Anna basert på: ${JSON.stringify(profile)}. Bruk Google Search for Alicante klima-trender.`,
     config: {
       tools: [{ googleSearch: {} }],
@@ -402,7 +409,7 @@ export const getFarmYieldForecast = async (profile: FarmProfile) => {
 export const analyzeBankStatement = async (b64: string, mimeType = 'image/jpeg') => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_FLASH,
     contents: [
       { inlineData: { mimeType, data: b64 } },
       { text: `Analyser kontoutskriften eller kontooversikten.
@@ -444,7 +451,7 @@ export const analyzeBankStatement = async (b64: string, mimeType = 'image/jpeg')
 export const generateZenEcoGuide = async () => {
   const ai = getAi();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_PRO,
     contents: `Du er en ekspert på det spanske boligmarkedet og en topp tekstforfatter for "Zen Eco Homes". Vi selger trygghet, kvalitet og livsstil til nordmenn. 
     Jeg trenger at du genererer følgende 4 deler:
     DEL 1: 5 forslag til fengende titler.

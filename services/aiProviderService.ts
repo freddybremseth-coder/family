@@ -185,19 +185,52 @@ export async function runReceiptFallback(b64: string, mimeType: string, geminiFn
   throw new Error(`Jeg klarte ikke å lese totalbeløpet sikkert nok. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
 }
 
+export interface ProviderAttempt {
+  provider: ProviderName;
+  status: 'success' | 'no-rows' | 'skipped' | 'error';
+  message?: string;
+}
+
+export interface BankStatementFallbackError extends Error {
+  attempts: ProviderAttempt[];
+}
+
 export async function runBankStatementFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
-  const errors: string[] = [];
+  const attempts: ProviderAttempt[] = [];
   const providers: ProviderName[] = ['gemini', 'openai', 'claude'];
   for (const provider of providers) {
     try {
       let result: any = null;
-      if (provider === 'gemini') result = await withTimeout(geminiFn(), 'Gemini kontoutskrift', timeoutMs('statement'));
-      if (provider === 'openai' && hasOpenAI()) result = await analyzeBankStatementWithOpenAI(b64, mimeType);
-      if (provider === 'claude' && hasClaude()) result = await analyzeBankStatementWithClaude(b64, mimeType);
-      if (!result) continue;
-      if (hasBankStatementRows(result)) return { provider, result };
-      errors.push(`${provider}: fant ingen transaksjonslinjer`);
-    } catch (err) { errors.push(`${provider}: ${friendlyProviderError(err)}`); }
+      if (provider === 'gemini') {
+        result = await withTimeout(geminiFn(), 'Gemini kontoutskrift', timeoutMs('statement'));
+      } else if (provider === 'openai') {
+        if (!hasOpenAI()) {
+          attempts.push({ provider, status: 'skipped', message: 'Ingen OpenAI API-nøkkel registrert' });
+          continue;
+        }
+        result = await analyzeBankStatementWithOpenAI(b64, mimeType);
+      } else if (provider === 'claude') {
+        if (!hasClaude()) {
+          attempts.push({ provider, status: 'skipped', message: 'Ingen Claude/Anthropic API-nøkkel registrert' });
+          continue;
+        }
+        result = await analyzeBankStatementWithClaude(b64, mimeType);
+      }
+      if (!result) {
+        attempts.push({ provider, status: 'skipped', message: 'Ingen respons' });
+        continue;
+      }
+      if (hasBankStatementRows(result)) {
+        attempts.push({ provider, status: 'success' });
+        return { provider, result, attempts };
+      }
+      attempts.push({ provider, status: 'no-rows', message: 'Fant ingen transaksjonslinjer' });
+    } catch (err) {
+      attempts.push({ provider, status: 'error', message: friendlyProviderError(err) });
+    }
   }
-  throw new Error(`Jeg klarte ikke å lese kontoutskriften. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
+  const summary = attempts.map((a) => `${a.provider}: ${a.status === 'success' ? 'OK' : a.message || a.status}`).join(' | ');
+  const error = new Error(`Klarte ikke å lese kontoutskriften via AI. ${summary || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`) as BankStatementFallbackError;
+  error.attempts = attempts;
+  throw error;
 }

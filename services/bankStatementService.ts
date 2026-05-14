@@ -1,6 +1,7 @@
 import { Currency, ScannedReceipt, Transaction, TransactionType } from '../types';
 import { analyzeBankStatement, fileToBase64 } from './geminiService';
-import { runBankStatementFallback } from './aiProviderService';
+import { runBankStatementFallback, ProviderAttempt } from './aiProviderService';
+import { analyzeBankStatementServerSide, ServerAnalyzerError } from './serverPdfAnalyzer';
 
 export interface BankStatementLine {
   id: string;
@@ -21,6 +22,10 @@ export interface BankStatementImportResult {
   matchedCount: number;
   createdCount: number;
   unmatchedCount: number;
+  source: 'csv' | 'pdf-text' | 'ai' | 'server-ai';
+  aiAttempts?: ProviderAttempt[];
+  aiProvider?: string;
+  serverAttempts?: ProviderAttempt[];
 }
 
 const MAX_REALISTIC_TRANSACTION_AMOUNT = 50000;
@@ -249,7 +254,7 @@ function findBestMatch(line: BankStatementLine, transactions: Transaction[], rec
   return candidates[0] || null;
 }
 
-function reconcileLines(lines: BankStatementLine[], transactions: Transaction[], receipts: ScannedReceipt[], statementRef: string): BankStatementImportResult {
+function reconcileLines(lines: BankStatementLine[], transactions: Transaction[], receipts: ScannedReceipt[], statementRef: string, source: BankStatementImportResult['source'], extras: { aiAttempts?: ProviderAttempt[]; aiProvider?: string; serverAttempts?: ProviderAttempt[] } = {}): BankStatementImportResult {
   let matchedCount = 0;
   let createdCount = 0;
   let unmatchedCount = 0;
@@ -260,7 +265,10 @@ function reconcileLines(lines: BankStatementLine[], transactions: Transaction[],
     unmatchedCount += 1;
     return line;
   });
-  return { statementRef, lines: processed, matchedCount, createdCount, unmatchedCount };
+  return {
+    statementRef, lines: processed, matchedCount, createdCount, unmatchedCount, source,
+    aiAttempts: extras.aiAttempts, aiProvider: extras.aiProvider, serverAttempts: extras.serverAttempts,
+  };
 }
 
 async function tryParseTextStatement(file: File) {
@@ -274,16 +282,58 @@ async function tryParseTextStatement(file: File) {
 export async function importBankStatementFile(file: File, transactions: Transaction[], receipts: ScannedReceipt[]): Promise<BankStatementImportResult> {
   const statementRef = `${file.name}-${Date.now()}`;
   const textLines = await tryParseTextStatement(file);
-  if (textLines.length > 0) return reconcileLines(textLines, transactions, receipts, statementRef);
+  if (textLines.length > 0) return reconcileLines(textLines, transactions, receipts, statementRef, 'csv');
   const pdfLines = await tryParsePdfStatement(file);
-  if (pdfLines.length > 0) return reconcileLines(pdfLines, transactions, receipts, statementRef);
+  if (pdfLines.length > 0) return reconcileLines(pdfLines, transactions, receipts, statementRef, 'pdf-text');
 
   const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
   const b64 = await fileToBase64(file);
-  const fallback = await runBankStatementFallback(b64, mimeType, () => analyzeBankStatement(b64, mimeType));
-  const rows = Array.isArray(fallback?.result?.transactions) ? fallback.result.transactions : [];
-  const lines = rows.map(normalizeStatementLine).filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
-  return reconcileLines(lines, transactions, receipts, statementRef);
+
+  // 1) Browser-AI fallback (Gemini → OpenAI image → Claude)
+  let browserAttempts: ProviderAttempt[] = [];
+  try {
+    const fallback = await runBankStatementFallback(b64, mimeType, () => analyzeBankStatement(b64, mimeType));
+    const rows = Array.isArray(fallback?.result?.transactions) ? fallback.result.transactions : [];
+    const lines = rows.map(normalizeStatementLine).filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
+    if (lines.length > 0) {
+      return reconcileLines(lines, transactions, receipts, statementRef, 'ai', {
+        aiAttempts: fallback.attempts,
+        aiProvider: fallback.provider,
+      });
+    }
+    browserAttempts = fallback.attempts;
+  } catch (browserErr: any) {
+    browserAttempts = (browserErr?.attempts as ProviderAttempt[]) || [
+      { provider: 'gemini', status: 'error', message: browserErr?.message || String(browserErr) },
+    ];
+  }
+
+  // 2) Server-side fallback via Supabase Edge Function
+  try {
+    const server = await analyzeBankStatementServerSide(b64, mimeType, file.name);
+    const lines = (server.transactions || []).map(normalizeStatementLine)
+      .filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
+    if (lines.length > 0) {
+      return reconcileLines(lines, transactions, receipts, statementRef, 'server-ai', {
+        aiAttempts: browserAttempts,
+        aiProvider: server.provider,
+        serverAttempts: server.attempts,
+      });
+    }
+    // Server svarte men ingen rader – samle attempts og kast feil
+    const summary = browserAttempts.concat(server.attempts || []);
+    const err = new Error(`Klarte ikke å lese kontoutskriften. ${summary.map((a) => `${a.provider}: ${a.status === 'success' ? 'OK' : a.message || a.status}`).join(' | ')}`) as any;
+    err.attempts = summary;
+    throw err;
+  } catch (serverErr: any) {
+    if (serverErr instanceof ServerAnalyzerError) {
+      const summary = browserAttempts.concat(serverErr.attempts || []);
+      const err = new Error(`Klarte ikke å lese kontoutskriften. ${summary.map((a) => `${a.provider}: ${a.status === 'success' ? 'OK' : a.message || a.status}`).join(' | ')}`) as any;
+      err.attempts = summary;
+      throw err;
+    }
+    throw serverErr;
+  }
 }
 
 export function applyBankStatementImport(result: BankStatementImportResult, transactions: Transaction[]): Transaction[] {
