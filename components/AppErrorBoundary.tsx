@@ -30,8 +30,8 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     if (this.props.label === 'Oversikt') {
       return (
         <div className="space-y-6">
-          {this.props.children}
           <RealtyflowOverviewCard />
+          {this.props.children}
         </div>
       );
     }
