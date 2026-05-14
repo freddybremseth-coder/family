@@ -11,6 +11,11 @@ function cleanDay(value: unknown): number | undefined {
   return Math.round(day);
 }
 
+function isSchemaError(error: any) {
+  const text = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  return text.includes('column') || text.includes('schema cache') || text.includes('pgrst204') || text.includes('bad request');
+}
+
 export function mapTransactionRow(row: any): Transaction {
   return {
     ...row,
@@ -40,7 +45,7 @@ export function mapMemberRow(row: any): FamilyMember {
   };
 }
 
-function transactionRows(userId: string, transactions: Transaction[]) {
+function fullTransactionRows(userId: string, transactions: Transaction[]) {
   return transactions.map((tx) => ({
     id: cleanId(tx.id, `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
@@ -62,7 +67,21 @@ function transactionRows(userId: string, transactions: Transaction[]) {
   }));
 }
 
-function memberRows(userId: string, members: FamilyMember[]) {
+function legacyTransactionRows(userId: string, transactions: Transaction[]) {
+  return transactions.map((tx) => ({
+    id: cleanId(tx.id, `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    user_id: userId,
+    date: tx.date || new Date().toISOString().slice(0, 10),
+    amount: Number(tx.amount || 0),
+    currency: tx.currency || 'EUR',
+    description: tx.description || '',
+    category: tx.category || 'Diverse',
+    type: tx.type || 'EXPENSE',
+    payment_method: tx.paymentMethod || 'Bank',
+  }));
+}
+
+function fullMemberRows(userId: string, members: FamilyMember[]) {
   return members.map((member) => ({
     id: cleanId(member.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
@@ -76,33 +95,40 @@ function memberRows(userId: string, members: FamilyMember[]) {
   }));
 }
 
+function legacyMemberRows(userId: string, members: FamilyMember[]) {
+  return members.map((member) => ({
+    id: cleanId(member.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    user_id: userId,
+    name: member.name || '',
+    birth_date: member.birthDate || new Date().toISOString().slice(0, 10),
+    monthly_salary: Number(member.monthlySalary || 0),
+    monthly_benefits: Number(member.monthlyBenefits || 0),
+    monthly_child_benefit: Number(member.monthlyChildBenefit || 0),
+  }));
+}
+
 export async function loadFamilyPersistentData(userId: string) {
   if (!isSupabaseConfigured() || !userId) return { transactions: [], members: [] };
-
   const [txResult, memberResult] = await Promise.all([
     supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
     supabase.from('members').select('*').eq('user_id', userId).order('name', { ascending: true }),
   ]);
-
   if (txResult.error) console.warn('[familyPersistence] transactions load failed', txResult.error);
   if (memberResult.error) console.warn('[familyPersistence] members load failed', memberResult.error);
-
-  return {
-    transactions: (txResult.data || []).map(mapTransactionRow),
-    members: (memberResult.data || []).map(mapMemberRow),
-  };
+  return { transactions: (txResult.data || []).map(mapTransactionRow), members: (memberResult.data || []).map(mapMemberRow) };
 }
 
 export async function syncTransactions(userId: string, transactions: Transaction[]) {
   if (!isSupabaseConfigured() || !userId) return;
-  const rows = transactionRows(userId, transactions);
   const deleteResult = await supabase.from('transactions').delete().eq('user_id', userId);
-  if (deleteResult.error) {
-    console.warn('[familyPersistence] transactions clear failed', deleteResult.error);
-    return;
+  if (deleteResult.error) { console.warn('[familyPersistence] transactions clear failed', deleteResult.error); return; }
+  if (transactions.length === 0) return;
+  let { error } = await supabase.from('transactions').insert(fullTransactionRows(userId, transactions));
+  if (error && isSchemaError(error)) {
+    console.warn('[familyPersistence] full transaction sync failed, retrying legacy columns', error);
+    const retry = await supabase.from('transactions').insert(legacyTransactionRows(userId, transactions));
+    error = retry.error;
   }
-  if (rows.length === 0) return;
-  const { error } = await supabase.from('transactions').insert(rows);
   if (error) console.warn('[familyPersistence] transactions sync failed', error);
 }
 
@@ -114,14 +140,15 @@ export async function deleteTransactionFromSupabase(userId: string, id: string) 
 
 export async function syncMembers(userId: string, members: FamilyMember[]) {
   if (!isSupabaseConfigured() || !userId) return;
-  const rows = memberRows(userId, members);
   const deleteResult = await supabase.from('members').delete().eq('user_id', userId);
-  if (deleteResult.error) {
-    console.warn('[familyPersistence] members clear failed', deleteResult.error);
-    return;
+  if (deleteResult.error) { console.warn('[familyPersistence] members clear failed', deleteResult.error); return; }
+  if (members.length === 0) return;
+  let { error } = await supabase.from('members').insert(fullMemberRows(userId, members));
+  if (error && isSchemaError(error)) {
+    console.warn('[familyPersistence] full member sync failed, retrying legacy columns', error);
+    const retry = await supabase.from('members').insert(legacyMemberRows(userId, members));
+    error = retry.error;
   }
-  if (rows.length === 0) return;
-  const { error } = await supabase.from('members').insert(rows);
   if (error) console.warn('[familyPersistence] members sync failed', error);
 }
 
