@@ -1,6 +1,7 @@
 // Konsolidert økonomi for Oversikt.
-// Prøver først family.economy_monthly hvis viewet finnes.
-// Hvis viewet mangler eller bare har delvise tall, hentes live summer fra RealtyFlow og Olivia-service.
+// Leser først family economy-viewene i FamilyHub/Business-databasen:
+// family_economy_monthly, family_economy_olivia, family_economy_realtyflow, family_economy_mondeo.
+// Faller tilbake til live summer fra RealtyFlow og Dona Anna-service hvis viewene mangler data.
 
 import { supabase, isSupabaseConfigured } from '../supabase';
 import { fetchRealtyflowCommissions } from './realtyflowService';
@@ -34,6 +35,33 @@ const emptySummary = (): EconomySummary => ({
   lastMonth: null,
 });
 
+function numberValue(value: any): number {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  return Number(String(value).replace(/\s/g, '').replace(',', '.')) || 0;
+}
+
+function first(row: any, keys: string[]): any {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
+  }
+  return undefined;
+}
+
+function monthValue(row: any): string {
+  return String(first(row, ['month', 'period', 'date', 'event_date', 'created_at']) || new Date().toISOString()).slice(0, 7) + '-01';
+}
+
+function rowAmountNok(row: any, keys: string[], eurNok: number): number {
+  const nok = first(row, keys.filter((key) => key.toLowerCase().includes('nok')));
+  if (nok !== undefined) return numberValue(nok);
+  const eur = first(row, keys.filter((key) => key.toLowerCase().includes('eur')));
+  if (eur !== undefined) return numberValue(eur) * eurNok;
+  const amount = first(row, keys);
+  const currency = String(first(row, ['currency', 'currency_code']) || 'NOK').toUpperCase();
+  return currency === 'EUR' ? numberValue(amount) * eurNok : numberValue(amount);
+}
+
 async function resolveCurrentEmail(userEmail?: string | null): Promise<string | null> {
   if (userEmail) return userEmail;
   try {
@@ -42,6 +70,82 @@ async function resolveCurrentEmail(userEmail?: string | null): Promise<string | 
   } catch {
     return null;
   }
+}
+
+function summarizeRows(rows: MonthlyEconomyRow[]): EconomySummary {
+  const sorted = rows.sort((a, b) => (a.month < b.month ? -1 : 1));
+  const currentYear = new Date().getFullYear();
+  const ytd = sorted
+    .filter((r) => new Date(r.month).getFullYear() === currentYear)
+    .reduce(
+      (acc, r) => ({
+        oliviaNet: acc.oliviaNet + r.oliviaNetNok,
+        realtyflowNet: acc.realtyflowNet + r.realtyflowNetNok,
+        mondeoInterest: acc.mondeoInterest + r.mondeoInterestNok,
+        totalNet: acc.totalNet + r.totalNetNok,
+      }),
+      { oliviaNet: 0, realtyflowNet: 0, mondeoInterest: 0, totalNet: 0 },
+    );
+  return { rows: sorted, ytd, lastMonth: sorted[sorted.length - 1] ?? null };
+}
+
+function mergeMonth(map: Map<string, MonthlyEconomyRow>, month: string, patch: Partial<MonthlyEconomyRow>) {
+  const current = map.get(month) || { month, oliviaNetNok: 0, realtyflowNetNok: 0, mondeoInterestNok: 0, mondeoPaidNok: 0, totalNetNok: 0 };
+  const next = { ...current, ...patch };
+  next.totalNetNok = next.oliviaNetNok + next.realtyflowNetNok + next.mondeoInterestNok;
+  map.set(month, next);
+}
+
+async function readTable(table: string) {
+  const { data, error } = await supabase.from(table).select('*').limit(2000);
+  if (error) {
+    console.warn(`[familyEconomyService] ${table} error`, error.message || error);
+    return [];
+  }
+  return data || [];
+}
+
+async function fetchEconomyViews(eurNok: number): Promise<EconomySummary> {
+  const empty = emptySummary();
+  if (!isSupabaseConfigured()) return empty;
+
+  const monthMap = new Map<string, MonthlyEconomyRow>();
+
+  const monthly = await readTable('family_economy_monthly');
+  monthly.forEach((r: any) => {
+    const month = monthValue(r);
+    const olivia = rowAmountNok(r, ['olivia_net_nok', 'olivia_net_eur', 'oliviaNetNok', 'oliviaNetEur'], eurNok);
+    const realtyflow = rowAmountNok(r, ['realtyflow_net_nok', 'realtyflow_net_eur', 'realtyflowNetNok', 'realtyflowNetEur'], eurNok);
+    const mondeo = rowAmountNok(r, ['mondeo_interest_nok', 'mondeo_interest_eur', 'mondeoInterestNok', 'mondeoInterestEur'], eurNok);
+    const paid = rowAmountNok(r, ['mondeo_paid_nok', 'mondeo_paid_eur', 'mondeoPaidNok', 'mondeoPaidEur'], eurNok);
+    mergeMonth(monthMap, month, { oliviaNetNok: olivia, realtyflowNetNok: realtyflow, mondeoInterestNok: mondeo, mondeoPaidNok: paid });
+  });
+
+  const oliviaRows = await readTable('family_economy_olivia');
+  oliviaRows.forEach((r: any) => {
+    const month = monthValue(r);
+    const value = rowAmountNok(r, ['olivia_net_nok', 'net_nok', 'total_nok', 'amount_nok', 'olivia_net_eur', 'net_eur', 'total_eur', 'amount_eur', 'value'], eurNok);
+    mergeMonth(monthMap, month, { oliviaNetNok: value });
+  });
+
+  const realtyRows = await readTable('family_economy_realtyflow');
+  realtyRows.forEach((r: any) => {
+    const month = monthValue(r);
+    const value = rowAmountNok(r, ['realtyflow_net_nok', 'net_nok', 'total_nok', 'amount_nok', 'realtyflow_net_eur', 'net_eur', 'total_eur', 'amount_eur', 'value'], eurNok);
+    mergeMonth(monthMap, month, { realtyflowNetNok: value });
+  });
+
+  const mondeoRows = await readTable('family_economy_mondeo');
+  mondeoRows.forEach((r: any) => {
+    const month = monthValue(r);
+    const interest = rowAmountNok(r, ['mondeo_interest_nok', 'interest_nok', 'rente_nok', 'net_nok', 'amount_nok', 'mondeo_interest_eur', 'interest_eur', 'rente_eur', 'net_eur', 'amount_eur', 'value'], eurNok);
+    const paid = rowAmountNok(r, ['mondeo_paid_nok', 'paid_nok', 'payment_nok', 'principal_paid_nok', 'mondeo_paid_eur', 'paid_eur', 'payment_eur', 'principal_paid_eur'], eurNok);
+    mergeMonth(monthMap, month, { mondeoInterestNok: interest, mondeoPaidNok: paid });
+  });
+
+  const rows = Array.from(monthMap.values()).filter((r) => Math.abs(r.totalNetNok) > 0 || Math.abs(r.mondeoPaidNok) > 0);
+  if (rows.length === 0) return empty;
+  return summarizeRows(rows);
 }
 
 function buildSingleMonthSummary(oliviaNetNok: number, realtyflowNetNok: number, mondeoInterestNok = 0): EconomySummary {
@@ -54,60 +158,7 @@ function buildSingleMonthSummary(oliviaNetNok: number, realtyflowNetNok: number,
     mondeoPaidNok: 0,
     totalNetNok: oliviaNetNok + realtyflowNetNok + mondeoInterestNok,
   };
-  return {
-    rows: [row],
-    ytd: {
-      oliviaNet: oliviaNetNok,
-      realtyflowNet: realtyflowNetNok,
-      mondeoInterest: mondeoInterestNok,
-      totalNet: row.totalNetNok,
-    },
-    lastMonth: row,
-  };
-}
-
-async function fetchEconomyView(): Promise<EconomySummary> {
-  const empty = emptySummary();
-  if (!isSupabaseConfigured()) return empty;
-
-  const { data, error } = await supabase
-    .from('economy_monthly')
-    .select('*')
-    .order('month', { ascending: true });
-
-  if (error || !data) {
-    if (error && (error as any).code !== 'PGRST116') console.warn('[familyEconomyService] economy_monthly error', error);
-    return empty;
-  }
-
-  const rows: MonthlyEconomyRow[] = data.map((r: any) => {
-    const olivia = Number(r.olivia_net_nok || 0);
-    const realtyflow = Number(r.realtyflow_net_nok || 0);
-    const mondeo = Number(r.mondeo_interest_nok || 0);
-    return {
-      month: r.month,
-      oliviaNetNok: olivia,
-      realtyflowNetNok: realtyflow,
-      mondeoInterestNok: mondeo,
-      mondeoPaidNok: Number(r.mondeo_paid_nok || 0),
-      totalNetNok: olivia + realtyflow + mondeo,
-    };
-  });
-
-  const currentYear = new Date().getFullYear();
-  const ytd = rows
-    .filter((r) => new Date(r.month).getFullYear() === currentYear)
-    .reduce(
-      (acc, r) => ({
-        oliviaNet: acc.oliviaNet + r.oliviaNetNok,
-        realtyflowNet: acc.realtyflowNet + r.realtyflowNetNok,
-        mondeoInterest: acc.mondeoInterest + r.mondeoInterestNok,
-        totalNet: acc.totalNet + r.totalNetNok,
-      }),
-      { oliviaNet: 0, realtyflowNet: 0, mondeoInterest: 0, totalNet: 0 },
-    );
-
-  return { rows, ytd, lastMonth: rows[rows.length - 1] ?? null };
+  return summarizeRows([row]);
 }
 
 export async function fetchFamilyEconomy(userId: string, userEmail?: string | null): Promise<EconomySummary> {
@@ -115,20 +166,19 @@ export async function fetchFamilyEconomy(userId: string, userEmail?: string | nu
   const resolvedEmail = await resolveCurrentEmail(userEmail);
   if (!canAccessBusiness(resolvedEmail)) return emptySummary();
 
-  const [viewSummary, fx, realtyflow, olivia] = await Promise.allSettled([
-    fetchEconomyView(),
-    getEurToNokRate(),
+  const fx = await getEurToNokRate();
+  const rate = fx.rate || 11.55;
+  const view = await fetchEconomyViews(rate);
+  const viewHasAnyBusiness = Math.abs(view.ytd.oliviaNet) > 0 || Math.abs(view.ytd.realtyflowNet) > 0 || Math.abs(view.ytd.mondeoInterest) > 0;
+  if (view.rows.length > 0 && viewHasAnyBusiness) return view;
+
+  const [realtyflow, olivia] = await Promise.allSettled([
     fetchRealtyflowCommissions(),
     fetchDonaAnnaSummary(),
   ]);
 
-  const view = viewSummary.status === 'fulfilled' ? viewSummary.value : emptySummary();
-  const rate = fx.status === 'fulfilled' ? fx.value.rate : 11.55;
   const realtyflowNetNok = realtyflow.status === 'fulfilled' ? Number(realtyflow.value.totalNok || 0) : 0;
   const oliviaNetNok = olivia.status === 'fulfilled' ? Number(olivia.value.netEur || 0) * rate : 0;
-
-  const viewHasBusiness = Math.abs(view.ytd.oliviaNet) > 0 || Math.abs(view.ytd.realtyflowNet) > 0;
-  if (view.rows.length > 0 && viewHasBusiness) return view;
 
   return buildSingleMonthSummary(oliviaNetNok, realtyflowNetNok, view.ytd.mondeoInterest || 0);
 }
