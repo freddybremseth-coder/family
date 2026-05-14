@@ -2,14 +2,49 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Asset, FarmOperation, Bill, FamilyMember, FarmProfile, FarmTask, CryptoAsset } from "../types";
 
+function cleanEnv(value: unknown): string {
+  let cleaned = String(value || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  const equalsIndex = cleaned.indexOf('=');
+  if (equalsIndex > -1 && cleaned.slice(0, equalsIndex).trim().startsWith('VITE_')) {
+    cleaned = cleaned.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '').trim();
+  }
+  return cleaned;
+}
+
+function resolveAiKey() {
+  const userKey = cleanEnv(localStorage.getItem('user_gemini_api_key'));
+  const viteEnv = typeof import.meta !== 'undefined' ? import.meta.env : {};
+  const processEnv = typeof process !== 'undefined' ? process.env : {};
+  return userKey ||
+    cleanEnv(viteEnv.VITE_GEMINI_API_KEY) ||
+    cleanEnv(viteEnv.VITE_GOOGLE_AI_API_KEY) ||
+    cleanEnv(viteEnv.VITE_GOOGLE_GENAI_API_KEY) ||
+    cleanEnv(viteEnv.GEMINI_API_KEY) ||
+    cleanEnv(processEnv.API_KEY) ||
+    cleanEnv(processEnv.GEMINI_API_KEY) ||
+    '';
+}
+
+export function friendlyAiError(err: any) {
+  const raw = typeof err === 'string' ? err : JSON.stringify(err?.error || err?.message || err || {});
+  if (raw.includes('PERMISSION_DENIED') || raw.includes('denied access') || raw.includes('403')) {
+    return 'AI-prosjektet/nøkkelen har ikke tilgang akkurat nå. Bytt Gemini API-nøkkel under Innstillinger → AI, eller bruk en ny Google AI Studio API-nøkkel med tilgang til Gemini.';
+  }
+  if (raw.includes('API key not valid') || raw.includes('invalid api key') || raw.includes('INVALID_ARGUMENT')) {
+    return 'AI-nøkkelen er ugyldig. Legg inn en ny Gemini API-nøkkel under Innstillinger → AI.';
+  }
+  if (raw.includes('quota') || raw.includes('RESOURCE_EXHAUSTED')) {
+    return 'AI-kvoten er brukt opp eller begrenset. Prøv igjen senere eller bruk en annen Gemini API-nøkkel.';
+  }
+  return err?.message || 'AI-analyse feilet. Sjekk Gemini API-nøkkel under Innstillinger → AI.';
+}
+
 /**
  * Helper to get a fresh AI instance.
  * Prioriterer nøkkel lagret i localStorage (BYOK) over systemets miljøvariabler.
  */
 const getAi = () => {
-  const userKey = localStorage.getItem('user_gemini_api_key');
-  const envKey = process.env.API_KEY;
-  const finalKey = userKey || envKey;
+  const finalKey = resolveAiKey();
 
   if (!finalKey || finalKey === 'undefined') {
     console.error("Gemini API_KEY mangler! Legg den inn i Innstillinger.");
@@ -21,9 +56,7 @@ const getAi = () => {
  * Sjekker om AI er konfigurert enten via system eller bruker.
  */
 export const isAiAvailable = () => {
-  const userKey = localStorage.getItem('user_gemini_api_key');
-  const envKey = process.env.API_KEY;
-  const finalKey = userKey || envKey;
+  const finalKey = resolveAiKey();
   return !!finalKey && finalKey !== 'undefined' && finalKey !== '';
 };
 
@@ -254,46 +287,50 @@ export const generateSmartMenu = async (inv: string[], cra: string) => {
 };
 
 export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: [
-      { inlineData: { mimeType, data: b64 } },
-      { text: `Analyser denne kvitteringen for FamilieHub.
-      Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori.
-      Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet.
-      Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU.` }
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          vendor: { type: Type.STRING },
-          date: { type: Type.STRING },
-          totalAmount: { type: Type.NUMBER },
-          currency: { type: Type.STRING, enum: ['NOK', 'EUR'] },
-          category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] },
-          paymentMethod: { type: Type.STRING },
-          confidence: { type: Type.NUMBER },
-          note: { type: Type.STRING },
-          items: {
-            type: Type.ARRAY,
+  try {
+    const ai = getAi();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [
+        { inlineData: { mimeType, data: b64 } },
+        { text: `Analyser denne kvitteringen for FamilieHub.
+        Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori.
+        Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet.
+        Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU.` }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            vendor: { type: Type.STRING },
+            date: { type: Type.STRING },
+            totalAmount: { type: Type.NUMBER },
+            currency: { type: Type.STRING, enum: ['NOK', 'EUR'] },
+            category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] },
+            paymentMethod: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+            note: { type: Type.STRING },
             items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                category: { type: Type.STRING }
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  amount: { type: Type.NUMBER },
+                  category: { type: Type.STRING }
+                }
               }
             }
-          }
-        },
-        required: ['vendor', 'date', 'totalAmount', 'currency', 'category']
+          },
+          required: ['vendor', 'date', 'totalAmount', 'currency', 'category']
+        }
       }
-    }
-  });
-  return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
+    });
+    return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
+  } catch (err) {
+    throw new Error(friendlyAiError(err));
+  }
 };
 
 export const getBillsSmartAdvice = async (bills: Bill[]) => {
