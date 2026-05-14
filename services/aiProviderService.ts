@@ -215,6 +215,20 @@ export interface BankStatementFallbackError extends Error {
   attempts: ProviderAttempt[];
 }
 
+// Cache i sessionStorage: hvis Gemini-nøkkelen er blokkert/ugyldig, skip
+// den for resten av sesjonen så vi ikke spammer konsollet med 403-er.
+const GEMINI_SKIP_KEY = 'family_gemini_skip_reason';
+function geminiBlacklistReason(): string | null {
+  try { return sessionStorage.getItem(GEMINI_SKIP_KEY); } catch { return null; }
+}
+function blacklistGemini(reason: string) {
+  try { sessionStorage.setItem(GEMINI_SKIP_KEY, reason); } catch {}
+}
+function isPermissionError(err: any) {
+  const raw = typeof err === 'string' ? err : err?.message || JSON.stringify(err?.error || err || {});
+  return raw.includes('403') || raw.includes('PERMISSION_DENIED') || raw.includes('API key not valid') || raw.includes('401') || raw.toLowerCase().includes('invalid api key');
+}
+
 export async function runBankStatementFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
   const attempts: ProviderAttempt[] = [];
   const providers: ProviderName[] = ['gemini', 'openai', 'claude'];
@@ -222,7 +236,17 @@ export async function runBankStatementFallback(b64: string, mimeType: string, ge
     try {
       let result: any = null;
       if (provider === 'gemini') {
-        result = await withTimeout(geminiFn(), 'Gemini kontoutskrift', timeoutMs('statement'));
+        const cachedReason = geminiBlacklistReason();
+        if (cachedReason) {
+          attempts.push({ provider, status: 'skipped', message: `Hoppet over (lagret feil i denne økten): ${cachedReason}` });
+          continue;
+        }
+        try {
+          result = await withTimeout(geminiFn(), 'Gemini kontoutskrift', timeoutMs('statement'));
+        } catch (geminiErr: any) {
+          if (isPermissionError(geminiErr)) blacklistGemini(friendlyProviderError(geminiErr));
+          throw geminiErr;
+        }
       } else if (provider === 'openai') {
         if (!hasOpenAI()) {
           attempts.push({ provider, status: 'skipped', message: 'Ingen OpenAI API-nøkkel registrert' });
