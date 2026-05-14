@@ -5,13 +5,25 @@ function cleanId(value: unknown, fallback: string) {
   return String(value || '').trim() || fallback;
 }
 
+function cleanDay(value: unknown): number | undefined {
+  const day = Number(value || 0);
+  if (!Number.isFinite(day) || day < 1 || day > 31) return undefined;
+  return Math.round(day);
+}
+
 export function mapTransactionRow(row: any): Transaction {
   return {
     ...row,
     amount: Number(row.amount || 0),
-    paymentMethod: row.paymentMethod || row.payment_method || 'Bank',
-    isAccrual: !!row.isAccrual,
-    isVerified: !!row.isVerified,
+    paymentMethod: row.payment_method || row.paymentMethod || 'Bank',
+    isAccrual: !!(row.is_accrual ?? row.isAccrual),
+    fromAccountId: row.from_account_id || row.fromAccountId || undefined,
+    toAccountId: row.to_account_id || row.toAccountId || undefined,
+    isVerified: !!(row.is_verified ?? row.isVerified),
+    verifiedAt: row.verified_at || row.verifiedAt || undefined,
+    verificationSource: row.verification_source || row.verificationSource || undefined,
+    matchedReceiptId: row.matched_receipt_id || row.matchedReceiptId || undefined,
+    bankStatementRef: row.bank_statement_ref || row.bankStatementRef || undefined,
   } as Transaction;
 }
 
@@ -19,10 +31,12 @@ export function mapMemberRow(row: any): FamilyMember {
   return {
     id: cleanId(row.id, `fm-${Date.now()}`),
     name: row.name || '',
-    birthDate: row.birthDate || row.birth_date || new Date().toISOString().slice(0, 10),
-    monthlySalary: Number(row.monthlySalary || row.monthly_salary || 0),
-    monthlyBenefits: Number(row.monthlyBenefits || row.monthly_benefits || 0),
-    monthlyChildBenefit: Number(row.monthlyChildBenefit || row.monthly_child_benefit || 0),
+    birthDate: row.birth_date || row.birthDate || new Date().toISOString().slice(0, 10),
+    monthlySalary: Number(row.monthly_salary || row.monthlySalary || 0),
+    monthlyBenefits: Number(row.monthly_benefits || row.monthlyBenefits || 0),
+    monthlyChildBenefit: Number(row.monthly_child_benefit || row.monthlyChildBenefit || 0),
+    salaryDay: cleanDay(row.salary_day || row.salaryDay),
+    salaryAccountId: row.salary_account_id || row.salaryAccountId || undefined,
   };
 }
 
@@ -36,16 +50,15 @@ function transactionRows(userId: string, transactions: Transaction[]) {
     description: tx.description || '',
     category: tx.category || 'Diverse',
     type: tx.type || 'EXPENSE',
-    paymentMethod: tx.paymentMethod || 'Bank',
     payment_method: tx.paymentMethod || 'Bank',
-    isAccrual: !!tx.isAccrual,
-    fromAccountId: tx.fromAccountId || null,
-    toAccountId: tx.toAccountId || null,
-    isVerified: !!tx.isVerified,
-    verifiedAt: tx.verifiedAt || null,
-    verificationSource: tx.verificationSource || null,
-    matchedReceiptId: tx.matchedReceiptId || null,
-    bankStatementRef: tx.bankStatementRef || null,
+    is_accrual: !!tx.isAccrual,
+    from_account_id: tx.fromAccountId || null,
+    to_account_id: tx.toAccountId || null,
+    is_verified: !!tx.isVerified,
+    verified_at: tx.verifiedAt || null,
+    verification_source: tx.verificationSource || null,
+    matched_receipt_id: tx.matchedReceiptId || null,
+    bank_statement_ref: tx.bankStatementRef || null,
   }));
 }
 
@@ -54,10 +67,12 @@ function memberRows(userId: string, members: FamilyMember[]) {
     id: cleanId(member.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
     name: member.name || '',
-    birthDate: member.birthDate || new Date().toISOString().slice(0, 10),
-    monthlySalary: Number(member.monthlySalary || 0),
-    monthlyBenefits: Number(member.monthlyBenefits || 0),
-    monthlyChildBenefit: Number(member.monthlyChildBenefit || 0),
+    birth_date: member.birthDate || new Date().toISOString().slice(0, 10),
+    monthly_salary: Number(member.monthlySalary || 0),
+    monthly_benefits: Number(member.monthlyBenefits || 0),
+    monthly_child_benefit: Number(member.monthlyChildBenefit || 0),
+    salary_day: cleanDay(member.salaryDay) || null,
+    salary_account_id: member.salaryAccountId || null,
   }));
 }
 
