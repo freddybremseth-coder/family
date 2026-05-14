@@ -2,6 +2,7 @@ import { Currency, ScannedReceipt, Transaction, TransactionType } from '../types
 import { analyzeBankStatement, fileToBase64 } from './geminiService';
 import { runBankStatementFallback, ProviderAttempt } from './aiProviderService';
 import { analyzeBankStatementServerSide, ServerAnalyzerError } from './serverPdfAnalyzer';
+import { inferTransactionCategory } from './categoryService';
 
 export interface BankStatementLine {
   id: string;
@@ -43,18 +44,6 @@ function daysBetween(a: string, b: string) {
 
 function amountClose(a: number, b: number) {
   return Math.abs(Math.abs(Number(a || 0)) - Math.abs(Number(b || 0))) <= 0.75;
-}
-
-function inferCategory(description: string) {
-  const text = normalizeText(description);
-  if (/rema|kiwi|meny|coop|spar|mercadona|carrefour|aldi|lidl|supermercado|grocery|mat/.test(text)) return 'Dagligvarer';
-  if (/restaurant|cafe|bar|pizza|burger|takeaway|kebab|sushi/.test(text)) return 'Restaurant';
-  if (/fuel|diesel|gasolina|bensin|parking|parkering|taxi|uber|bolt|transport/.test(text)) return 'Transport';
-  if (/pharmacy|apotek|farmacia|lege|doctor|health|helse/.test(text)) return 'Helse';
-  if (/zara|hm|h m|clothes|klaer|sko|shoes/.test(text)) return 'Klær';
-  if (/ikea|leroy|brico|bygg|home|bolig/.test(text)) return 'Bolig';
-  if (/car|bil|taller|verksted|service|dekk/.test(text)) return 'Bil';
-  return 'Diverse';
 }
 
 function looksLikeReferenceNumber(raw: string) {
@@ -289,7 +278,6 @@ export async function importBankStatementFile(file: File, transactions: Transact
   const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
   const b64 = await fileToBase64(file);
 
-  // 1) Browser-AI fallback (Gemini → OpenAI image → Claude)
   let browserAttempts: ProviderAttempt[] = [];
   try {
     const fallback = await runBankStatementFallback(b64, mimeType, () => analyzeBankStatement(b64, mimeType));
@@ -308,7 +296,6 @@ export async function importBankStatementFile(file: File, transactions: Transact
     ];
   }
 
-  // 2) Server-side fallback via Supabase Edge Function
   try {
     const server = await analyzeBankStatementServerSide(b64, mimeType, file.name);
     const lines = (server.transactions || []).map(normalizeStatementLine)
@@ -320,7 +307,6 @@ export async function importBankStatementFile(file: File, transactions: Transact
         serverAttempts: server.attempts,
       });
     }
-    // Server svarte men ingen rader – samle attempts og kast feil
     const summary = browserAttempts.concat(server.attempts || []);
     const err = new Error(`Klarte ikke å lese kontoutskriften. ${summary.map((a) => `${a.provider}: ${a.status === 'success' ? 'OK' : a.message || a.status}`).join(' | ')}`) as any;
     err.attempts = summary;
@@ -342,9 +328,10 @@ export function applyBankStatementImport(result: BankStatementImportResult, tran
   result.lines.forEach((line) => {
     if (line.status === 'matched' && line.matchedTransactionId && byId.has(line.matchedTransactionId)) {
       const existing = byId.get(line.matchedTransactionId)!;
-      byId.set(line.matchedTransactionId, { ...existing, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
+      const category = inferTransactionCategory({ description: line.description, category: existing.category, type: line.type });
+      byId.set(line.matchedTransactionId, { ...existing, category, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
     }
   });
-  const createdTransactions = result.lines.filter((line) => line.status === 'created' && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT).map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferCategory(line.description), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
+  const createdTransactions = result.lines.filter((line) => line.status === 'created' && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT).map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferTransactionCategory({ description: line.description, type: line.type }), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
   return [...createdTransactions, ...Array.from(byId.values())];
 }
