@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from './supabase';
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { Dashboard } from './components/Dashboard';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { ShoppingList } from './components/ShoppingList';
 import { TransactionManager } from './components/TransactionManager';
 import { ReceiptScanner } from './components/ReceiptScanner';
@@ -69,6 +70,7 @@ const App = () => {
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
   const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills };
+  const dashboardView = <AppErrorBoundary label="Oversikt"><Dashboard {...dashboardProps} /></AppErrorBoundary>;
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
@@ -130,10 +132,10 @@ const App = () => {
   const navigate = (tab: string) => { if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard'); setActiveTab(tab); setSidebarOpen(false); };
 
   const renderContent = () => {
-    if (!isModuleVisibleForUser(activeTab as any, userEmail)) return <Dashboard {...dashboardProps} />;
+    if (!isModuleVisibleForUser(activeTab as any, userEmail)) return dashboardView;
     switch (activeTab) {
       case 'superadmin': return <SuperAdminDashboard />;
-      case 'dashboard': return <Dashboard {...dashboardProps} />;
+      case 'dashboard': return dashboardView;
       case 'shopping': return <ShoppingList cashBalance={cashBalance} groceryItems={groceryItems} setGroceryItems={setGroceryItems} weeklyMenu={weeklyMenu} setWeeklyMenu={setWeeklyMenu} lang={userConfig.language} userId={session?.user?.id} />;
       case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
       case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
@@ -144,7 +146,7 @@ const App = () => {
       case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
       case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
       case 'trends': return <BillsManager bills={bills} setBills={setBills} />;
-      default: return <Dashboard {...dashboardProps} />;
+      default: return dashboardView;
     }
   };
 
