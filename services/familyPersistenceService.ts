@@ -26,26 +26,8 @@ export function mapMemberRow(row: any): FamilyMember {
   };
 }
 
-export async function loadFamilyPersistentData(userId: string) {
-  if (!isSupabaseConfigured() || !userId) return { transactions: [], members: [] };
-
-  const [txResult, memberResult] = await Promise.all([
-    supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
-    supabase.from('members').select('*').eq('user_id', userId).order('name', { ascending: true }),
-  ]);
-
-  if (txResult.error) console.warn('[familyPersistence] transactions load failed', txResult.error);
-  if (memberResult.error) console.warn('[familyPersistence] members load failed', memberResult.error);
-
-  return {
-    transactions: (txResult.data || []).map(mapTransactionRow),
-    members: (memberResult.data || []).map(mapMemberRow),
-  };
-}
-
-export async function syncTransactions(userId: string, transactions: Transaction[]) {
-  if (!isSupabaseConfigured() || !userId) return;
-  const rows = transactions.map((tx) => ({
+function transactionRows(userId: string, transactions: Transaction[]) {
+  return transactions.map((tx) => ({
     id: cleanId(tx.id, `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
     date: tx.date || new Date().toISOString().slice(0, 10),
@@ -65,8 +47,47 @@ export async function syncTransactions(userId: string, transactions: Transaction
     matchedReceiptId: tx.matchedReceiptId || null,
     bankStatementRef: tx.bankStatementRef || null,
   }));
+}
+
+function memberRows(userId: string, members: FamilyMember[]) {
+  return members.map((member) => ({
+    id: cleanId(member.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    user_id: userId,
+    name: member.name || '',
+    birthDate: member.birthDate || new Date().toISOString().slice(0, 10),
+    monthlySalary: Number(member.monthlySalary || 0),
+    monthlyBenefits: Number(member.monthlyBenefits || 0),
+    monthlyChildBenefit: Number(member.monthlyChildBenefit || 0),
+  }));
+}
+
+export async function loadFamilyPersistentData(userId: string) {
+  if (!isSupabaseConfigured() || !userId) return { transactions: [], members: [] };
+
+  const [txResult, memberResult] = await Promise.all([
+    supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
+    supabase.from('members').select('*').eq('user_id', userId).order('name', { ascending: true }),
+  ]);
+
+  if (txResult.error) console.warn('[familyPersistence] transactions load failed', txResult.error);
+  if (memberResult.error) console.warn('[familyPersistence] members load failed', memberResult.error);
+
+  return {
+    transactions: (txResult.data || []).map(mapTransactionRow),
+    members: (memberResult.data || []).map(mapMemberRow),
+  };
+}
+
+export async function syncTransactions(userId: string, transactions: Transaction[]) {
+  if (!isSupabaseConfigured() || !userId) return;
+  const rows = transactionRows(userId, transactions);
+  const deleteResult = await supabase.from('transactions').delete().eq('user_id', userId);
+  if (deleteResult.error) {
+    console.warn('[familyPersistence] transactions clear failed', deleteResult.error);
+    return;
+  }
   if (rows.length === 0) return;
-  const { error } = await supabase.from('transactions').upsert(rows, { onConflict: 'id' });
+  const { error } = await supabase.from('transactions').insert(rows);
   if (error) console.warn('[familyPersistence] transactions sync failed', error);
 }
 
@@ -78,17 +99,14 @@ export async function deleteTransactionFromSupabase(userId: string, id: string) 
 
 export async function syncMembers(userId: string, members: FamilyMember[]) {
   if (!isSupabaseConfigured() || !userId) return;
-  const rows = members.map((member) => ({
-    id: cleanId(member.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`),
-    user_id: userId,
-    name: member.name || '',
-    birthDate: member.birthDate || new Date().toISOString().slice(0, 10),
-    monthlySalary: Number(member.monthlySalary || 0),
-    monthlyBenefits: Number(member.monthlyBenefits || 0),
-    monthlyChildBenefit: Number(member.monthlyChildBenefit || 0),
-  }));
+  const rows = memberRows(userId, members);
+  const deleteResult = await supabase.from('members').delete().eq('user_id', userId);
+  if (deleteResult.error) {
+    console.warn('[familyPersistence] members clear failed', deleteResult.error);
+    return;
+  }
   if (rows.length === 0) return;
-  const { error } = await supabase.from('members').upsert(rows, { onConflict: 'id' });
+  const { error } = await supabase.from('members').insert(rows);
   if (error) console.warn('[familyPersistence] members sync failed', error);
 }
 
