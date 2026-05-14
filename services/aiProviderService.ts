@@ -60,10 +60,11 @@ export function hasClaude() { return !!getClaudeKey(); }
 export function friendlyProviderError(err: any) {
   const raw = typeof err === 'string' ? err : JSON.stringify(err?.error || err?.message || err || {});
   const lower = raw.toLowerCase();
+  if (lower.includes('not_found_error') && lower.includes('model')) return 'Claude-modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
+  if (lower.includes('model') && (raw.includes('404') || lower.includes('not found'))) return 'Modellen finnes ikke eller er ikke tilgjengelig for denne API-kontoen.';
   if (raw.includes('PERMISSION_DENIED') || raw.includes('denied access') || raw.includes('403')) return 'AI-provideren avviste nøkkelen eller prosjektet har ikke tilgang.';
   if (lower.includes('invalid') || raw.includes('401')) return 'AI-nøkkelen er ugyldig eller mangler tilgang.';
   if (lower.includes('quota') || raw.includes('429')) return 'AI-kvoten er brukt opp eller rate limit er nådd.';
-  if (lower.includes('not_found_error') && lower.includes('model')) return 'Claude-modellen finnes ikke for denne API-kontoen. Prøver alternativ modell.';
   if (raw.includes('400') || lower.includes('bad request')) return 'AI-provideren avviste filformatet eller request-formatet.';
   return raw.slice(0, 300) || 'Ukjent AI-feil.';
 }
@@ -111,7 +112,7 @@ function hasBankStatementRows(result: any) { return Array.isArray(result?.transa
 export async function analyzeReceiptWithOpenAI(b64: string, mimeType = 'image/jpeg') {
   const key = getOpenAIKey();
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
-  if (isPdf(mimeType)) throw new Error('OpenAI-fallback støtter foreløpig bilde/CSV for kontoutskrift i denne appen, ikke PDF via chat/completions.');
+  if (isPdf(mimeType)) throw new Error('OpenAI-fallback for kvittering støtter bildeformat i denne appen.');
   const dataUrl = `data:${mimeType};base64,${b64}`;
   const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: RECEIPT_OCR_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] });
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
@@ -126,10 +127,33 @@ export async function analyzeReceiptWithClaude(b64: string, mimeType = 'image/jp
   return parseJsonText(text || '{}');
 }
 
+async function analyzeBankStatementPdfWithOpenAI(b64: string, mimeType = 'application/pdf') {
+  const key = getOpenAIKey();
+  if (!key) throw new Error('OpenAI API-nøkkel mangler.');
+  const model = cleanEnv(env().VITE_OPENAI_PDF_MODEL || env().VITE_OPENAI_VISION_MODEL) || 'gpt-4.1-mini';
+  const dataUrl = `data:${mimeType};base64,${b64}`;
+  const data = await postJson('https://api.openai.com/v1/responses', {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+  }, {
+    model,
+    temperature: 0,
+    input: [{
+      role: 'user',
+      content: [
+        { type: 'input_text', text: BANK_STATEMENT_INSTRUCTIONS },
+        { type: 'input_file', filename: 'kontoutskrift.pdf', file_data: dataUrl },
+      ],
+    }],
+  });
+  const text = data?.output_text || (Array.isArray(data?.output) ? data.output.flatMap((item: any) => item.content || []).map((part: any) => part.text || '').join('\n') : '');
+  return parseJsonText(text || '{}');
+}
+
 export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'image/jpeg') {
   const key = getOpenAIKey();
   if (!key) throw new Error('OpenAI API-nøkkel mangler.');
-  if (isPdf(mimeType)) throw new Error('OpenAI-fallback støtter foreløpig bilde/CSV for kontoutskrift i denne appen, ikke PDF via chat/completions. Last opp CSV eller bilde, eller bruk fungerende Gemini for PDF.');
+  if (isPdf(mimeType)) return analyzeBankStatementPdfWithOpenAI(b64, mimeType);
   const dataUrl = `data:${mimeType};base64,${b64}`;
   const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: BANK_STATEMENT_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] });
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
