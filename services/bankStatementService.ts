@@ -32,7 +32,7 @@ export interface BankStatementImportResult {
 const MAX_REALISTIC_TRANSACTION_AMOUNT = 50000;
 
 function normalizeText(value = '') {
-  return String(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  return String(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function daysBetween(a: string, b: string) {
@@ -97,6 +97,25 @@ function splitCsvLine(line: string, delimiter: string) {
   return cells;
 }
 
+function textLooksExpense(description: string) {
+  const text = normalizeText(description);
+  return /\b(kort|kortkjop|varekjop|betaling|betalt|visa|mastercard|vipps betaling|avtalegiro|efaktura|faktura|gebyr|rente|kiwi|rema|meny|coop|extra|mercadona|carrefour|lidl|aldi|restaurant|cafe|apotek|farmacia|bensin|diesel|fuel|shell|circle k|repsol|telia|telenor|netflix|spotify|strøm|strom|electric|parking|parkering)\b/.test(text);
+}
+
+function textLooksIncome(description: string) {
+  const text = normalizeText(description);
+  return /\b(lonn|lønn|salary|nav|pensjon|innbetaling|innskudd|deposit|kontantinnskudd|kontant innskudd|cash deposit|mottatt|fra |refund|tilbakebetaling)\b/.test(text);
+}
+
+function forceDirection(description: string, rawType: string, rawAmount: number): TransactionType {
+  const type = String(rawType || '').toUpperCase();
+  if (textLooksExpense(description)) return TransactionType.EXPENSE;
+  if (textLooksIncome(description)) return TransactionType.INCOME;
+  if (type === 'EXPENSE') return TransactionType.EXPENSE;
+  if (type === 'INCOME') return TransactionType.INCOME;
+  return rawAmount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
+}
+
 function parseDelimitedStatement(text: string) {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length < 2) return [];
@@ -105,22 +124,27 @@ function parseDelimitedStatement(text: string) {
   const findIndex = (patterns: RegExp[]) => headers.findIndex((h) => patterns.some((p) => p.test(h)));
   const dateIndex = findIndex([/dato|date|bokfor|valuter/]);
   const descIndex = findIndex([/tekst|beskrivelse|description|forklaring|mottaker|merchant|navn/]);
-  const amountIndex = findIndex([/belop|amount|sum|ut.*inn|transaksjon/]);
-  const outIndex = findIndex([/ut|debet|withdrawal|paid|trekk/]);
-  const inIndex = findIndex([/inn|kredit|credit|deposit|mottatt/]);
+  const amountIndex = findIndex([/belop|amount|sum|transaksjon/]);
+  const outIndex = findIndex([/\but\b|utgift|debet|withdrawal|paid|trekk|belastet/]);
+  const inIndex = findIndex([/\binn\b|inntekt|kredit|credit|deposit|mottatt|innbetalt/]);
+  const balanceIndex = findIndex([/saldo|balance/]);
   const currencyIndex = findIndex([/valuta|currency/]);
   return lines.slice(1).map((line, index) => {
     const cells = splitCsvLine(line, delimiter);
-    const outAmount = outIndex >= 0 ? parseAmount(cells[outIndex]) : 0;
-    const inAmount = inIndex >= 0 ? parseAmount(cells[inIndex]) : 0;
-    const rawAmount = amountIndex >= 0 ? parseAmount(cells[amountIndex]) : inAmount || -Math.abs(outAmount);
-    const amount = inAmount ? Math.abs(inAmount) : outAmount ? Math.abs(outAmount) : Math.abs(rawAmount);
-    const type = inAmount > 0 || rawAmount > 0 ? TransactionType.INCOME : TransactionType.EXPENSE;
-    const description = cells[descIndex] || cells.filter((_, i) => ![dateIndex, amountIndex, outIndex, inIndex, currencyIndex].includes(i)).join(' ').trim() || 'Banktransaksjon';
+    const outAmount = outIndex >= 0 ? Math.abs(parseAmount(cells[outIndex])) : 0;
+    const inAmount = inIndex >= 0 ? Math.abs(parseAmount(cells[inIndex])) : 0;
+    const rawAmount = amountIndex >= 0 && amountIndex !== balanceIndex ? parseAmount(cells[amountIndex]) : 0;
+    const description = cells[descIndex] || cells.filter((_, i) => ![dateIndex, amountIndex, outIndex, inIndex, balanceIndex, currencyIndex].includes(i)).join(' ').trim() || 'Banktransaksjon';
+    let amount = 0;
+    let type = TransactionType.EXPENSE;
+    if (outAmount > 0 && inAmount === 0) { amount = outAmount; type = TransactionType.EXPENSE; }
+    else if (inAmount > 0 && outAmount === 0) { amount = inAmount; type = TransactionType.INCOME; }
+    else if (rawAmount !== 0) { amount = Math.abs(rawAmount); type = forceDirection(description, '', rawAmount); }
+    else return null;
     const currencyRaw = String(cells[currencyIndex] || '').toUpperCase();
     const date = normalizeDate(cells[dateIndex]);
     return { date, description, amount, currency: currencyRaw.includes('NOK') ? 'NOK' : 'EUR', type, confidence: 0.95, id: `csv-${Date.now()}-${index}`, status: 'unmatched' as const };
-  }).filter((line) => line.date && line.amount > 0 && line.description);
+  }).filter(Boolean).filter((line: any) => line.date && line.amount > 0 && line.description);
 }
 
 function bestAmountCandidates(line: string, dateText: string) {
@@ -160,12 +184,19 @@ function parsePlainTextStatement(text: string): BankStatementLine[] {
     if (!date) return;
     const amountCandidates = bestAmountCandidates(line, dateMatch[0]);
     if (amountCandidates.length === 0) return;
-    const amountHit = amountCandidates[amountCandidates.length - 1];
+    const lower = normalizeText(line);
+    const explicitOutColumn = /\b(ut|utgift|belastet|debet)\b/.test(lower);
+    const explicitInColumn = /\b(inn|inntekt|kredit|innbetalt|mottatt)\b/.test(lower);
+    const withoutSaldo = amountCandidates.filter((candidate) => {
+      const after = normalizeText(line.slice(Math.max(0, candidate.index - 18), candidate.index + candidate.text.length + 18));
+      return !/\bsaldo\b|\bbalance\b/.test(after);
+    });
+    const usable = withoutSaldo.length > 0 ? withoutSaldo : amountCandidates;
+    const amountHit = explicitOutColumn && usable.length >= 2 ? usable[0] : usable[usable.length - 1];
     const description = cleanDescription(line, dateMatch[0], amountHit.text);
-    const lower = line.toLowerCase();
-    const explicitOut = /\b(ut|debet|trekk|betaling|kortkjop|kortkjøp|varekjop|varekjøp|withdrawal)\b/.test(lower) || amountHit.value < 0;
-    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower) || (amountHit.value > 0 && /\binn\b/.test(lower));
-    const type = explicitIn && !explicitOut ? TransactionType.INCOME : TransactionType.EXPENSE;
+    let type = forceDirection(description, '', amountHit.value);
+    if (explicitOutColumn && !explicitInColumn) type = TransactionType.EXPENSE;
+    if (explicitInColumn && !explicitOutColumn) type = TransactionType.INCOME;
     rows.push({ id: `pdf-text-${Date.now()}-${index}`, date, description, amount: Math.abs(amountHit.value), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.85, status: 'unmatched' });
   });
   return dedupeLines(rows);
@@ -175,7 +206,7 @@ function dedupeLines(lines: BankStatementLine[]) {
   const seen = new Set<string>();
   return lines.filter((line) => {
     if (!line.date || !line.amount || line.amount > MAX_REALISTIC_TRANSACTION_AMOUNT) return false;
-    const key = `${line.date}|${Math.round(line.amount * 100)}|${normalizeText(line.description).slice(0, 40)}`;
+    const key = `${line.date}|${line.type}|${Math.round(line.amount * 100)}|${normalizeText(line.description).slice(0, 40)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -222,17 +253,18 @@ async function tryParsePdfStatement(file: File) {
 }
 
 function normalizeStatementLine(row: any, index: number): BankStatementLine {
+  const description = row?.description || row?.text || row?.merchant || 'Ukjent banktransaksjon';
   const rawAmount = Number(row?.amount ?? row?.belop ?? row?.value ?? 0);
   const amount = Math.abs(rawAmount);
   const rawType = String(row?.type || '').toUpperCase();
-  const type = rawType === 'INCOME' || rawAmount > 0 ? TransactionType.INCOME : TransactionType.EXPENSE;
+  const type = forceDirection(description, rawType, rawAmount);
   const currency = (row?.currency === 'NOK' || row?.currency === 'EUR') ? row.currency : 'EUR';
-  return { id: `stmt-line-${Date.now()}-${index}`, date: row?.date || new Date().toISOString().slice(0, 10), description: row?.description || row?.text || row?.merchant || 'Ukjent banktransaksjon', amount, currency, type, confidence: Number(row?.confidence || 0.75), status: 'unmatched' };
+  return { id: `stmt-line-${Date.now()}-${index}`, date: row?.date || new Date().toISOString().slice(0, 10), description, amount, currency, type, confidence: Number(row?.confidence || 0.75), status: 'unmatched' };
 }
 
 function findBestMatch(line: BankStatementLine, transactions: Transaction[], receipts: ScannedReceipt[]) {
   const lineText = normalizeText(line.description);
-  const candidates = transactions.filter((tx) => tx.paymentMethod === 'Bank').filter((tx) => amountClose(tx.amount, line.amount)).filter((tx) => daysBetween(tx.date, line.date) <= 4).map((tx) => {
+  const candidates = transactions.filter((tx) => tx.paymentMethod === 'Bank').filter((tx) => tx.type === line.type || line.type === TransactionType.TRANSFER || tx.type === TransactionType.TRANSFER).filter((tx) => amountClose(tx.amount, line.amount)).filter((tx) => daysBetween(tx.date, line.date) <= 4).map((tx) => {
     const txText = normalizeText(tx.description);
     const textScore = txText && lineText && (lineText.includes(txText) || txText.includes(lineText)) ? 2 : 0;
     const receipt = receipts.find((r) => r.linkedTransactionId === tx.id || (amountClose(r.amount, line.amount) && daysBetween(r.date, line.date) <= 4));
@@ -254,10 +286,7 @@ function reconcileLines(lines: BankStatementLine[], transactions: Transaction[],
     unmatchedCount += 1;
     return line;
   });
-  return {
-    statementRef, lines: processed, matchedCount, createdCount, unmatchedCount, source,
-    aiAttempts: extras.aiAttempts, aiProvider: extras.aiProvider, serverAttempts: extras.serverAttempts,
-  };
+  return { statementRef, lines: processed, matchedCount, createdCount, unmatchedCount, source, aiAttempts: extras.aiAttempts, aiProvider: extras.aiProvider, serverAttempts: extras.serverAttempts };
 }
 
 async function tryParseTextStatement(file: File) {
@@ -283,30 +312,16 @@ export async function importBankStatementFile(file: File, transactions: Transact
     const fallback = await runBankStatementFallback(b64, mimeType, () => analyzeBankStatement(b64, mimeType));
     const rows = Array.isArray(fallback?.result?.transactions) ? fallback.result.transactions : [];
     const lines = rows.map(normalizeStatementLine).filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
-    if (lines.length > 0) {
-      return reconcileLines(lines, transactions, receipts, statementRef, 'ai', {
-        aiAttempts: fallback.attempts,
-        aiProvider: fallback.provider,
-      });
-    }
+    if (lines.length > 0) return reconcileLines(lines, transactions, receipts, statementRef, 'ai', { aiAttempts: fallback.attempts, aiProvider: fallback.provider });
     browserAttempts = fallback.attempts;
   } catch (browserErr: any) {
-    browserAttempts = (browserErr?.attempts as ProviderAttempt[]) || [
-      { provider: 'gemini', status: 'error', message: browserErr?.message || String(browserErr) },
-    ];
+    browserAttempts = (browserErr?.attempts as ProviderAttempt[]) || [{ provider: 'gemini', status: 'error', message: browserErr?.message || String(browserErr) }];
   }
 
   try {
     const server = await analyzeBankStatementServerSide(b64, mimeType, file.name);
-    const lines = (server.transactions || []).map(normalizeStatementLine)
-      .filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
-    if (lines.length > 0) {
-      return reconcileLines(lines, transactions, receipts, statementRef, 'server-ai', {
-        aiAttempts: browserAttempts,
-        aiProvider: server.provider,
-        serverAttempts: server.attempts,
-      });
-    }
+    const lines = (server.transactions || []).map(normalizeStatementLine).filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
+    if (lines.length > 0) return reconcileLines(lines, transactions, receipts, statementRef, 'server-ai', { aiAttempts: browserAttempts, aiProvider: server.provider, serverAttempts: server.attempts });
     const summary = browserAttempts.concat(server.attempts || []);
     const err = new Error(`Klarte ikke å lese kontoutskriften. ${summary.map((a) => `${a.provider}: ${a.status === 'success' ? 'OK' : a.message || a.status}`).join(' | ')}`) as any;
     err.attempts = summary;
@@ -329,7 +344,7 @@ export function applyBankStatementImport(result: BankStatementImportResult, tran
     if (line.status === 'matched' && line.matchedTransactionId && byId.has(line.matchedTransactionId)) {
       const existing = byId.get(line.matchedTransactionId)!;
       const category = inferTransactionCategory({ description: line.description, category: existing.category, type: line.type });
-      byId.set(line.matchedTransactionId, { ...existing, category, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
+      byId.set(line.matchedTransactionId, { ...existing, type: line.type, category, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
     }
   });
   const createdTransactions = result.lines.filter((line) => line.status === 'created' && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT).map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferTransactionCategory({ description: line.description, type: line.type }), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
