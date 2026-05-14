@@ -29,15 +29,19 @@ const corsHeaders = {
 };
 
 const BANK_STATEMENT_INSTRUCTIONS = `
-Du er en bankavstemming-assistent. Les kontoutskriften/kontooversikten og returner alle synlige transaksjonslinjer.
+Du er en bankavstemming-assistent. Les kontoutskriften og returner alle synlige transaksjonslinjer.
 Ta med kortkjøp, overføringer, gebyrer, innbetalinger og uttak. Ikke ta med tekstlinjer uten beløp.
-Bruk type EXPENSE for trekk/utgifter og INCOME for innbetalinger. Beløp skal returneres som positivt tall i amount, type bestemmer retning.
-Hvis dato mangler år, bruk mest sannsynlig år fra dokumentet. Valuta må være NOK eller EUR.
-Returner kun gyldig JSON:
+Bruk EXPENSE for trekk/utgifter og INCOME for innbetalinger. Beløp er alltid positivt tall.
+
+Svar med kun gyldig JSON. Ingen markdown, ingen kommentarer, ingen tekst før eller etter JSON-objektet.
+Hold beskrivelser korte (maks 60 tegn) og dropp valuta-feltet hvis det er likt for alle linjer.
+
 {
-  "balance": number,
+  "balance": number | null,
   "currency": "NOK" | "EUR",
-  "transactions": [{ "date": "YYYY-MM-DD", "description": string, "amount": number, "currency": "NOK" | "EUR", "type": "INCOME" | "EXPENSE" | "TRANSFER", "confidence": number }]
+  "transactions": [
+    { "date": "YYYY-MM-DD", "description": string, "amount": number, "type": "INCOME" | "EXPENSE" | "TRANSFER" }
+  ]
 }`;
 
 interface Attempt {
@@ -49,9 +53,65 @@ interface Attempt {
 function parseJsonText(text: string) {
   const trimmed = String(text || '').trim();
   try { return JSON.parse(trimmed); } catch {}
-  const match = trimmed.match(/\{[\s\S]*\}/);
-  if (match) return JSON.parse(match[0]);
-  throw new Error('AI returnerte ikke gyldig JSON.');
+
+  // Hent ut JSON-blokken hvis Claude pakket den i prose
+  const objMatch = trimmed.match(/\{[\s\S]*\}/);
+  const candidate = objMatch ? objMatch[0] : trimmed;
+  try { return JSON.parse(candidate); } catch {}
+
+  // Fallback: Claude ble kappet midt i transactions-arrayet. Plukk ut
+  // hver fullstendige transaksjon individuelt og bygg en ny gyldig JSON.
+  return repairTruncatedBankStatement(candidate);
+}
+
+function repairTruncatedBankStatement(text: string) {
+  // Finn alle komplette objekter inni transactions-arrayet.
+  const txStart = text.indexOf('"transactions"');
+  if (txStart < 0) throw new Error('AI returnerte ikke gyldig JSON.');
+  const arrayStart = text.indexOf('[', txStart);
+  if (arrayStart < 0) throw new Error('AI returnerte ikke gyldig JSON.');
+
+  const transactions: any[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let objStart = -1;
+  for (let i = arrayStart + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') {
+      if (depth === 0) objStart = i;
+      depth += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0 && objStart >= 0) {
+        const slice = text.slice(objStart, i + 1);
+        try { transactions.push(JSON.parse(slice)); } catch {}
+        objStart = -1;
+      }
+      continue;
+    }
+    if (ch === ']' && depth === 0) break;
+  }
+
+  // Hent valuta/saldo hvis mulig (utenfor arrayet)
+  const balanceMatch = text.match(/"balance"\s*:\s*([-0-9.]+)/);
+  const currencyMatch = text.match(/"currency"\s*:\s*"([A-Z]{3})"/);
+
+  return {
+    balance: balanceMatch ? Number(balanceMatch[1]) : undefined,
+    currency: currencyMatch ? currencyMatch[1] : 'NOK',
+    transactions,
+    _repaired: true,
+  };
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -82,7 +142,7 @@ async function callClaudeOnce(b64: string, mimeType: string, model: string, apiK
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2000,
+      max_tokens: 8192,
       temperature: 0,
       messages: [{
         role: 'user',
