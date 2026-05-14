@@ -23,6 +23,8 @@ export interface BankStatementImportResult {
   unmatchedCount: number;
 }
 
+const MAX_REALISTIC_TRANSACTION_AMOUNT = 50000;
+
 function normalizeText(value = '') {
   return String(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 }
@@ -50,18 +52,29 @@ function inferCategory(description: string) {
   return 'Diverse';
 }
 
+function looksLikeReferenceNumber(raw: string) {
+  const digitsOnly = raw.replace(/\D/g, '');
+  if (digitsOnly.length >= 9) return true;
+  if (/\d{4}\s+\d{4}\s+\d{3,}/.test(raw)) return true;
+  return false;
+}
+
 function parseAmount(value: any) {
   const raw = String(value ?? '').trim();
   if (!raw) return 0;
+  if (looksLikeReferenceNumber(raw)) return 0;
   const negativeBySuffix = /-$/.test(raw) || /^-/.test(raw) || /\b(debet|ut|trekk)\b/i.test(raw);
   const cleaned = raw.replace(/\s/g, '').replace(/[A-Z]{3}|kr|nok|eur|€/gi, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
   const valueNum = Number(cleaned.replace(/-$/, '') || 0);
+  if (!Number.isFinite(valueNum)) return 0;
+  if (Math.abs(valueNum) < 0.01) return 0;
+  if (Math.abs(valueNum) > MAX_REALISTIC_TRANSACTION_AMOUNT) return 0;
   return negativeBySuffix ? -Math.abs(valueNum) : valueNum;
 }
 
 function normalizeDate(value: any) {
   const raw = String(value || '').trim();
-  if (!raw) return new Date().toISOString().slice(0, 10);
+  if (!raw) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   const dot = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
   if (dot) {
@@ -72,7 +85,7 @@ function normalizeDate(value: any) {
   }
   const parsed = new Date(raw);
   if (Number.isFinite(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  return new Date().toISOString().slice(0, 10);
+  return '';
 }
 
 function splitCsvLine(line: string, delimiter: string) {
@@ -111,29 +124,55 @@ function parseDelimitedStatement(text: string) {
     const type = inAmount > 0 || rawAmount > 0 ? TransactionType.INCOME : TransactionType.EXPENSE;
     const description = cells[descIndex] || cells.filter((_, i) => ![dateIndex, amountIndex, outIndex, inIndex, currencyIndex].includes(i)).join(' ').trim() || 'Banktransaksjon';
     const currencyRaw = String(cells[currencyIndex] || '').toUpperCase();
-    return { date: normalizeDate(cells[dateIndex]), description, amount, currency: currencyRaw.includes('NOK') ? 'NOK' : 'EUR', type, confidence: 0.95, id: `csv-${Date.now()}-${index}`, status: 'unmatched' as const };
-  }).filter((line) => line.amount > 0 && line.description);
+    const date = normalizeDate(cells[dateIndex]);
+    return { date, description, amount, currency: currencyRaw.includes('NOK') ? 'NOK' : 'EUR', type, confidence: 0.95, id: `csv-${Date.now()}-${index}`, status: 'unmatched' as const };
+  }).filter((line) => line.date && line.amount > 0 && line.description);
+}
+
+function bestAmountCandidates(line: string, dateText: string) {
+  const amountPattern = /(?<!\d)([-+]?\d{1,3}(?:[ .]\d{3})*[,.]\d{2}-?|[-+]?\d{1,5}[,.]\d{2}-?)(?!\d)/g;
+  return Array.from(line.matchAll(amountPattern))
+    .map((m) => ({ text: m[0], index: m.index || 0, value: parseAmount(m[0]) }))
+    .filter((m) => {
+      if (!m.value) return false;
+      if (m.text.includes(dateText)) return false;
+      if (looksLikeReferenceNumber(m.text)) return false;
+      const digits = m.text.replace(/\D/g, '');
+      if (digits.length > 8) return false;
+      return Math.abs(m.value) >= 0.01 && Math.abs(m.value) <= MAX_REALISTIC_TRANSACTION_AMOUNT;
+    });
+}
+
+function cleanDescription(line: string, dateText: string, amountText: string) {
+  const text = line
+    .replace(dateText, ' ')
+    .replace(amountText, ' ')
+    .replace(/\b\d{9,}\b/g, ' ')
+    .replace(/\b\d{4}\s+\d{4}\s+\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const withoutOnlyNumbers = text.replace(/[\d.,/\- ]+/g, '').trim();
+  return withoutOnlyNumbers.length >= 2 ? text : 'Banktransaksjon';
 }
 
 function parsePlainTextStatement(text: string): BankStatementLine[] {
   const rawLines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const rows: BankStatementLine[] = [];
-  const amountPattern = /[-+]?\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})-?|[-+]?\d+[,.]\d{2}-?/g;
   const datePattern = /(\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/;
   rawLines.forEach((line, index) => {
     const dateMatch = line.match(datePattern);
     if (!dateMatch) return;
-    const amounts = Array.from(line.matchAll(amountPattern)).map((m) => ({ text: m[0], index: m.index || 0, value: parseAmount(m[0]) })).filter((m) => Math.abs(m.value) > 0);
-    if (amounts.length === 0) return;
-    const meaningfulAmounts = amounts.filter((m) => Math.abs(m.value) >= 0.01);
-    const amountHit = meaningfulAmounts[meaningfulAmounts.length - 1];
-    const beforeAmount = line.slice(0, amountHit.index).replace(dateMatch[0], '').trim();
-    const description = beforeAmount || line.replace(dateMatch[0], '').replace(amountHit.text, '').trim() || 'Banktransaksjon';
+    const date = normalizeDate(dateMatch[0]);
+    if (!date) return;
+    const amountCandidates = bestAmountCandidates(line, dateMatch[0]);
+    if (amountCandidates.length === 0) return;
+    const amountHit = amountCandidates[amountCandidates.length - 1];
+    const description = cleanDescription(line, dateMatch[0], amountHit.text);
     const lower = line.toLowerCase();
     const explicitOut = /\b(ut|debet|trekk|betaling|kortkjop|kortkjøp|varekjop|varekjøp|withdrawal)\b/.test(lower) || amountHit.value < 0;
-    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower) || amountHit.value > 0 && /\binn\b/.test(lower);
+    const explicitIn = /\b(inn|kredit|mottatt|deposit|salary|lønn|lonn)\b/.test(lower) || (amountHit.value > 0 && /\binn\b/.test(lower));
     const type = explicitIn && !explicitOut ? TransactionType.INCOME : TransactionType.EXPENSE;
-    rows.push({ id: `pdf-text-${Date.now()}-${index}`, date: normalizeDate(dateMatch[0]), description, amount: Math.abs(amountHit.value), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.85, status: 'unmatched' });
+    rows.push({ id: `pdf-text-${Date.now()}-${index}`, date, description, amount: Math.abs(amountHit.value), currency: lower.includes('nok') || lower.includes('kr') ? 'NOK' : 'EUR', type, confidence: 0.85, status: 'unmatched' });
   });
   return dedupeLines(rows);
 }
@@ -141,6 +180,7 @@ function parsePlainTextStatement(text: string): BankStatementLine[] {
 function dedupeLines(lines: BankStatementLine[]) {
   const seen = new Set<string>();
   return lines.filter((line) => {
+    if (!line.date || !line.amount || line.amount > MAX_REALISTIC_TRANSACTION_AMOUNT) return false;
     const key = `${line.date}|${Math.round(line.amount * 100)}|${normalizeText(line.description).slice(0, 40)}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -158,9 +198,7 @@ async function extractPdfText(file: File): Promise<string> {
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
     const page = await pdf.getPage(pageNo);
     const content = await page.getTextContent();
-    const items = content.items
-      .map((item: any) => ({ text: String(item.str || '').trim(), x: Number(item.transform?.[4] || 0), y: Number(item.transform?.[5] || 0) }))
-      .filter((item: any) => item.text);
+    const items = content.items.map((item: any) => ({ text: String(item.str || '').trim(), x: Number(item.transform?.[4] || 0), y: Number(item.transform?.[5] || 0) })).filter((item: any) => item.text);
     const rows = new Map<number, { x: number; text: string }[]>();
     items.forEach((item: any) => {
       const yBucket = Math.round(item.y / 3) * 3;
@@ -168,10 +206,7 @@ async function extractPdfText(file: File): Promise<string> {
       const key = existingKey ?? yBucket;
       rows.set(key, [...(rows.get(key) || []), { x: item.x, text: item.text }]);
     });
-    const lines = Array.from(rows.entries())
-      .sort((a, b) => b[0] - a[0])
-      .map(([, row]) => row.sort((a, b) => a.x - b.x).map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim())
-      .filter(Boolean);
+    const lines = Array.from(rows.entries()).sort((a, b) => b[0] - a[0]).map(([, row]) => row.sort((a, b) => a.x - b.x).map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
     pageTexts.push(lines.join('\n'));
   }
   return pageTexts.join('\n');
@@ -247,7 +282,7 @@ export async function importBankStatementFile(file: File, transactions: Transact
   const b64 = await fileToBase64(file);
   const fallback = await runBankStatementFallback(b64, mimeType, () => analyzeBankStatement(b64, mimeType));
   const rows = Array.isArray(fallback?.result?.transactions) ? fallback.result.transactions : [];
-  const lines = rows.map(normalizeStatementLine).filter((line) => line.amount > 0);
+  const lines = rows.map(normalizeStatementLine).filter((line) => line.amount > 0 && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT);
   return reconcileLines(lines, transactions, receipts, statementRef);
 }
 
@@ -260,6 +295,6 @@ export function applyBankStatementImport(result: BankStatementImportResult, tran
       byId.set(line.matchedTransactionId, { ...existing, isVerified: true, verifiedAt, verificationSource: 'bank_statement', matchedReceiptId: line.matchedReceiptId || existing.matchedReceiptId, bankStatementRef: result.statementRef });
     }
   });
-  const createdTransactions = result.lines.filter((line) => line.status === 'created').map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferCategory(line.description), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
+  const createdTransactions = result.lines.filter((line) => line.status === 'created' && line.amount <= MAX_REALISTIC_TRANSACTION_AMOUNT).map((line): Transaction => ({ id: `tx-bank-${Date.now()}-${Math.random().toString(16).slice(2)}`, date: line.date, amount: line.amount, currency: line.currency, description: line.description, category: inferCategory(line.description), type: line.type, paymentMethod: 'Bank', isAccrual: false, isVerified: true, verifiedAt, verificationSource: 'bank_statement', bankStatementRef: result.statementRef }));
   return [...createdTransactions, ...Array.from(byId.values())];
 }
