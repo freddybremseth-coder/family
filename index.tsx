@@ -35,6 +35,27 @@ import { isAiAvailable } from './services/geminiService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 const TRIAL_DAYS = 3;
+const USER_CONFIG_KEY = 'familyhub_user_config';
+
+const defaultUserConfig: UserConfig = {
+  familyName: 'FAMILIE',
+  location: '',
+  address: '',
+  timezone: 'Europe/Oslo',
+  preferredCurrency: 'NOK',
+  language: 'no',
+  role: UserRole.USER,
+  subscriptionStatus: 'Active',
+};
+
+function loadUserConfig(): UserConfig {
+  try {
+    const saved = JSON.parse(localStorage.getItem(USER_CONFIG_KEY) || '{}');
+    return { ...defaultUserConfig, ...saved };
+  } catch {
+    return defaultUserConfig;
+  }
+}
 
 const getTrialDaysLeft = (trialStartedAt: string): number => {
   const start = new Date(trialStartedAt).getTime();
@@ -78,7 +99,18 @@ const App = () => {
   const [afterSales, setAfterSales] = useState<AfterSaleCommission[]>([]);
   const [farmOps, setFarmOps] = useState<FarmOperation[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [userConfig, setUserConfig] = useState<UserConfig>({ familyName: 'FAMILIE', location: '', timezone: 'Europe/Oslo', preferredCurrency: 'NOK', language: 'no', role: UserRole.USER, subscriptionStatus: 'Active' });
+  const [userConfig, setUserConfig] = useState<UserConfig>(loadUserConfig);
+
+  useEffect(() => {
+    localStorage.setItem(USER_CONFIG_KEY, JSON.stringify({
+      familyName: userConfig.familyName,
+      location: userConfig.location,
+      address: userConfig.address || '',
+      timezone: userConfig.timezone,
+      preferredCurrency: userConfig.preferredCurrency,
+      language: userConfig.language,
+    }));
+  }, [userConfig.familyName, userConfig.location, userConfig.address, userConfig.timezone, userConfig.preferredCurrency, userConfig.language]);
 
   const userEmail = session?.user?.email || null;
   const visibleNavigation = useMemo(() => filterModulesForUser(ALL_NAVIGATION, userEmail), [userEmail]);
@@ -92,7 +124,7 @@ const App = () => {
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) return;
     const { data: txData } = await supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false });
-    if (txData) setTransactions(txData);
+    if (txData) setTransactions(txData.map((row: any) => ({ ...row, paymentMethod: row.paymentMethod || row.payment_method || 'Bank', isAccrual: !!row.isAccrual })));
     const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
     if (reData) setRealEstateDeals(reData);
     const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
@@ -138,8 +170,8 @@ const App = () => {
   }, [fetchAllData, checkSubscription]);
 
   const handleRoleAssignment = (user: any) => {
-    if (user.email === ADMIN_EMAIL) setUserConfig(prev => ({ ...prev, familyName: 'BREMSETH', role: UserRole.SUPER_ADMIN, subscriptionStatus: 'Lifetime' }));
-    else setUserConfig(prev => ({ ...prev, familyName: user.user_metadata?.family_name || 'FAMILIE', role: UserRole.USER, subscriptionStatus: 'Active' }));
+    if (user.email === ADMIN_EMAIL) setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : 'BREMSETH', role: UserRole.SUPER_ADMIN, subscriptionStatus: 'Lifetime' }));
+    else setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : (user.user_metadata?.family_name || 'FAMILIE'), role: UserRole.USER, subscriptionStatus: 'Active' }));
   };
 
   const handleLogin = async (credentials: { email: string; password?: string }) => {
@@ -152,38 +184,57 @@ const App = () => {
       return { ok: false, error: authSetupError() };
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: credentials.email.trim(),
-      password: credentials.password || '',
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email.trim(), password: credentials.password || '' });
 
     if (error) {
       const msg = String(error.message || '').toLowerCase();
-      if (msg.includes('invalid login credentials')) {
-        return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' };
-      }
-      if (msg.includes('email not confirmed')) {
-        return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' };
-      }
+      if (msg.includes('invalid login credentials')) return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' };
+      if (msg.includes('email not confirmed')) return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' };
       return { ok: false, error: error.message };
     }
 
-    if (data.session?.user) {
-      handleRoleAssignment(data.session.user);
-      await fetchAllData(data.session.user.id);
-      await checkSubscription(data.session.user);
-    }
+    if (data.session?.user) { handleRoleAssignment(data.session.user); await fetchAllData(data.session.user.id); await checkSubscription(data.session.user); }
     return { ok: true };
   };
 
   const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setSession(null); };
+
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
-    const newT: any = { date: data.date || new Date().toISOString().split('T')[0], amount: data.totalAmount, currency: userConfig.preferredCurrency, description: data.vendor, category: 'Shopping', type: TransactionType.EXPENSE, payment_method: 'Bank', user_id: session?.user?.id };
-    if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([newT]);
-    setTransactions(prev => [{ ...newT, id: `tx-rcpt-${Date.now()}` }, ...prev]);
-    setCashBalance(prev => prev - data.totalAmount);
+    const txId = `tx-rcpt-${Date.now()}`;
+    const receiptId = `receipt-${Date.now()}`;
+    const tx: Transaction = {
+      id: txId,
+      date: data.date || new Date().toISOString().split('T')[0],
+      amount: Number(data.totalAmount || 0),
+      currency: data.currency || userConfig.preferredCurrency,
+      description: data.vendor || 'Kvittering',
+      category: data.category || 'Shopping',
+      type: TransactionType.EXPENSE,
+      paymentMethod: 'Bank',
+      isAccrual: false,
+      verificationSource: 'receipt',
+      matchedReceiptId: receiptId,
+    };
+    if (isSupabaseConfigured() && session?.user) {
+      await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]);
+    }
+    const receipt: ScannedReceipt = {
+      id: receiptId,
+      imageUrl,
+      vendor: tx.description,
+      date: tx.date,
+      amount: tx.amount,
+      currency: tx.currency,
+      category: tx.category,
+      confidence: Number(data.confidence || 0.75),
+      linkedTransactionId: txId,
+    };
+    setScannedReceipts(prev => [receipt, ...prev]);
+    setTransactions(prev => [tx, ...prev]);
+    setCashBalance(prev => prev - tx.amount);
     setActiveTab('transactions');
   };
+
   const navigate = (tab: string) => {
     if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard');
     setActiveTab(tab);
@@ -200,9 +251,9 @@ const App = () => {
       case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
       case 'settings': return <SettingsManager userConfig={userConfig} setUserConfig={setUserConfig} onApiUpdate={() => setAiConfigured(isAiAvailable())} />;
       case 'bank': return <div className="space-y-8"><NetWorthOverview bankAccounts={bankAccounts} assets={assets} realEstateDeals={realEstateDeals} userId={session?.user?.id} /><BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
-      case 'documents': return <DocumentsManager userId={session?.user?.id} familyName={userConfig.familyName} />;
+      case 'documents': return <DocumentsManager userId={session?.user?.id} familyName={userConfig.familyName} familyLocation={userConfig.location} familyAddress={userConfig.address || ''} />;
       case 'business': return <BusinessManager deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} farmOps={farmOps} setFarmOps={setFarmOps} developers={developers} setDevelopers={setDevelopers} afterSalePartners={[]} setAfterSalePartners={() => {}} transactions={transactions} setTransactions={setTransactions} bankAccounts={bankAccounts} userId={session?.user?.id} />;
-      case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} />;
+      case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
       case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
       case 'trends': return <BillsManager bills={bills} setBills={setBills} />;
       default: return <Dashboard transactions={transactions} bankAccounts={bankAccounts} assets={assets} lang={userConfig.language} />;
