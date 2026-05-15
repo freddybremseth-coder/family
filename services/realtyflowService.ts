@@ -41,11 +41,11 @@ const FALLBACK_FX = 11.55;
 const READ_TIMEOUT_MS = 8000;
 
 const DEFAULT_TABLE_CANDIDATES = [
-  'contacts',
   'business_financial_events',
+  'realtyflow_payouts',
+  'contacts',
   'family_economy_realtyflow',
   'family_economy_monthly',
-  'realtyflow_payouts',
   'realtyflow_deals',
   'real_estate_deals',
   'transactions',
@@ -55,190 +55,113 @@ const DEFAULT_TABLE_CANDIDATES = [
 function cleanEnv(value: unknown): string {
   return String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim();
 }
-
-function env() {
-  return typeof import.meta !== 'undefined' ? import.meta.env : {};
-}
-
+function env() { return typeof import.meta !== 'undefined' ? import.meta.env : {}; }
 function configuredTables(): string[] {
   const raw = cleanEnv(env().VITE_REALTYFLOW_COMMISSION_TABLES || env().VITE_REALTYFLOW_TABLES || '');
   const explicit = raw.split(',').map((table) => table.trim()).filter(Boolean);
   if (explicit.length > 0) return Array.from(new Set(explicit));
   return DEFAULT_TABLE_CANDIDATES;
 }
-
 function normalize(value: unknown): string {
   return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/æ/g, 'ae')
-    .replace(/ø/g, 'o')
-    .replace(/å/g, 'a')
-    .replace(/https?:\/\//g, '')
-    .replace(/www\./g, '')
-    .replace(/\.com|\.no|\.es/g, '')
+    .trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a')
+    .replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\.com|\.no|\.es/g, '')
     .replace(/[^a-z0-9]+/g, '');
 }
-
-function getFirst(row: any, keys: string[]): any {
-  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
-  return undefined;
-}
-
-function nestedCandidates(row: any) {
-  return [row?.metadata, row?.meta, row?.data, row?.details, row?.payload, row?.project, row?.developer, row?.brand, row?.company, row?.customer].filter(Boolean);
-}
-
+function getFirst(row: any, keys: string[]): any { for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key]; return undefined; }
+function nestedCandidates(row: any) { return [row?.metadata, row?.meta, row?.data, row?.details, row?.payload, row?.project, row?.developer, row?.brand, row?.company, row?.customer].filter(Boolean); }
 function getAny(row: any, keys: string[]): any {
-  const direct = getFirst(row, keys);
-  if (direct !== undefined && direct !== null && direct !== '') return direct;
-  for (const nested of nestedCandidates(row)) {
-    const value = getFirst(nested, keys);
-    if (value !== undefined && value !== null && value !== '') return value;
-  }
+  const direct = getFirst(row, keys); if (direct !== undefined && direct !== null && direct !== '') return direct;
+  for (const nested of nestedCandidates(row)) { const value = getFirst(nested, keys); if (value !== undefined && value !== null && value !== '') return value; }
   return undefined;
 }
-
 function toNumber(value: any): number {
   if (value === undefined || value === null || value === '') return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const cleaned = String(value).replace(/[^0-9,.-]/g, '').replace(',', '.');
+  const raw = String(value).trim();
+  const normalized = raw.includes(',') && raw.lastIndexOf(',') > raw.lastIndexOf('.') ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+  const cleaned = normalized.replace(/[^0-9.-]/g, '');
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
-
 function brandKey(row: any): CommissionBrandKey {
-  const candidates = [
-    getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'source_type', 'company', 'project_brand', 'developer_name', 'developer', 'builder', 'project_name', 'project', 'source', 'tenant', 'tenant_id']),
-    JSON.stringify(row || {}),
-  ].flatMap((value) => Array.isArray(value) ? value : [value]).map(normalize).filter(Boolean);
+  const candidates = [getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'source_type', 'company', 'project_brand', 'developer_name', 'developer', 'builder', 'project_name', 'project', 'source', 'tenant', 'tenant_id']), JSON.stringify(row || {})]
+    .flatMap((value) => Array.isArray(value) ? value : [value]).map(normalize).filter(Boolean);
   const joined = candidates.join(' ');
   if (joined.includes('soleada')) return 'soleada';
   if (joined.includes('zenecohomes') || joined.includes('zeneco') || joined.includes('zeneohomes') || joined.includes('zenhomes') || joined.includes('zenecohome')) return 'zenecohomes';
   return 'other';
 }
-
-function brandLabel(key: CommissionBrandKey) {
-  return key === 'soleada' ? 'Soleada' : key === 'zenecohomes' ? 'ZenEcoHomes' : 'Andre / ukjent';
-}
-
-function emptyBrand(key: CommissionBrandKey): BrandCommission {
-  return { key, brand: brandLabel(key), totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] };
-}
-
-function salePriceValue(row: any): number {
-  return toNumber(getAny(row, ['sale_price', 'salePrice', 'sales_price', 'pipeline_value', 'property_price', 'purchase_price', 'price', 'budget', 'value']));
-}
-
-function commissionPercentValue(row: any): number {
-  return toNumber(getAny(row, ['commission_percent', 'commissionPercent', 'commission_pct', 'commissionPct', 'provision_percent', 'provisionPct']));
-}
-
-function amountValue(row: any): number {
-  const direct = getAny(row, [
+function brandLabel(key: CommissionBrandKey) { return key === 'soleada' ? 'Soleada' : key === 'zenecohomes' ? 'ZenEcoHomes' : 'Andre / ukjent'; }
+function emptyBrand(key: CommissionBrandKey): BrandCommission { return { key, brand: brandLabel(key), totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] }; }
+function salePriceValue(row: any): number { return toNumber(getAny(row, ['sale_price', 'salePrice', 'sales_price', 'pipeline_value', 'property_price', 'purchase_price', 'price', 'budget', 'deal_value', 'sale_value'])); }
+function commissionPercentValue(row: any): number { return toNumber(getAny(row, ['commission_percent', 'commissionPercent', 'commission_pct', 'commissionPct', 'provision_percent', 'provisionPct'])); }
+function tableAllowsPlainAmount(table: string): boolean { return ['business_financial_events', 'family_economy_realtyflow', 'family_economy_monthly', 'realtyflow_payouts', 'transactions'].includes(table); }
+function amountValue(row: any, table = ''): number {
+  const commissionAmount = getAny(row, [
     'amount_eur', 'net_eur', 'total_eur', 'realtyflow_net_eur', 'value_eur',
     'commission_amount', 'commissionAmount', 'our_commission', 'ourCommission', 'ourGrossCommission', 'our_gross_commission',
     'gross_commission', 'net_commission', 'ourNetCommission', 'our_net_commission', 'expected_amount',
     'payout_amount', 'payoutAmount', 'commission', 'total_commission', 'sales_commission', 'sale_commission', 'price_commission',
     'realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok',
   ]);
-  const directAmount = toNumber(direct);
-  if (directAmount > 0) return directAmount;
+  const directCommission = toNumber(commissionAmount);
+  if (directCommission > 0) return directCommission;
+
+  if (tableAllowsPlainAmount(table)) {
+    const plainAmount = toNumber(getAny(row, ['amount', 'value', 'total', 'net', 'gross']));
+    if (plainAmount > 0) return plainAmount;
+  }
 
   const salePrice = salePriceValue(row);
   const pct = commissionPercentValue(row);
   if (salePrice > 0 && pct > 0) return salePrice * (pct / 100);
-
-  // Ikke bruk pipeline_value/budget som kommisjon uten prosentsats, da det er salgspris.
   return 0;
 }
-
-function customerName(row: any): string {
-  return String(getAny(row, ['customer_name', 'client_name', 'name', 'buyer_name', 'contact_name', 'title']) || 'RealtyFlow-kunde');
-}
-
+function customerName(row: any): string { return String(getAny(row, ['customer_name', 'client_name', 'name', 'buyer_name', 'contact_name', 'title', 'description']) || 'RealtyFlow-kunde'); }
 function currencyValue(row: any): string { return String(getAny(row, ['currency', 'commission_currency', 'amount_currency']) || 'EUR').toUpperCase(); }
-function amountIsNok(row: any) {
-  if (getAny(row, ['realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok']) !== undefined) return true;
-  return currencyValue(row) === 'NOK';
-}
+function amountIsNok(row: any) { if (getAny(row, ['realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok']) !== undefined) return true; return currencyValue(row) === 'NOK'; }
 function dateValue(row: any): string { return String(getAny(row, ['month', 'event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'payout_date', 'commission_paid_date', 'paid_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
-function payoutDateValue(row: any): string { return String(getAny(row, ['commission_paid_date', 'payout_date', 'payment_date', 'expected_payout_date', 'paid_date', 'expected_date', 'date', 'event_date', 'updated_at']) || '').slice(0, 10); }
-
-function normalizeStatus(value: unknown): string {
-  return normalize(value).toLowerCase();
-}
-
+function payoutDateValue(row: any): string { return String(getAny(row, ['commission_paid_date', 'payout_date', 'payment_date', 'expected_payout_date', 'paid_date', 'expected_date', 'event_date', 'date', 'updated_at']) || '').slice(0, 10); }
+function normalizeStatus(value: unknown): string { return normalize(value).toLowerCase(); }
 function isWonCustomer(row: any): boolean {
   const status = normalizeStatus(getAny(row, ['pipeline_status', 'status', 'deal_status', 'stage', 'customer_status']));
   return ['won', 'customer', 'vip', 'completed', 'closed', 'sold', 'closedwon', 'vunnet', 'solgt', 'kunde'].some((value) => status.includes(value));
 }
-
 function isCommissionRow(row: any, table: string): boolean {
-  if (['contacts', 'business_financial_events', 'family_economy_realtyflow', 'realtyflow_payouts'].includes(table)) return true;
+  if (['contacts', 'business_financial_events', 'family_economy_realtyflow', 'realtyflow_payouts', 'family_economy_monthly'].includes(table)) return true;
   const text = [table, JSON.stringify(row || {})].map((x) => String(x || '').toLowerCase()).join(' ');
-  return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || text.includes('realtyflow') || amountValue(row) > 0;
+  return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || text.includes('realtyflow') || amountValue(row, table) > 0;
 }
-
 function isIncomeRow(row: any): boolean {
-  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type', 'pipeline_status']) || '').toLowerCase();
+  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type', 'pipeline_status', 'stream']) || '').toLowerCase();
   if (!direction) return true;
-  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'customer', 'vip', 'sold', 'vunnet', 'solgt', 'kunde', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
+  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'customer', 'vip', 'sold', 'vunnet', 'solgt', 'kunde', 'commission', 'revenue', 'sale', 'realtyflow'].some((x) => direction.includes(x));
 }
-
 async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: timeout etter ${timeoutMs / 1000}s`)), timeoutMs); });
-  try { return await Promise.race([promise, timeout]); }
-  finally { clearTimeout(timer!); }
+  try { return await Promise.race([promise, timeout]); } finally { clearTimeout(timer!); }
 }
-
-function isMissingTableError(errorText = '') {
-  const lower = errorText.toLowerCase();
-  return lower.includes('404') || lower.includes('not found') || lower.includes('does not exist') || lower.includes('could not find the table') || lower.includes('schema cache');
-}
-
+function isMissingTableError(errorText = '') { const lower = errorText.toLowerCase(); return lower.includes('404') || lower.includes('not found') || lower.includes('does not exist') || lower.includes('could not find the table') || lower.includes('schema cache'); }
 async function readRows(table: string): Promise<{ rows: any[]; error?: string; missing?: boolean }> {
   try {
     const result: any = await withTimeout(supabasePublic.from(table).select('*').limit(2000), table);
-    if (result.error) {
-      const error = `${table}: ${result.error.message}`;
-      return { rows: [], error, missing: isMissingTableError(error) };
-    }
+    if (result.error) { const error = `${table}: ${result.error.message}`; return { rows: [], error, missing: isMissingTableError(error) }; }
     return { rows: result.data || [] };
-  } catch (err: any) {
-    const error = `${table}: ${err?.message || 'ukjent feil'}`;
-    return { rows: [], error, missing: isMissingTableError(error) };
-  }
+  } catch (err: any) { const error = `${table}: ${err?.message || 'ukjent feil'}`; return { rows: [], error, missing: isMissingTableError(error) }; }
 }
-
-function rawBrandValue(row: any) {
-  return String(getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'company', 'source_type', 'developer_name', 'developer', 'project_name', 'source', 'tenant', 'tenant_id']) || '');
-}
-
+function rawBrandValue(row: any) { return String(getAny(row, ['brand_id', 'brand', 'business_unit', 'businessUnit', 'company', 'source_type', 'developer_name', 'developer', 'project_name', 'source', 'tenant', 'tenant_id']) || ''); }
 function shouldIncludeOtherAsRealtyflow(table: string, row: any) {
   const text = `${table} ${JSON.stringify(row || {})}`.toLowerCase();
-  return table === 'family_economy_realtyflow' || text.includes('realtyflow') || table === 'contacts';
+  return table === 'family_economy_realtyflow' || table === 'family_economy_monthly' || text.includes('realtyflow') || table === 'contacts' || table === 'business_financial_events' || table === 'realtyflow_payouts';
 }
-
 function makeEvent(row: any, table: string, fxRate: number, amountEur: number): RealtyflowCommissionEvent | null {
   const payoutDate = payoutDateValue(row);
   if (!payoutDate) return null;
   const brand = brandKey(row);
-  return {
-    id: `${table}-${String(getAny(row, ['id', 'contact_id', 'deal_id']) || `${customerName(row)}-${payoutDate}-${amountEur}`).replace(/\s+/g, '-')}`,
-    customerName: customerName(row),
-    brandKey: brand,
-    brand: brandLabel(brand),
-    salePriceEur: salePriceValue(row),
-    commissionEur: amountEur,
-    commissionNok: amountEur * fxRate,
-    payoutDate,
-    status: String(getAny(row, ['pipeline_status', 'status', 'deal_status']) || ''),
-    sourceTable: table,
-  };
+  return { id: `${table}-${String(getAny(row, ['id', 'contact_id', 'deal_id']) || `${customerName(row)}-${payoutDate}-${amountEur}`).replace(/\s+/g, '-')}`, customerName: customerName(row), brandKey: brand, brand: brandLabel(brand), salePriceEur: salePriceValue(row), commissionEur: amountEur, commissionNok: amountEur * fxRate, payoutDate, status: String(getAny(row, ['pipeline_status', 'status', 'deal_status']) || ''), sourceTable: table };
 }
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
@@ -249,30 +172,16 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const tables = configuredTables();
   const usingExplicitTables = !!cleanEnv(env().VITE_REALTYFLOW_COMMISSION_TABLES || env().VITE_REALTYFLOW_TABLES || '');
 
-  if (!isRealtyflowSupabaseConfigured()) {
-    return { ...empty, diagnostics: [...baseDiagnostics, 'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.', `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`] };
-  }
+  if (!isRealtyflowSupabaseConfigured()) return { ...empty, diagnostics: [...baseDiagnostics, 'RealtyFlow Supabase er ikke konfigurert. Sett VITE_REALTYFLOW_SUPABASE_URL og VITE_REALTYFLOW_SUPABASE_ANON_KEY.', `RealtyFlow URL: ${SUPABASE_REFS.realtyflow || 'mangler'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`] };
 
-  const diagnostics: string[] = [
-    ...baseDiagnostics,
-    `EUR/NOK-kilde: ${fx.source}`,
-    `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`,
-    `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`,
-    `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`,
-    `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`,
-    usingExplicitTables ? `RealtyFlow-tabeller fra env: ${tables.join(', ')}` : `RealtyFlow-tabeller autodetekteres: ${tables.join(', ')}`,
-  ];
+  const diagnostics: string[] = [...baseDiagnostics, `EUR/NOK-kilde: ${fx.source}`, `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`, `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`, usingExplicitTables ? `RealtyFlow-tabeller fra env: ${tables.join(', ')}` : `RealtyFlow-tabeller autodetekteres: ${tables.join(', ')}`];
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
   byBrand.set('soleada', emptyBrand('soleada'));
   byBrand.set('zenecohomes', emptyBrand('zenecohomes'));
   const events: RealtyflowCommissionEvent[] = [];
+  const seen = new Set<string>();
 
-  let totalRows = 0;
-  let matchedRows = 0;
-  let wonRows = 0;
-  let missingAmountRows = 0;
-  let missingTables = 0;
-  let existingTables = 0;
+  let totalRows = 0, matchedRows = 0, wonRows = 0, missingAmountRows = 0, missingTables = 0, existingTables = 0;
   const rawBrands = new Set<string>();
   let invalidKeySeen = false;
 
@@ -288,15 +197,18 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     diagnostics.push(`${table}: ${result.rows.length} rader lest`);
     totalRows += result.rows.length;
     for (const row of result.rows) {
-      const rawBrand = rawBrandValue(row);
-      if (rawBrand) rawBrands.add(rawBrand);
+      const rawBrand = rawBrandValue(row); if (rawBrand) rawBrands.add(rawBrand);
       const brand = brandKey(row);
       if (brand === 'other' && !shouldIncludeOtherAsRealtyflow(table, row)) continue;
       if (!isCommissionRow(row, table) || !isIncomeRow(row)) continue;
       if (table === 'contacts' && !isWonCustomer(row)) continue;
       if (table === 'contacts') wonRows += 1;
-      const rawAmount = amountValue(row);
+      const rawAmount = amountValue(row, table);
       if (!rawAmount) { missingAmountRows += 1; continue; }
+      const identity = String(getAny(row, ['id', 'source_id', 'deal_id', 'contact_id']) || `${table}-${customerName(row)}-${dateValue(row)}-${rawAmount}`);
+      const seenKey = `${table}:${identity}`;
+      if (seen.has(seenKey)) continue;
+      seen.add(seenKey);
       matchedRows += 1;
       const amountEur = amountIsNok(row) ? rawAmount / fxRate : rawAmount;
       const item = byBrand.get(brand) || emptyBrand(brand);
@@ -305,8 +217,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       if (rawBrand && !item.rawBrandIds.includes(rawBrand)) item.rawBrandIds.push(rawBrand);
       const month = dateValue(row).slice(0, 7) + '-01';
       const existing = item.monthly.find((x) => x.month === month);
-      if (existing) existing.amountEur += amountEur;
-      else item.monthly.push({ month, amountEur });
+      if (existing) existing.amountEur += amountEur; else item.monthly.push({ month, amountEur });
       byBrand.set(brand, item);
       const event = makeEvent(row, table, fxRate, amountEur);
       if (event) events.push(event);
@@ -322,7 +233,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
   diagnostics.push(`Vunnet/kunde-rader fra contacts: ${wonRows}`);
   diagnostics.push(`Matchede kommisjons-/RealtyFlow-rader: ${matchedRows}`);
-  if (missingAmountRows > 0) diagnostics.push(`${missingAmountRows} vunnet/kunde-rader manglet commission_amount eller sale_price + commission_percent.`);
+  if (missingAmountRows > 0) diagnostics.push(`${missingAmountRows} relevante rader manglet commission_amount, amount eller sale_price + commission_percent.`);
   diagnostics.push(`RealtyFlow utbetalingshendelser med dato: ${events.length}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
 
