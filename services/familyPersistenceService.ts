@@ -11,6 +11,7 @@ function cleanId(value: unknown, fallback: string) { return String(value || '').
 function cleanDay(value: unknown): number | undefined { const day = Number(value || 0); if (!Number.isFinite(day) || day < 1 || day > 31) return undefined; return Math.round(day); }
 function nowIsoDate() { return new Date().toISOString().slice(0, 10); }
 function numberValue(value: unknown) { const n = Number(value || 0); return Number.isFinite(n) ? n : 0; }
+function assetValue(assetOrRow: any) { return numberValue(assetOrRow?.value ?? assetOrRow?.current_value ?? assetOrRow?.currentValue); }
 
 function isDisabled(key: string) {
   try {
@@ -68,16 +69,19 @@ export function mapMemberRow(row: any): FamilyMember {
 }
 
 export function mapAssetRow(row: any): Asset {
+  const value = assetValue(row);
   return {
+    ...row,
     id: cleanId(row.id, `asset-${Date.now()}`),
     name: row.name || row.asset_name || 'Eiendel',
-    category: row.category || row.asset_category || 'OTHER',
-    value: numberValue(row.value ?? row.current_value ?? row.currentValue),
+    category: row.category || row.asset_category || row.type || 'OTHER',
+    value,
+    currentValue: value,
     currency: row.currency || 'NOK',
     purchasePrice: row.purchase_price ?? row.purchasePrice ?? undefined,
     purchaseDate: row.purchase_date || row.purchaseDate || undefined,
     linkedLoanAccountId: row.linked_loan_account_id || row.linkedLoanAccountId || undefined,
-  } as Asset;
+  } as any;
 }
 
 export function mapBankAccountRow(row: any): BankAccount {
@@ -112,9 +116,9 @@ function snakeLegacyMemberRows(userId: string, members: FamilyMember[]) { return
 function camelLegacyMemberRows(userId: string, members: FamilyMember[]) { return members.map((m) => ({ id: cleanId(m.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: m.name || '', birthDate: m.birthDate || nowIsoDate(), monthlySalary: numberValue(m.monthlySalary), monthlyBenefits: numberValue(m.monthlyBenefits), monthlyChildBenefit: numberValue(m.monthlyChildBenefit) })); }
 function minimalMemberRows(userId: string, members: FamilyMember[]) { return members.map((m) => ({ id: cleanId(m.id, `fm-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: m.name || '' })); }
 
-function fullAssetRows(userId: string, assets: Asset[]) { return assets.map((a) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', category: a.category || 'OTHER', value: numberValue(a.value), currency: a.currency || 'NOK', purchase_price: a.purchasePrice ?? null, purchase_date: a.purchaseDate || null, linked_loan_account_id: a.linkedLoanAccountId || null })); }
-function legacyAssetRows(userId: string, assets: Asset[]) { return assets.map((a) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', category: a.category || 'OTHER', value: numberValue(a.value), currency: a.currency || 'NOK' })); }
-function minimalAssetRows(userId: string, assets: Asset[]) { return assets.map((a) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', value: numberValue(a.value) })); }
+function fullAssetRows(userId: string, assets: Asset[]) { return assets.map((a: any) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', category: a.category || a.type || 'OTHER', value: assetValue(a), current_value: assetValue(a), currency: a.currency || 'NOK', purchase_price: a.purchasePrice ?? null, purchase_date: a.purchaseDate || null, linked_loan_account_id: a.linkedLoanAccountId || null })); }
+function legacyAssetRows(userId: string, assets: Asset[]) { return assets.map((a: any) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', category: a.category || a.type || 'OTHER', value: assetValue(a), currency: a.currency || 'NOK' })); }
+function minimalAssetRows(userId: string, assets: Asset[]) { return assets.map((a: any) => ({ id: cleanId(a.id, `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, name: a.name || 'Eiendel', value: assetValue(a) })); }
 
 function fullBankRows(userId: string, accounts: BankAccount[]) { return accounts.map((a) => ({ id: cleanId(a.id, `account-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, bank_name: a.bankName || 'Bank', account_name: a.accountName || 'Konto', account_number: a.accountNumber || null, balance: numberValue(a.balance), currency: a.currency || 'NOK', type: a.type || 'CHECKING', interest_rate: a.interestRate ?? null, credit_limit: a.creditLimit ?? null })); }
 function legacyBankRows(userId: string, accounts: BankAccount[]) { return accounts.map((a) => ({ id: cleanId(a.id, `account-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, bank_name: a.bankName || 'Bank', account_name: a.accountName || 'Konto', balance: numberValue(a.balance), currency: a.currency || 'NOK', type: a.type || 'CHECKING' })); }
