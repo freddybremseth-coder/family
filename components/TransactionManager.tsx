@@ -65,8 +65,8 @@ function normalizeEditableTx(tx: Partial<Transaction>): Transaction {
   };
 }
 
-export const TransactionManager: React.FC<Props> = ({ 
-  transactions, setTransactions, 
+export const TransactionManager: React.FC<Props> = ({
+  transactions, setTransactions,
   bankAccounts, setBankAccounts,
   cashBalance, setCashBalance,
   receipts = []
@@ -128,7 +128,7 @@ export const TransactionManager: React.FC<Props> = ({
   const handleWithdraw = () => {
     if (withdrawal.amount <= 0 || !withdrawal.fromAccountId) return;
     setBankAccounts(prev => prev.map(acc => acc.id === withdrawal.fromAccountId ? { ...acc, balance: acc.balance - withdrawal.amount } : acc));
-    setCashBalance(prev => prev + withdrawal.amount); 
+    setCashBalance(prev => prev + withdrawal.amount);
     const tx: Transaction = { id: `tx-w-${Date.now()}`, date: new Date().toISOString().split('T')[0], amount: withdrawal.amount, currency: withdrawal.currency, description: 'Bankuttak til kontanter', category: 'Overføring', type: TransactionType.TRANSFER, paymentMethod: 'Bank', isAccrual: false, fromAccountId: withdrawal.fromAccountId };
     setTransactions(prev => [tx, ...prev]);
     setShowWithdrawForm(false);
@@ -153,6 +153,12 @@ export const TransactionManager: React.FC<Props> = ({
     setTransactions(prev => [tx, ...prev]);
     setShowAddForm(false);
     setNewTx({ date: new Date().toISOString().split('T')[0], amount: 0, currency: 'EUR', description: '', category: 'Diverse', type: TransactionType.EXPENSE, paymentMethod: 'Bank', fromAccountId: bankAccounts[0]?.id || '', toAccountId: bankAccounts[0]?.id || '' });
+  };
+
+  const openEditTransaction = (tx: Transaction) => {
+    setShowAddForm(false);
+    setShowWithdrawForm(false);
+    setEditingTransaction({ ...tx });
   };
 
   const saveEditedTransaction = () => {
@@ -180,9 +186,9 @@ export const TransactionManager: React.FC<Props> = ({
     </div>
   );
 
-  const TransactionForm = ({ tx, setTx, onSave, title }: { tx: Partial<Transaction>; setTx: React.Dispatch<React.SetStateAction<any>>; onSave: () => void; title: string }) => (
-    <div className="glass-panel p-6 border-l-4 border-l-cyan-500 animate-in slide-in-from-top-4">
-      <h3 className="text-lg font-bold uppercase tracking-tighter mb-4 flex items-center gap-2"><Edit3 className="w-5 h-5 text-cyan-400" /> {title}</h3>
+  const TransactionForm = ({ tx, setTx, onSave, title, modal = false }: { tx: Partial<Transaction>; setTx: React.Dispatch<React.SetStateAction<any>>; onSave: () => void; title: string; modal?: boolean }) => (
+    <div className={`${modal ? 'bg-slate-950/95 border-2 border-cyan-500/40 shadow-2xl' : 'glass-panel border-l-4 border-l-cyan-500'} p-6 animate-in slide-in-from-top-4`}>
+      <h3 className="text-lg font-bold uppercase tracking-tighter mb-4 flex items-center gap-2 text-white"><Edit3 className="w-5 h-5 text-cyan-400" /> {title}</h3>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Dato</label><input type="date" value={tx.date || ''} onChange={e => setTx((prev: any) => ({...prev, date: e.target.value}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs" /></div>
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Type</label><select value={tx.type || TransactionType.EXPENSE} onChange={e => setTx((prev: any) => ({...prev, type: e.target.value as TransactionType}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value={TransactionType.EXPENSE}>Utgift</option><option value={TransactionType.INCOME}>Inntekt</option><option value={TransactionType.TRANSFER}>Overføring</option></select></div>
@@ -192,7 +198,7 @@ export const TransactionManager: React.FC<Props> = ({
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Betalingsmetode</label><select value={tx.paymentMethod || 'Bank'} onChange={e => setTx((prev: any) => ({...prev, paymentMethod: e.target.value as PaymentMethod}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value="Bank">Bankoverføring / Kort</option><option value="Kontant">Kontanter</option><option value="On-Chain">On-Chain</option></select></div>
         {tx.paymentMethod === 'Bank' && <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">{tx.type === TransactionType.INCOME ? 'Til Konto' : 'Fra Konto'}</label><select value={tx.type === TransactionType.INCOME ? tx.toAccountId || '' : tx.fromAccountId || ''} onChange={e => tx.type === TransactionType.INCOME ? setTx((prev: any) => ({...prev, toAccountId: e.target.value})) : setTx((prev: any) => ({...prev, fromAccountId: e.target.value}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value="">Ikke valgt</option>{bankAccounts.map(acc => <option key={acc.id} value={acc.id}>{accountLabel(acc)}</option>)}</select></div>}
       </div>
-      <div className="flex gap-3"><CyberButton onClick={onSave} className="flex-1"><Save className="w-4 h-4 mr-2" /> Lagre</CyberButton><button onClick={() => { setShowAddForm(false); setEditingTransaction(null); }} className="px-5 border border-white/10 text-slate-300 text-[10px] font-black uppercase hover:bg-white/5"><X className="w-4 h-4" /></button></div>
+      <div className="flex gap-3"><CyberButton onClick={onSave} className="flex-1"><Save className="w-4 h-4 mr-2" /> Lagre</CyberButton><button type="button" onClick={() => { setShowAddForm(false); setEditingTransaction(null); }} className="px-5 border border-white/10 text-slate-300 text-[10px] font-black uppercase hover:bg-white/5"><X className="w-4 h-4" /></button></div>
     </div>
   );
 
@@ -201,7 +207,7 @@ export const TransactionManager: React.FC<Props> = ({
       {deletingTransactionId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={() => setDeletingTransactionId(null)} />
-          <div className="glass-panel w-full max-w-sm p-6 border-2 border-rose-500 animate-in zoom-in-95 duration-200">
+          <div className="glass-panel w-full max-w-sm p-6 border-2 border-rose-500 animate-in zoom-in-95 duration-200 relative z-10">
             <h3 className="text-lg font-bold text-white uppercase mb-2">Slett Post?</h3>
             <p className="text-slate-300 text-xs mb-6 uppercase tracking-wider">Denne handlingen kan ikke angres.</p>
             <div className="flex gap-4"><button onClick={() => setDeletingTransactionId(null)} className="flex-1 py-2 border border-white/10 text-slate-100 uppercase text-[10px] font-bold hover:bg-white/5 transition-all">Avbryt</button><button onClick={() => deleteTransaction(deletingTransactionId)} className="flex-1 py-2 bg-rose-600 text-white uppercase text-[10px] font-bold shadow-[0_0_15px_rgba(225,29,72,0.4)]">Slett Post</button></div>
@@ -209,7 +215,14 @@ export const TransactionManager: React.FC<Props> = ({
         </div>
       )}
 
-      {editingTransaction && <TransactionForm tx={editingTransaction} setTx={setEditingTransaction as any} onSave={saveEditedTransaction} title="Rediger transaksjon" />}
+      {editingTransaction && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setEditingTransaction(null)} />
+          <div className="relative z-10 w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl">
+            <TransactionForm tx={editingTransaction} setTx={setEditingTransaction as any} onSave={saveEditedTransaction} title="Rediger transaksjon" modal />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-panel p-6 border-l-4 border-l-cyan-500 md:col-span-2">
@@ -248,7 +261,7 @@ export const TransactionManager: React.FC<Props> = ({
                   <td className="px-6 py-5"><span className={`px-2 py-0.5 text-[8px] font-black uppercase border ${t.paymentMethod === 'Kontant' ? 'border-magenta-500 text-magenta-500 bg-magenta-500/5' : 'border-cyan-500 text-cyan-500 bg-cyan-500/5'}`}>{t.paymentMethod}</span></td>
                   <td className="px-6 py-5">{t.isVerified ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase text-emerald-300"><ShieldCheck className="h-3 w-3" /> Verifisert</span> : <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[8px] font-black uppercase text-amber-300">Ikke verifisert</span>}</td>
                   <td className={`px-6 py-5 text-right font-mono font-bold ${t.type === TransactionType.EXPENSE ? 'text-rose-400' : t.type === TransactionType.INCOME ? 'text-emerald-400' : 'text-cyan-400'}`}>{t.type === TransactionType.EXPENSE ? '-' : t.type === TransactionType.INCOME ? '+' : '↔'}{formatCurrency(t.amount, t.currency)}</td>
-                  <td className="px-6 py-5 text-center"><div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => { setEditingTransaction({ ...t }); setShowAddForm(false); }} className="p-2 text-cyan-400 hover:bg-cyan-500/10"><Edit3 className="w-4 h-4" /></button><button onClick={() => setDeletingTransactionId(t.id)} className="p-2 text-rose-500 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button></div></td>
+                  <td className="px-6 py-5 text-center"><div className="flex justify-center gap-2 opacity-100 transition-all"><button type="button" aria-label="Rediger transaksjon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditTransaction(t); }} className="p-2 rounded-lg text-cyan-400 hover:bg-cyan-500/10 focus:bg-cyan-500/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"><Edit3 className="w-4 h-4" /></button><button type="button" aria-label="Slett transaksjon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeletingTransactionId(t.id); }} className="p-2 rounded-lg text-rose-500 hover:bg-rose-500/10 focus:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-rose-500/50"><Trash2 className="w-4 h-4" /></button></div></td>
                 </tr>
               ))}
             </tbody>
