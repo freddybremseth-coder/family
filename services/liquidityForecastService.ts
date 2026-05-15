@@ -1,5 +1,5 @@
 import { BankAccount, FamilyMember, TransactionType } from '../types';
-import { fetchRealtyflowCommissions } from './realtyflowService';
+import { fetchRealtyflowCommissionEvents } from './realtyflowService';
 
 export interface LiquidityEvent {
   id: string;
@@ -46,17 +46,7 @@ export async function fetchLiquidityForecast(members: FamilyMember[], accounts: 
     const salaryDay = member.salaryDay || 25;
     nextMonthlyDates(salaryDay, 4).forEach((date) => {
       if (member.monthlySalary > 0) {
-        events.push({
-          id: `salary-${member.id}-${date}`,
-          date,
-          title: `Lønn ${member.name}`,
-          amount: member.monthlySalary,
-          currency: 'NOK',
-          type: TransactionType.INCOME,
-          source: 'salary',
-          accountId: member.salaryAccountId,
-          confidence: 'fixed',
-        });
+        events.push({ id: `salary-${member.id}-${date}`, date, title: `Lønn ${member.name}`, amount: member.monthlySalary, currency: 'NOK', type: TransactionType.INCOME, source: 'salary', accountId: member.salaryAccountId, confidence: 'fixed' });
       }
       if (member.monthlyBenefits > 0) {
         events.push({ id: `benefit-${member.id}-${date}`, date, title: `Ytelser ${member.name}`, amount: member.monthlyBenefits, currency: 'NOK', type: TransactionType.INCOME, source: 'benefit', accountId: member.salaryAccountId, confidence: 'fixed' });
@@ -68,20 +58,21 @@ export async function fetchLiquidityForecast(members: FamilyMember[], accounts: 
   });
 
   try {
-    const realtyflow = await fetchRealtyflowCommissions();
-    const currentMonth = new Date().toISOString().slice(0, 7) + '-15';
-    realtyflow.brands.filter((brand) => brand.totalNok > 0).forEach((brand) => {
-      events.push({
-        id: `realtyflow-${brand.key}-${currentMonth}`,
-        date: currentMonth,
-        title: `Forventet kommisjon ${brand.brand}`,
-        amount: brand.totalNok,
-        currency: 'NOK',
-        type: TransactionType.INCOME,
-        source: 'realtyflow_commission',
-        confidence: 'estimated',
+    const realtyflowEvents = await fetchRealtyflowCommissionEvents();
+    realtyflowEvents
+      .filter((event) => event.commissionNok > 0 && event.payoutDate)
+      .forEach((event) => {
+        events.push({
+          id: `realtyflow-${event.id}`,
+          date: event.payoutDate,
+          title: `${event.customerName} · ${event.brand}`,
+          amount: event.commissionNok,
+          currency: 'NOK',
+          type: TransactionType.INCOME,
+          source: 'realtyflow_commission',
+          confidence: 'estimated',
+        });
       });
-    });
   } catch (err) {
     console.warn('[liquidityForecast] RealtyFlow commission forecast failed', err);
   }
