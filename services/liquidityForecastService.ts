@@ -25,12 +25,17 @@ function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(year, monthIndex, safeDay).toISOString().slice(0, 10);
 }
 
+function horizonEndDate(monthsAhead: number) {
+  const now = new Date();
+  return isoDate(now.getFullYear(), now.getMonth() + Math.max(1, monthsAhead), now.getDate());
+}
+
 function nextMonthlyDates(day: number, monthsAhead = 4) {
   const now = new Date();
   const dates: string[] = [];
-  for (let offset = 0; offset < monthsAhead; offset += 1) {
+  for (let offset = 0; offset <= monthsAhead; offset += 1) {
     const date = isoDate(now.getFullYear(), now.getMonth() + offset, day);
-    if (date >= now.toISOString().slice(0, 10)) dates.push(date);
+    if (date >= now.toISOString().slice(0, 10) && date <= horizonEndDate(monthsAhead)) dates.push(date);
   }
   return dates;
 }
@@ -39,12 +44,14 @@ function bankBalanceNok(accounts: BankAccount[]) {
   return accounts.reduce((sum, account) => sum + (account.currency === 'NOK' ? account.balance : account.balance * 11.55), 0);
 }
 
-export async function fetchLiquidityForecast(members: FamilyMember[], accounts: BankAccount[]): Promise<LiquidityForecast> {
+export async function fetchLiquidityForecast(members: FamilyMember[], accounts: BankAccount[], monthsAhead = 4): Promise<LiquidityForecast> {
   const events: LiquidityEvent[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const endDate = horizonEndDate(monthsAhead);
 
   members.forEach((member) => {
     const salaryDay = member.salaryDay || 25;
-    nextMonthlyDates(salaryDay, 4).forEach((date) => {
+    nextMonthlyDates(salaryDay, monthsAhead).forEach((date) => {
       if (member.monthlySalary > 0) {
         events.push({ id: `salary-${member.id}-${date}`, date, title: `Lønn ${member.name}`, amount: member.monthlySalary, currency: 'NOK', type: TransactionType.INCOME, source: 'salary', accountId: member.salaryAccountId, confidence: 'fixed' });
       }
@@ -60,7 +67,7 @@ export async function fetchLiquidityForecast(members: FamilyMember[], accounts: 
   try {
     const realtyflowEvents = await fetchRealtyflowCommissionEvents();
     realtyflowEvents
-      .filter((event) => event.commissionNok > 0 && event.payoutDate)
+      .filter((event) => event.commissionNok > 0 && event.payoutDate && event.payoutDate >= today && event.payoutDate <= endDate)
       .forEach((event) => {
         events.push({
           id: `realtyflow-${event.id}`,
