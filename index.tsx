@@ -99,29 +99,10 @@ const App = () => {
     }
   }, []);
 
-  useEffect(() => {
-    if (!session?.user?.id || !persistentReady) return;
-    const timer = setTimeout(() => { syncTransactions(session.user.id, transactions); }, 800);
-    return () => clearTimeout(timer);
-  }, [transactions, session?.user?.id, persistentReady]);
-
-  useEffect(() => {
-    if (!session?.user?.id || !persistentReady) return;
-    const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800);
-    return () => clearTimeout(timer);
-  }, [familyMembers, session?.user?.id, persistentReady]);
-
-  useEffect(() => {
-    if (!session?.user?.id || !persistentReady) return;
-    const timer = setTimeout(() => { syncAssets(session.user.id, assets); }, 800);
-    return () => clearTimeout(timer);
-  }, [assets, session?.user?.id, persistentReady]);
-
-  useEffect(() => {
-    if (!session?.user?.id || !persistentReady) return;
-    const timer = setTimeout(() => { syncBankAccounts(session.user.id, bankAccounts); }, 800);
-    return () => clearTimeout(timer);
-  }, [bankAccounts, session?.user?.id, persistentReady]);
+  useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncTransactions(session.user.id, transactions); }, 800); return () => clearTimeout(timer); }, [transactions, session?.user?.id, persistentReady]);
+  useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800); return () => clearTimeout(timer); }, [familyMembers, session?.user?.id, persistentReady]);
+  useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncAssets(session.user.id, assets); }, 800); return () => clearTimeout(timer); }, [assets, session?.user?.id, persistentReady]);
+  useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncBankAccounts(session.user.id, bankAccounts); }, 800); return () => clearTimeout(timer); }, [bankAccounts, session?.user?.id, persistentReady]);
 
   const checkSubscription = useCallback(async (user: any) => {
     if (user.email === ADMIN_EMAIL) { setSubscriptionStatus('lifetime'); return; }
@@ -137,7 +118,6 @@ const App = () => {
       if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0, salaryDay: 25 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0, salaryDay: 25 }]); return; }
       let cancelled = false;
       const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false); }, 3500);
-
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (cancelled) return;
         setSession(session);
@@ -146,62 +126,28 @@ const App = () => {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id).catch((err) => console.warn('[App] startup data load failed', err));
           checkSubscription(session.user).catch((err) => console.warn('[App] subscription check failed', err));
-        } else {
-          setPersistentReady(false);
-        }
-      }).catch((err) => {
-        console.warn('[App] getSession failed', err);
-        if (!cancelled) { setPersistentReady(false); setLoading(false); }
-      });
-
+        } else setPersistentReady(false);
+      }).catch((err) => { console.warn('[App] getSession failed', err); if (!cancelled) { setPersistentReady(false); setLoading(false); } });
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setSession(session);
-        if (session?.user) {
-          handleRoleAssignment(session.user);
-          fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err));
-          checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err));
-        } else {
-          setPersistentReady(false);
-          setTransactions([]);
-          setFamilyMembers([]);
-          setAssets([]);
-          setBankAccounts([]);
-        }
+        if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err)); checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err)); }
+        else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); }
       });
       return () => { cancelled = true; clearTimeout(safetyTimer); subscription?.unsubscribe(); };
     } catch (err) { console.warn('[App] startup failed', err); setPersistentReady(false); setLoading(false); }
   }, [fetchAllData, checkSubscription]);
 
-  const handleRoleAssignment = (user: any) => {
-    if (user.email === ADMIN_EMAIL) setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : 'BREMSETH', role: UserRole.SUPER_ADMIN, subscriptionStatus: 'Lifetime' }));
-    else setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : (user.user_metadata?.family_name || 'FAMILIE'), role: UserRole.USER, subscriptionStatus: 'Active' }));
-  };
-
+  const handleRoleAssignment = (user: any) => { if (user.email === ADMIN_EMAIL) setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : 'BREMSETH', role: UserRole.SUPER_ADMIN, subscriptionStatus: 'Lifetime' })); else setUserConfig(prev => ({ ...prev, familyName: prev.familyName && prev.familyName !== 'FAMILIE' ? prev.familyName : (user.user_metadata?.family_name || 'FAMILIE'), role: UserRole.USER, subscriptionStatus: 'Active' })); };
   const handleLogin = async (credentials: { email: string; password?: string }) => {
     if (!isSupabaseConfigured()) { if (credentials.email === ADMIN_EMAIL) { setSession({ user: { email: credentials.email, id: 'demo-user' } }); handleRoleAssignment({ email: credentials.email }); return { ok: true }; } return { ok: false, error: authSetupError() }; }
     const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email.trim(), password: credentials.password || '' });
     if (error) { const msg = String(error.message || '').toLowerCase(); if (msg.includes('invalid login credentials')) return { ok: false, error: 'Feil e-post eller passord. Hvis du nettopp opprettet konto, må e-posten være bekreftet først. Bruk “Glemt passord” bare hvis kontoen faktisk finnes i FamilyHub Supabase Auth.' }; if (msg.includes('email not confirmed')) return { ok: false, error: 'E-posten er ikke bekreftet ennå. Sjekk innboksen/spam, eller opprett kontoen på nytt for å sende bekreftelseslenke.' }; return { ok: false, error: error.message }; }
-    if (data.session?.user) {
-      handleRoleAssignment(data.session.user);
-      fetchAllData(data.session.user.id).catch((err) => console.warn('[App] login data load failed', err));
-      checkSubscription(data.session.user).catch((err) => console.warn('[App] login subscription check failed', err));
-    }
+    if (data.session?.user) { handleRoleAssignment(data.session.user); fetchAllData(data.session.user.id).catch((err) => console.warn('[App] login data load failed', err)); checkSubscription(data.session.user).catch((err) => console.warn('[App] login subscription check failed', err)); }
     return { ok: true };
   };
 
   const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); };
-  const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
-    const txId = `tx-rcpt-${Date.now()}`;
-    const receiptId = `receipt-${Date.now()}`;
-    const smartCategory = inferTransactionCategory({ vendor: data.vendor, description: data.vendor || 'Kvittering', category: data.category, amount: data.totalAmount, items: data.items });
-    const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: smartCategory, type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId };
-    if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]);
-    const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId };
-    setScannedReceipts(prev => [receipt, ...prev]);
-    setTransactions(prev => [tx, ...prev]);
-    setCashBalance(prev => prev - tx.amount);
-    setActiveTab('transactions');
-  };
+  const handleNewScannedReceipt = async (data: any, imageUrl: string) => { const txId = `tx-rcpt-${Date.now()}`; const receiptId = `receipt-${Date.now()}`; const smartCategory = inferTransactionCategory({ vendor: data.vendor, description: data.vendor || 'Kvittering', category: data.category, amount: data.totalAmount, items: data.items }); const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: smartCategory, type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId }; if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]); const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId }; setScannedReceipts(prev => [receipt, ...prev]); setTransactions(prev => [tx, ...prev]); setCashBalance(prev => prev - tx.amount); setActiveTab('transactions'); };
   const navigate = (tab: string) => { if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard'); setActiveTab(tab); setSidebarOpen(false); };
 
   const renderContent = () => {
@@ -213,7 +159,7 @@ const App = () => {
       case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
       case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
       case 'settings': return <SettingsManager userConfig={userConfig} setUserConfig={setUserConfig} onApiUpdate={() => setAiConfigured(isAiAvailable())} />;
-      case 'bank': return <div className="space-y-8"><NetWorthOverview bankAccounts={bankAccounts} assets={assets} realEstateDeals={realEstateDeals} userId={session?.user?.id} /><BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
+      case 'bank': return <div className="space-y-8"><NetWorthOverview bankAccounts={bankAccounts} assets={assets} realEstateDeals={realEstateDeals} userId={session?.user?.id} /><BankManager userId={session?.user?.id} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
       case 'documents': return <DocumentsManager userId={session?.user?.id} familyName={userConfig.familyName} familyLocation={userConfig.location} familyAddress={userConfig.address || ''} />;
       case 'business': return <BusinessManager deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} farmOps={farmOps} setFarmOps={setFarmOps} developers={developers} setDevelopers={setDevelopers} afterSalePartners={[]} setAfterSalePartners={() => {}} transactions={transactions} setTransactions={setTransactions} bankAccounts={bankAccounts} userId={session?.user?.id} />;
       case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
