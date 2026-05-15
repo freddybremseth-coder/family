@@ -14,6 +14,19 @@ export interface BrandCommission {
   monthly: { month: string; amountEur: number }[];
 }
 
+export interface RealtyflowCommissionEvent {
+  id: string;
+  customerName: string;
+  brandKey: CommissionBrandKey;
+  brand: string;
+  salePriceEur: number;
+  commissionEur: number;
+  commissionNok: number;
+  payoutDate: string;
+  status?: string;
+  sourceTable: string;
+}
+
 export interface RealtyflowSummary {
   brands: BrandCommission[];
   totalEur: number;
@@ -21,12 +34,14 @@ export interface RealtyflowSummary {
   fxRate: number;
   source: 'supabase' | 'fallback';
   diagnostics: string[];
+  events?: RealtyflowCommissionEvent[];
 }
 
 const FALLBACK_FX = 11.55;
 const READ_TIMEOUT_MS = 8000;
 
 const DEFAULT_TABLE_CANDIDATES = [
+  'contacts',
   'business_financial_events',
   'family_economy_realtyflow',
   'family_economy_monthly',
@@ -86,8 +101,12 @@ function brandKey(row: any): CommissionBrandKey {
   return 'other';
 }
 
+function brandLabel(key: CommissionBrandKey) {
+  return key === 'soleada' ? 'Soleada' : key === 'zenecohomes' ? 'ZenEcoHomes' : 'Andre / ukjent';
+}
+
 function emptyBrand(key: CommissionBrandKey): BrandCommission {
-  return { key, brand: key === 'soleada' ? 'Soleada' : key === 'zenecohomes' ? 'ZenEcoHomes' : 'Andre / ukjent', totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] };
+  return { key, brand: brandLabel(key), totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] };
 }
 
 function amountValue(row: any): number {
@@ -101,23 +120,37 @@ function amountValue(row: any): number {
   return Number(value || 0);
 }
 
+function salePriceValue(row: any): number {
+  return Number(getAny(row, ['sale_price', 'salePrice', 'pipeline_value', 'property_price', 'price', 'budget', 'value']) || 0);
+}
+
+function customerName(row: any): string {
+  return String(getAny(row, ['customer_name', 'client_name', 'name', 'buyer_name', 'contact_name', 'title']) || 'RealtyFlow-kunde');
+}
+
 function currencyValue(row: any): string { return String(getAny(row, ['currency', 'commission_currency', 'amount_currency']) || 'EUR').toUpperCase(); }
 function amountIsNok(row: any) {
   if (getAny(row, ['realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok']) !== undefined) return true;
   return currencyValue(row) === 'NOK';
 }
-function dateValue(row: any): string { return String(getAny(row, ['month', 'event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
+function dateValue(row: any): string { return String(getAny(row, ['month', 'event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'payout_date', 'commission_paid_date', 'paid_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
+function payoutDateValue(row: any): string { return String(getAny(row, ['commission_paid_date', 'payout_date', 'payment_date', 'expected_payout_date', 'paid_date', 'expected_date', 'date', 'event_date']) || '').slice(0, 10); }
+
+function isWonCustomer(row: any): boolean {
+  const status = String(getAny(row, ['pipeline_status', 'status', 'deal_status', 'stage']) || '').toLowerCase();
+  return ['won', 'customer', 'vip', 'completed', 'closed', 'sold'].some((value) => status.includes(value));
+}
 
 function isCommissionRow(row: any, table: string): boolean {
-  if (['business_financial_events', 'family_economy_realtyflow', 'realtyflow_payouts'].includes(table)) return true;
+  if (['contacts', 'business_financial_events', 'family_economy_realtyflow', 'realtyflow_payouts'].includes(table)) return true;
   const text = [table, JSON.stringify(row || {})].map((x) => String(x || '').toLowerCase()).join(' ');
   return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || text.includes('realtyflow') || amountValue(row) > 0;
 }
 
 function isIncomeRow(row: any): boolean {
-  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type']) || '').toLowerCase();
+  const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type', 'pipeline_status']) || '').toLowerCase();
   if (!direction) return true;
-  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'sold', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
+  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'customer', 'vip', 'sold', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
 }
 
 async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
@@ -152,14 +185,32 @@ function rawBrandValue(row: any) {
 
 function shouldIncludeOtherAsRealtyflow(table: string, row: any) {
   const text = `${table} ${JSON.stringify(row || {})}`.toLowerCase();
-  return table === 'family_economy_realtyflow' || text.includes('realtyflow');
+  return table === 'family_economy_realtyflow' || text.includes('realtyflow') || table === 'contacts';
+}
+
+function makeEvent(row: any, table: string, fxRate: number, amountEur: number): RealtyflowCommissionEvent | null {
+  const payoutDate = payoutDateValue(row);
+  if (!payoutDate) return null;
+  const brand = brandKey(row);
+  return {
+    id: `${table}-${String(getAny(row, ['id', 'contact_id', 'deal_id']) || `${customerName(row)}-${payoutDate}-${amountEur}`).replace(/\s+/g, '-')}`,
+    customerName: customerName(row),
+    brandKey: brand,
+    brand: brandLabel(brand),
+    salePriceEur: salePriceValue(row),
+    commissionEur: amountEur,
+    commissionNok: amountEur * fxRate,
+    payoutDate,
+    status: String(getAny(row, ['pipeline_status', 'status', 'deal_status']) || ''),
+    sourceTable: table,
+  };
 }
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const fx = await getEurToNokRate();
   const fxRate = fx.rate || FALLBACK_FX;
   const baseDiagnostics = [`App-versjon: ${APP_VERSION}`, ...fx.diagnostics];
-  const empty: RealtyflowSummary = { brands: [emptyBrand('soleada'), emptyBrand('zenecohomes')], totalEur: 0, totalNok: 0, fxRate, source: 'fallback', diagnostics: baseDiagnostics };
+  const empty: RealtyflowSummary = { brands: [emptyBrand('soleada'), emptyBrand('zenecohomes')], totalEur: 0, totalNok: 0, fxRate, source: 'fallback', diagnostics: baseDiagnostics, events: [] };
   const tables = configuredTables();
   const usingExplicitTables = !!cleanEnv(env().VITE_REALTYFLOW_COMMISSION_TABLES || env().VITE_REALTYFLOW_TABLES || '');
 
@@ -179,6 +230,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
   byBrand.set('soleada', emptyBrand('soleada'));
   byBrand.set('zenecohomes', emptyBrand('zenecohomes'));
+  const events: RealtyflowCommissionEvent[] = [];
 
   let totalRows = 0;
   let matchedRows = 0;
@@ -204,6 +256,7 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       const brand = brandKey(row);
       if (brand === 'other' && !shouldIncludeOtherAsRealtyflow(table, row)) continue;
       if (!isCommissionRow(row, table) || !isIncomeRow(row)) continue;
+      if (table === 'contacts' && !isWonCustomer(row)) continue;
       const rawAmount = amountValue(row);
       if (!rawAmount) continue;
       matchedRows += 1;
@@ -217,6 +270,8 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       if (existing) existing.amountEur += amountEur;
       else item.monthly.push({ month, amountEur });
       byBrand.set(brand, item);
+      const event = makeEvent(row, table, fxRate, amountEur);
+      if (event) events.push(event);
     }
   }
 
@@ -228,7 +283,13 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
   diagnostics.push(`Matchede kommisjons-/RealtyFlow-rader: ${matchedRows}`);
+  diagnostics.push(`RealtyFlow utbetalingshendelser med dato: ${events.length}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
 
-  return { brands, totalEur, totalNok: totalEur * fxRate, fxRate, source: invalidKeySeen || existingTables === 0 ? 'fallback' : 'supabase', diagnostics };
+  return { brands, totalEur, totalNok: totalEur * fxRate, fxRate, source: invalidKeySeen || existingTables === 0 ? 'fallback' : 'supabase', diagnostics, events: events.sort((a, b) => a.payoutDate.localeCompare(b.payoutDate)) };
+}
+
+export async function fetchRealtyflowCommissionEvents(): Promise<RealtyflowCommissionEvent[]> {
+  const summary = await fetchRealtyflowCommissions();
+  return summary.events || [];
 }
