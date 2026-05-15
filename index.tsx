@@ -74,7 +74,7 @@ const App = () => {
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
   const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills };
-  const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><Dashboard {...dashboardProps} /><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} /></div></AppErrorBoundary>;
+  const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><Dashboard {...dashboardProps} /><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} transactions={transactions} /></div></AppErrorBoundary>;
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
@@ -83,10 +83,10 @@ const App = () => {
     setPersistentReady(false);
     try {
       const persistent = await loadFamilyPersistentData(userId);
-      setTransactions(persistent.transactions || []);
-      setFamilyMembers(persistent.members || []);
-      setAssets(persistent.assets || []);
-      setBankAccounts(persistent.bankAccounts || []);
+      if (persistent.transactions) setTransactions(persistent.transactions);
+      if (persistent.members) setFamilyMembers(persistent.members);
+      if (persistent.assets) setAssets(persistent.assets);
+      if (persistent.bankAccounts) setBankAccounts(persistent.bankAccounts);
 
       const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
       if (reData) setRealEstateDeals(reData);
