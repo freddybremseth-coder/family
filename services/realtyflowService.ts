@@ -68,11 +68,22 @@ function configuredTables(): string[] {
 }
 
 function normalize(value: unknown): string {
-  return String(value || '').trim().toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\.com|\.no|\.es/g, '').replace(/[^a-z0-9]+/g, '');
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/æ/g, 'ae')
+    .replace(/ø/g, 'o')
+    .replace(/å/g, 'a')
+    .replace(/https?:\/\//g, '')
+    .replace(/www\./g, '')
+    .replace(/\.com|\.no|\.es/g, '')
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 function getFirst(row: any, keys: string[]): any {
-  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null) return row[key];
+  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
   return undefined;
 }
 
@@ -82,12 +93,20 @@ function nestedCandidates(row: any) {
 
 function getAny(row: any, keys: string[]): any {
   const direct = getFirst(row, keys);
-  if (direct !== undefined && direct !== null) return direct;
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
   for (const nested of nestedCandidates(row)) {
     const value = getFirst(nested, keys);
-    if (value !== undefined && value !== null) return value;
+    if (value !== undefined && value !== null && value !== '') return value;
   }
   return undefined;
+}
+
+function toNumber(value: any): number {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value).replace(/[^0-9,.-]/g, '').replace(',', '.');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function brandKey(row: any): CommissionBrandKey {
@@ -109,19 +128,31 @@ function emptyBrand(key: CommissionBrandKey): BrandCommission {
   return { key, brand: brandLabel(key), totalEur: 0, totalNok: 0, count: 0, rawBrandIds: [], monthly: [] };
 }
 
-function amountValue(row: any): number {
-  const value = getAny(row, [
-    'amount_eur', 'net_eur', 'total_eur', 'realtyflow_net_eur', 'value_eur',
-    'amount', 'commission_amount', 'our_commission', 'ourGrossCommission', 'our_gross_commission',
-    'gross_commission', 'net_commission', 'ourNetCommission', 'our_net_commission', 'expected_amount',
-    'payout_amount', 'commission', 'total_commission', 'sales_commission', 'sale_commission', 'value', 'price_commission',
-    'realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok',
-  ]);
-  return Number(value || 0);
+function salePriceValue(row: any): number {
+  return toNumber(getAny(row, ['sale_price', 'salePrice', 'sales_price', 'pipeline_value', 'property_price', 'purchase_price', 'price', 'budget', 'value']));
 }
 
-function salePriceValue(row: any): number {
-  return Number(getAny(row, ['sale_price', 'salePrice', 'pipeline_value', 'property_price', 'price', 'budget', 'value']) || 0);
+function commissionPercentValue(row: any): number {
+  return toNumber(getAny(row, ['commission_percent', 'commissionPercent', 'commission_pct', 'commissionPct', 'provision_percent', 'provisionPct']));
+}
+
+function amountValue(row: any): number {
+  const direct = getAny(row, [
+    'amount_eur', 'net_eur', 'total_eur', 'realtyflow_net_eur', 'value_eur',
+    'commission_amount', 'commissionAmount', 'our_commission', 'ourCommission', 'ourGrossCommission', 'our_gross_commission',
+    'gross_commission', 'net_commission', 'ourNetCommission', 'our_net_commission', 'expected_amount',
+    'payout_amount', 'payoutAmount', 'commission', 'total_commission', 'sales_commission', 'sale_commission', 'price_commission',
+    'realtyflow_net_nok', 'amount_nok', 'net_nok', 'total_nok',
+  ]);
+  const directAmount = toNumber(direct);
+  if (directAmount > 0) return directAmount;
+
+  const salePrice = salePriceValue(row);
+  const pct = commissionPercentValue(row);
+  if (salePrice > 0 && pct > 0) return salePrice * (pct / 100);
+
+  // Ikke bruk pipeline_value/budget som kommisjon uten prosentsats, da det er salgspris.
+  return 0;
 }
 
 function customerName(row: any): string {
@@ -134,11 +165,15 @@ function amountIsNok(row: any) {
   return currencyValue(row) === 'NOK';
 }
 function dateValue(row: any): string { return String(getAny(row, ['month', 'event_date', 'date', 'sale_date', 'created_at', 'expected_date', 'payment_date', 'payout_date', 'commission_paid_date', 'paid_date', 'sold_at', 'closed_at', 'updated_at']) || new Date().toISOString()).slice(0, 10); }
-function payoutDateValue(row: any): string { return String(getAny(row, ['commission_paid_date', 'payout_date', 'payment_date', 'expected_payout_date', 'paid_date', 'expected_date', 'date', 'event_date']) || '').slice(0, 10); }
+function payoutDateValue(row: any): string { return String(getAny(row, ['commission_paid_date', 'payout_date', 'payment_date', 'expected_payout_date', 'paid_date', 'expected_date', 'date', 'event_date', 'updated_at']) || '').slice(0, 10); }
+
+function normalizeStatus(value: unknown): string {
+  return normalize(value).toLowerCase();
+}
 
 function isWonCustomer(row: any): boolean {
-  const status = String(getAny(row, ['pipeline_status', 'status', 'deal_status', 'stage']) || '').toLowerCase();
-  return ['won', 'customer', 'vip', 'completed', 'closed', 'sold'].some((value) => status.includes(value));
+  const status = normalizeStatus(getAny(row, ['pipeline_status', 'status', 'deal_status', 'stage', 'customer_status']));
+  return ['won', 'customer', 'vip', 'completed', 'closed', 'sold', 'closedwon', 'vunnet', 'solgt', 'kunde'].some((value) => status.includes(value));
 }
 
 function isCommissionRow(row: any, table: string): boolean {
@@ -150,7 +185,7 @@ function isCommissionRow(row: any, table: string): boolean {
 function isIncomeRow(row: any): boolean {
   const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type', 'pipeline_status']) || '').toLowerCase();
   if (!direction) return true;
-  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'customer', 'vip', 'sold', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
+  return ['income', 'in', 'credit', 'paid', 'expected', 'recognized', 'closed', 'won', 'customer', 'vip', 'sold', 'vunnet', 'solgt', 'kunde', 'commission', 'revenue', 'sale'].some((x) => direction.includes(x));
 }
 
 async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
@@ -234,6 +269,8 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
 
   let totalRows = 0;
   let matchedRows = 0;
+  let wonRows = 0;
+  let missingAmountRows = 0;
   let missingTables = 0;
   let existingTables = 0;
   const rawBrands = new Set<string>();
@@ -257,8 +294,9 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       if (brand === 'other' && !shouldIncludeOtherAsRealtyflow(table, row)) continue;
       if (!isCommissionRow(row, table) || !isIncomeRow(row)) continue;
       if (table === 'contacts' && !isWonCustomer(row)) continue;
+      if (table === 'contacts') wonRows += 1;
       const rawAmount = amountValue(row);
-      if (!rawAmount) continue;
+      if (!rawAmount) { missingAmountRows += 1; continue; }
       matchedRows += 1;
       const amountEur = amountIsNok(row) ? rawAmount / fxRate : rawAmount;
       const item = byBrand.get(brand) || emptyBrand(brand);
@@ -282,7 +320,9 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const brands = Array.from(byBrand.values()).map((b) => ({ ...b, totalNok: b.totalEur * fxRate, monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)) }));
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
+  diagnostics.push(`Vunnet/kunde-rader fra contacts: ${wonRows}`);
   diagnostics.push(`Matchede kommisjons-/RealtyFlow-rader: ${matchedRows}`);
+  if (missingAmountRows > 0) diagnostics.push(`${missingAmountRows} vunnet/kunde-rader manglet commission_amount eller sale_price + commission_percent.`);
   diagnostics.push(`RealtyFlow utbetalingshendelser med dato: ${events.length}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
 
