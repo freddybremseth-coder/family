@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../supabase';
+import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
 import { Asset, BankAccount, FamilyMember, Transaction } from '../types';
 
 type PersistenceTable = 'transactions' | 'members' | 'assets' | 'bank_accounts';
@@ -46,7 +46,7 @@ function camelBankRows(userId: string, accounts: BankAccount[]) { return account
 function minimalBankRows(userId: string, accounts: BankAccount[]) { return accounts.map((a) => ({ id: cleanId(a.id, `account-${Date.now()}-${Math.random().toString(16).slice(2)}`), user_id: userId, balance: numberValue(a.balance), currency: a.currency || 'NOK' })); }
 
 async function safeSelect(table: PersistenceTable, userId: string, orderColumn?: string): Promise<SafeSelectResult> {
-  let query = supabase.from(table).select('*').eq('user_id', userId);
+  let query = supabaseFamilyData.from(table).select('*').eq('user_id', userId);
   if (orderColumn) query = query.order(orderColumn, { ascending: true });
   const result = await query;
   if (result.error) { console.error(`[familyPersistence] ${table} load failed`, result.error); return { rows: [], ok: false }; }
@@ -61,10 +61,7 @@ export async function loadFamilyPersistentData(userId: string) {
   const members = member.ok && member.rows.length > 0 ? member.rows.map(mapMemberRow) : fallback.members;
   const assets = asset.ok && asset.rows.length > 0 ? asset.rows.map(mapAssetRow) : fallback.assets;
   const bankAccounts = bank.ok && bank.rows.length > 0 ? bank.rows.map(mapBankAccountRow) : fallback.bankAccounts;
-  writeBackup(userId, 'transactions', transactions);
-  writeBackup(userId, 'members', members);
-  writeBackup(userId, 'assets', assets);
-  writeBackup(userId, 'bank_accounts', bankAccounts);
+  writeBackup(userId, 'transactions', transactions); writeBackup(userId, 'members', members); writeBackup(userId, 'assets', assets); writeBackup(userId, 'bank_accounts', bankAccounts);
   return { transactions, members, assets, bankAccounts };
 }
 
@@ -73,7 +70,7 @@ async function upsertWithFallbacks(table: PersistenceTable, variants: any[]) {
   for (const rows of variants) {
     const payload = Array.isArray(rows) ? rows : [rows];
     if (payload.length === 0) return null;
-    const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
+    const { error } = await supabaseFamilyData.from(table).upsert(payload, { onConflict: 'id' });
     if (!error) return null;
     lastError = error;
     if (isMissingTable(error) || !isSchemaError(error)) break;
@@ -85,10 +82,10 @@ async function upsertOneTransaction(userId: string, tx: Transaction) { const err
 export async function saveTransactionToSupabase(userId: string, tx: Transaction) { if (!userId) return; writeBackup(userId, 'transactions', [tx, ...readBackup<Transaction>(userId, 'transactions').filter((t: any) => t.id !== tx.id)]); if (!isSupabaseConfigured()) return; try { await upsertOneTransaction(userId, tx); } catch (err) { console.error('[familyPersistence] transaction sync failed', err); } }
 export async function saveTransactionsToSupabase(userId: string, transactions: Transaction[]) { if (!userId || transactions.length === 0) return; writeBackup(userId, 'transactions', transactions); if (!isSupabaseConfigured()) return; try { for (const tx of transactions) await upsertOneTransaction(userId, tx); } catch (err) { console.error('[familyPersistence] transaction sync failed', err); } }
 export async function syncTransactions(userId: string, transactions: Transaction[]) { await saveTransactionsToSupabase(userId, transactions); }
-export async function deleteTransactionFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'transactions', readBackup<Transaction>(userId, 'transactions').filter((t: any) => t.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabase.from('transactions').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] transaction delete failed', error); }
+export async function deleteTransactionFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'transactions', readBackup<Transaction>(userId, 'transactions').filter((t: any) => t.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabaseFamilyData.from('transactions').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] transaction delete failed', error); }
 export async function syncMembers(userId: string, members: FamilyMember[]) { if (!userId || members.length === 0) return; writeBackup(userId, 'members', members); if (!isSupabaseConfigured()) return; const error = await upsertWithFallbacks('members', [fullMemberRows(userId, members), snakeLegacyMemberRows(userId, members), camelLegacyMemberRows(userId, members), minimalMemberRows(userId, members)]); if (error) console.error('[familyPersistence] member sync failed', error); }
-export async function deleteMemberFromSupabase(userId: string, id: string) { if (!isSupabaseConfigured() || !userId || !id) return; const { error } = await supabase.from('members').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] member delete failed', error); }
+export async function deleteMemberFromSupabase(userId: string, id: string) { if (!isSupabaseConfigured() || !userId || !id) return; const { error } = await supabaseFamilyData.from('members').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] member delete failed', error); }
 export async function syncAssets(userId: string, assets: Asset[]) { if (!userId || assets.length === 0) return; writeBackup(userId, 'assets', assets); if (!isSupabaseConfigured()) return; const error = await upsertWithFallbacks('assets', [fullAssetRows(userId, assets), legacyAssetRows(userId, assets), minimalAssetRows(userId, assets)]); if (error) console.error('[familyPersistence] asset sync failed', error); }
-export async function deleteAssetFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'assets', readBackup<Asset>(userId, 'assets').filter((a: any) => a.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabase.from('assets').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] asset delete failed', error); }
+export async function deleteAssetFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'assets', readBackup<Asset>(userId, 'assets').filter((a: any) => a.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabaseFamilyData.from('assets').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] asset delete failed', error); }
 export async function syncBankAccounts(userId: string, accounts: BankAccount[]) { if (!userId || accounts.length === 0) return; writeBackup(userId, 'bank_accounts', accounts); if (!isSupabaseConfigured()) return; const error = await upsertWithFallbacks('bank_accounts', [fullBankRows(userId, accounts), legacyBankRows(userId, accounts), camelBankRows(userId, accounts), minimalBankRows(userId, accounts)]); if (error) console.error('[familyPersistence] bank account sync failed', error); }
-export async function deleteBankAccountFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'bank_accounts', readBackup<BankAccount>(userId, 'bank_accounts').filter((a: any) => a.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabase.from('bank_accounts').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] bank account delete failed', error); }
+export async function deleteBankAccountFromSupabase(userId: string, id: string) { if (!userId || !id) return; writeBackup(userId, 'bank_accounts', readBackup<BankAccount>(userId, 'bank_accounts').filter((a: any) => a.id !== id)); if (!isSupabaseConfigured()) return; const { error } = await supabaseFamilyData.from('bank_accounts').delete().eq('user_id', userId).eq('id', id); if (error) console.error('[familyPersistence] bank account delete failed', error); }
