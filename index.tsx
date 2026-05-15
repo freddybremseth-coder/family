@@ -27,7 +27,7 @@ import { Transaction, TransactionType, Bill, RealEstateDeal, AfterSaleCommission
 import { translations } from './translations';
 import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
-import { loadFamilyPersistentData, syncMembers, syncTransactions } from './services/familyPersistenceService';
+import { loadFamilyPersistentData, syncAssets, syncBankAccounts, syncMembers, syncTransactions } from './services/familyPersistenceService';
 import { inferTransactionCategory } from './services/categoryService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
@@ -74,7 +74,7 @@ const App = () => {
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
   const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills };
-  const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} /><Dashboard {...dashboardProps} /></div></AppErrorBoundary>;
+  const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><Dashboard {...dashboardProps} /><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} /></div></AppErrorBoundary>;
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
@@ -83,8 +83,10 @@ const App = () => {
     setPersistentReady(false);
     try {
       const persistent = await loadFamilyPersistentData(userId);
-      setTransactions(persistent.transactions);
-      setFamilyMembers(persistent.members);
+      setTransactions(persistent.transactions || []);
+      setFamilyMembers(persistent.members || []);
+      setAssets(persistent.assets || []);
+      setBankAccounts(persistent.bankAccounts || []);
 
       const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
       if (reData) setRealEstateDeals(reData);
@@ -108,6 +110,18 @@ const App = () => {
     const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800);
     return () => clearTimeout(timer);
   }, [familyMembers, session?.user?.id, persistentReady]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !persistentReady) return;
+    const timer = setTimeout(() => { syncAssets(session.user.id, assets); }, 800);
+    return () => clearTimeout(timer);
+  }, [assets, session?.user?.id, persistentReady]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !persistentReady) return;
+    const timer = setTimeout(() => { syncBankAccounts(session.user.id, bankAccounts); }, 800);
+    return () => clearTimeout(timer);
+  }, [bankAccounts, session?.user?.id, persistentReady]);
 
   const checkSubscription = useCallback(async (user: any) => {
     if (user.email === ADMIN_EMAIL) { setSubscriptionStatus('lifetime'); return; }
@@ -150,6 +164,8 @@ const App = () => {
           setPersistentReady(false);
           setTransactions([]);
           setFamilyMembers([]);
+          setAssets([]);
+          setBankAccounts([]);
         }
       });
       return () => { cancelled = true; clearTimeout(safetyTimer); subscription?.unsubscribe(); };
@@ -173,7 +189,7 @@ const App = () => {
     return { ok: true };
   };
 
-  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); };
+  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); };
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => {
     const txId = `tx-rcpt-${Date.now()}`;
     const receiptId = `receipt-${Date.now()}`;
