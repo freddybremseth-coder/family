@@ -165,7 +165,7 @@ export const TransactionManager: React.FC<Props> = ({
     if (!editingTransaction) return;
     const normalized = normalizeEditableTx(editingTransaction);
     if (!normalized.description || normalized.amount <= 0) return;
-    setTransactions(prev => prev.map(t => t.id === normalized.id ? normalized : t));
+    setTransactions(prev => prev.map(t => t.id === normalized.id ? { ...t, ...normalized } : t));
     setEditingTransaction(null);
   };
 
@@ -174,7 +174,7 @@ export const TransactionManager: React.FC<Props> = ({
     setDeletingTransactionId(null);
   };
 
-  const CategoryEditor = ({ value, onChange }: { value?: string; onChange: (category: string) => void }) => (
+  const renderCategoryEditor = (value: string | undefined, onChange: (category: string) => void) => (
     <div className="space-y-2">
       <select value={value || 'Diverse'} onChange={e => onChange(e.target.value)} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none">
         {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
@@ -186,7 +186,7 @@ export const TransactionManager: React.FC<Props> = ({
     </div>
   );
 
-  const TransactionForm = ({ tx, setTx, onSave, title, modal = false }: { tx: Partial<Transaction>; setTx: React.Dispatch<React.SetStateAction<any>>; onSave: () => void; title: string; modal?: boolean }) => (
+  const renderTransactionForm = ({ tx, setTx, onSave, title, modal = false }: { tx: Partial<Transaction>; setTx: React.Dispatch<React.SetStateAction<any>>; onSave: () => void; title: string; modal?: boolean }) => (
     <div className={`${modal ? 'bg-slate-950/95 border-2 border-cyan-500/40 shadow-2xl' : 'glass-panel border-l-4 border-l-cyan-500'} p-6 animate-in slide-in-from-top-4`}>
       <h3 className="text-lg font-bold uppercase tracking-tighter mb-4 flex items-center gap-2 text-white"><Edit3 className="w-5 h-5 text-cyan-400" /> {title}</h3>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
@@ -194,7 +194,7 @@ export const TransactionManager: React.FC<Props> = ({
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Type</label><select value={tx.type || TransactionType.EXPENSE} onChange={e => setTx((prev: any) => ({...prev, type: e.target.value as TransactionType}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value={TransactionType.EXPENSE}>Utgift</option><option value={TransactionType.INCOME}>Inntekt</option><option value={TransactionType.TRANSFER}>Overføring</option></select></div>
         <div className="md:col-span-2 space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Beskrivelse</label><input value={tx.description || ''} onChange={e => setTx((prev: any) => ({...prev, description: e.target.value}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs" placeholder="Hva ble kjøpt/mottatt?" /></div>
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Beløp</label><div className="flex gap-1"><input type="number" value={tx.amount || 0} onChange={e => setTx((prev: any) => ({...prev, amount: Number(e.target.value)}))} className="flex-1 bg-black border border-white/10 p-2 text-white text-xs" /><select value={tx.currency || 'EUR'} onChange={e => setTx((prev: any) => ({...prev, currency: e.target.value as Currency}))} className="bg-black border border-white/10 p-2 text-cyan-400 text-xs font-bold outline-none"><option value="EUR">EUR</option><option value="NOK">NOK</option></select></div></div>
-        <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Kategori</label><CategoryEditor value={tx.category} onChange={(category) => setTx((prev: any) => ({...prev, category}))} /></div>
+        <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Kategori</label>{renderCategoryEditor(tx.category, (category) => setTx((prev: any) => ({...prev, category})))}</div>
         <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Betalingsmetode</label><select value={tx.paymentMethod || 'Bank'} onChange={e => setTx((prev: any) => ({...prev, paymentMethod: e.target.value as PaymentMethod}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value="Bank">Bankoverføring / Kort</option><option value="Kontant">Kontanter</option><option value="On-Chain">On-Chain</option></select></div>
         {tx.paymentMethod === 'Bank' && <div className="space-y-1"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">{tx.type === TransactionType.INCOME ? 'Til Konto' : 'Fra Konto'}</label><select value={tx.type === TransactionType.INCOME ? tx.toAccountId || '' : tx.fromAccountId || ''} onChange={e => tx.type === TransactionType.INCOME ? setTx((prev: any) => ({...prev, toAccountId: e.target.value})) : setTx((prev: any) => ({...prev, fromAccountId: e.target.value}))} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none"><option value="">Ikke valgt</option>{bankAccounts.map(acc => <option key={acc.id} value={acc.id}>{accountLabel(acc)}</option>)}</select></div>}
       </div>
@@ -219,7 +219,7 @@ export const TransactionManager: React.FC<Props> = ({
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setEditingTransaction(null)} />
           <div className="relative z-10 w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl">
-            <TransactionForm tx={editingTransaction} setTx={setEditingTransaction as any} onSave={saveEditedTransaction} title="Rediger transaksjon" modal />
+            {renderTransactionForm({ tx: editingTransaction, setTx: setEditingTransaction as any, onSave: saveEditedTransaction, title: 'Rediger transaksjon', modal: true })}
           </div>
         </div>
       )}
@@ -240,7 +240,7 @@ export const TransactionManager: React.FC<Props> = ({
 
       <BankStatementImporter transactions={transactions} setTransactions={setTransactions} receipts={receipts} />
 
-      {showAddForm && <TransactionForm tx={newTx} setTx={setNewTx as any} onSave={handleAddTx} title="Ny transaksjon" />}
+      {showAddForm && renderTransactionForm({ tx: newTx, setTx: setNewTx as any, onSave: handleAddTx, title: 'Ny transaksjon' })}
 
       {showWithdrawForm && (
         <div className="glass-panel p-6 border-l-4 border-l-magenta-500 animate-in slide-in-from-top-4 bg-magenta-500/5">
