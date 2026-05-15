@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { BankAccount, Transaction, Currency } from '../types';
 import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { deleteBankAccountFromSupabase, syncBankAccounts } from '../services/familyPersistenceService';
-import { supabase, isSupabaseConfigured } from '../supabase';
+import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
 
 interface Props {
   bankAccounts: BankAccount[];
@@ -32,7 +32,7 @@ const accountGradients = [
 async function resolveUserId(propUserId?: string) {
   if (propUserId) return propUserId;
   if (!isSupabaseConfigured()) return undefined;
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await supabaseFamilyData.auth.getUser();
   if (error) console.error('[BankManager] auth.getUser failed', error);
   return data?.user?.id;
 }
@@ -51,13 +51,13 @@ async function upsertBankAccountDirect(userId: string, account: BankAccount & an
     credit_limit: account.creditLimit ?? null,
   };
 
-  const { error } = await supabase.from('bank_accounts').upsert(row, { onConflict: 'id' });
+  const { error } = await supabaseFamilyData.from('bank_accounts').upsert(row, { onConflict: 'id' });
   if (error) {
     console.error('[BankManager] Direct bank_accounts upsert failed', { error, row });
     throw error;
   }
 
-  const { data: verify, error: verifyError } = await supabase
+  const { data: verify, error: verifyError } = await supabaseFamilyData
     .from('bank_accounts')
     .select('id,user_id,account_name,balance,currency')
     .eq('id', account.id)
