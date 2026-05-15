@@ -45,8 +45,8 @@ export function mapMemberRow(row: any): FamilyMember {
   };
 }
 
-function fullTransactionRows(userId: string, transactions: Transaction[]) {
-  return transactions.map((tx) => ({
+function fullTransactionRow(userId: string, tx: Transaction) {
+  return {
     id: cleanId(tx.id, `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
     date: tx.date || new Date().toISOString().slice(0, 10),
@@ -64,11 +64,11 @@ function fullTransactionRows(userId: string, transactions: Transaction[]) {
     verification_source: tx.verificationSource || null,
     matched_receipt_id: tx.matchedReceiptId || null,
     bank_statement_ref: tx.bankStatementRef || null,
-  }));
+  };
 }
 
-function legacyTransactionRows(userId: string, transactions: Transaction[]) {
-  return transactions.map((tx) => ({
+function legacyTransactionRow(userId: string, tx: Transaction) {
+  return {
     id: cleanId(tx.id, `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`),
     user_id: userId,
     date: tx.date || new Date().toISOString().slice(0, 10),
@@ -78,7 +78,7 @@ function legacyTransactionRows(userId: string, transactions: Transaction[]) {
     category: tx.category || 'Diverse',
     type: tx.type || 'EXPENSE',
     payment_method: tx.paymentMethod || 'Bank',
-  }));
+  };
 }
 
 function fullMemberRows(userId: string, members: FamilyMember[]) {
@@ -118,18 +118,29 @@ export async function loadFamilyPersistentData(userId: string) {
   return { transactions: (txResult.data || []).map(mapTransactionRow), members: (memberResult.data || []).map(mapMemberRow) };
 }
 
-export async function syncTransactions(userId: string, transactions: Transaction[]) {
-  if (!isSupabaseConfigured() || !userId) return;
-  const deleteResult = await supabase.from('transactions').delete().eq('user_id', userId);
-  if (deleteResult.error) { console.warn('[familyPersistence] transactions clear failed', deleteResult.error); return; }
-  if (transactions.length === 0) return;
-  let { error } = await supabase.from('transactions').insert(fullTransactionRows(userId, transactions));
+async function upsertOneTransaction(userId: string, tx: Transaction) {
+  let { error } = await supabase.from('transactions').upsert(fullTransactionRow(userId, tx), { onConflict: 'id' });
   if (error && isSchemaError(error)) {
-    console.warn('[familyPersistence] full transaction sync failed, retrying legacy columns', error);
-    const retry = await supabase.from('transactions').insert(legacyTransactionRows(userId, transactions));
+    console.warn('[familyPersistence] full transaction upsert failed, retrying legacy columns', error);
+    const retry = await supabase.from('transactions').upsert(legacyTransactionRow(userId, tx), { onConflict: 'id' });
     error = retry.error;
   }
-  if (error) console.warn('[familyPersistence] transactions sync failed', error);
+  if (error) throw error;
+}
+
+export async function saveTransactionToSupabase(userId: string, tx: Transaction) {
+  if (!isSupabaseConfigured() || !userId) return;
+  await upsertOneTransaction(userId, tx);
+}
+
+export async function saveTransactionsToSupabase(userId: string, transactions: Transaction[]) {
+  if (!isSupabaseConfigured() || !userId || transactions.length === 0) return;
+  for (const tx of transactions) await upsertOneTransaction(userId, tx);
+}
+
+// Beholdes for eksisterende kall, men sletter ALDRI lenger alle transaksjoner først.
+export async function syncTransactions(userId: string, transactions: Transaction[]) {
+  await saveTransactionsToSupabase(userId, transactions);
 }
 
 export async function deleteTransactionFromSupabase(userId: string, id: string) {
@@ -140,13 +151,12 @@ export async function deleteTransactionFromSupabase(userId: string, id: string) 
 
 export async function syncMembers(userId: string, members: FamilyMember[]) {
   if (!isSupabaseConfigured() || !userId) return;
-  const deleteResult = await supabase.from('members').delete().eq('user_id', userId);
-  if (deleteResult.error) { console.warn('[familyPersistence] members clear failed', deleteResult.error); return; }
-  if (members.length === 0) return;
-  let { error } = await supabase.from('members').insert(fullMemberRows(userId, members));
+  const rows = fullMemberRows(userId, members);
+  if (rows.length === 0) return;
+  let { error } = await supabase.from('members').upsert(rows, { onConflict: 'id' });
   if (error && isSchemaError(error)) {
     console.warn('[familyPersistence] full member sync failed, retrying legacy columns', error);
-    const retry = await supabase.from('members').insert(legacyMemberRows(userId, members));
+    const retry = await supabase.from('members').upsert(legacyMemberRows(userId, members), { onConflict: 'id' });
     error = retry.error;
   }
   if (error) console.warn('[familyPersistence] members sync failed', error);
