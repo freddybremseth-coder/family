@@ -8,7 +8,7 @@ export interface LiquidityEvent {
   amount: number;
   currency: 'NOK' | 'EUR';
   type: TransactionType;
-  source: 'salary' | 'benefit' | 'child_benefit' | 'realtyflow_commission';
+  source: 'salary' | 'benefit' | 'child_benefit' | 'realtyflow_commission' | 'mondeo_payment' | 'frank_loan';
   accountId?: string;
   confidence: 'fixed' | 'estimated';
 }
@@ -18,6 +18,9 @@ export interface LiquidityForecast {
   projectedBalanceNok: number;
   events: LiquidityEvent[];
 }
+
+const MONDEO_MONTHLY_PAYMENT_NOK = 35_000;
+const FRANK_MONTHLY_LOAN_PAYMENT_NOK = 8_900;
 
 function isoDate(year: number, monthIndex: number, day: number) {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
@@ -44,10 +47,37 @@ function bankBalanceNok(accounts: BankAccount[]) {
   return accounts.reduce((sum, account) => sum + (account.currency === 'NOK' ? account.balance : account.balance * 11.55), 0);
 }
 
+function addFixedMonthlyLiquidity(events: LiquidityEvent[], monthsAhead: number) {
+  nextMonthlyDates(1, monthsAhead).forEach((date) => {
+    events.push({
+      id: `mondeo-payment-${date}`,
+      date,
+      title: 'Mondeo Eiendom AS · månedlig innbetaling',
+      amount: MONDEO_MONTHLY_PAYMENT_NOK,
+      currency: 'NOK',
+      type: TransactionType.INCOME,
+      source: 'mondeo_payment',
+      confidence: 'fixed',
+    });
+    events.push({
+      id: `frank-loan-${date}`,
+      date,
+      title: 'Lån til Frank · månedlig betaling',
+      amount: FRANK_MONTHLY_LOAN_PAYMENT_NOK,
+      currency: 'NOK',
+      type: TransactionType.EXPENSE,
+      source: 'frank_loan',
+      confidence: 'fixed',
+    });
+  });
+}
+
 export async function fetchLiquidityForecast(members: FamilyMember[], accounts: BankAccount[], monthsAhead = 4): Promise<LiquidityForecast> {
   const events: LiquidityEvent[] = [];
   const today = new Date().toISOString().slice(0, 10);
   const endDate = horizonEndDate(monthsAhead);
+
+  addFixedMonthlyLiquidity(events, monthsAhead);
 
   members.forEach((member) => {
     const salaryDay = member.salaryDay || 25;
