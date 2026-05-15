@@ -28,6 +28,24 @@ function sourceLabel(event: LiquidityEvent) {
   return 'Barnetrygd/bidrag';
 }
 
+function monthKey(date: Date | string) {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function monthName(date: string) {
+  return new Date(date).toLocaleDateString('nb-NO', { month: 'short', year: '2-digit' });
+}
+
+function monthsInHorizon(monthsAhead: number) {
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = 0; i <= monthsAhead; i += 1) {
+    months.push(monthKey(new Date(now.getFullYear(), now.getMonth() + i, 1)));
+  }
+  return months;
+}
+
 export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAccounts }) => {
   const [forecast, setForecast] = useState<LiquidityForecast | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,6 +56,9 @@ export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAcco
     setLoading(true);
     try {
       setForecast(await fetchLiquidityForecast(familyMembers, bankAccounts, monthsAhead));
+    } catch (err) {
+      console.warn('[LiquidityForecastCard] load failed', err);
+      setForecast({ openingBalanceNok: 0, projectedBalanceNok: 0, events: [] });
     } finally {
       setLoading(false);
     }
@@ -45,18 +66,20 @@ export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAcco
 
   useEffect(() => { load(); }, [familyMembers, bankAccounts, monthsAhead]);
 
+  const allEvents = forecast?.events || [];
+
   const filteredEvents = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return (forecast?.events || []).filter((event) => {
+    return allEvents.filter((event) => {
       if (!q) return true;
-      return [event.title, event.date, event.source, event.confidence].join(' ').toLowerCase().includes(q);
+      return [event.title, event.date, event.source, event.confidence, sourceLabel(event)].join(' ').toLowerCase().includes(q);
     });
-  }, [forecast, searchTerm]);
+  }, [allEvents, searchTerm]);
 
   const eventsByMonth = useMemo(() => {
     const groups = new Map<string, LiquidityEvent[]>();
     filteredEvents.forEach((event) => {
-      const key = event.date.slice(0, 7) + '-01';
+      const key = monthKey(event.date);
       groups.set(key, [...(groups.get(key) || []), event]);
     });
     return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -64,23 +87,23 @@ export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAcco
 
   const chartData = useMemo(() => {
     let running = forecast?.openingBalanceNok || 0;
-    const byMonth = new Map<string, { name: string; incoming: number; balance: number }>();
-    (forecast?.events || []).forEach((event) => {
-      const key = event.date.slice(0, 7) + '-01';
-      const current = byMonth.get(key) || { name: new Date(key).toLocaleDateString('nb-NO', { month: 'short', year: '2-digit' }), incoming: 0, balance: running };
-      const delta = event.type === TransactionType.INCOME ? event.amount : -event.amount;
-      current.incoming += Math.max(0, delta);
-      current.balance += delta;
-      byMonth.set(key, current);
+    const eventsByKey = new Map<string, LiquidityEvent[]>();
+    allEvents.forEach((event) => {
+      const key = monthKey(event.date);
+      eventsByKey.set(key, [...(eventsByKey.get(key) || []), event]);
     });
-    return Array.from(byMonth.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => {
-      running = item.balance;
-      return { ...item, balance: running };
+
+    return monthsInHorizon(monthsAhead).map((key) => {
+      const monthEvents = eventsByKey.get(key) || [];
+      const incoming = monthEvents.filter((event) => event.type === TransactionType.INCOME).reduce((sum, event) => sum + event.amount, 0);
+      const outgoing = monthEvents.filter((event) => event.type === TransactionType.EXPENSE).reduce((sum, event) => sum + event.amount, 0);
+      running += incoming - outgoing;
+      return { name: monthName(key), incoming, outgoing, balance: running };
     });
-  }, [forecast]);
+  }, [forecast, allEvents, monthsAhead]);
 
   const upcoming = filteredEvents.slice(0, 12);
-  if (!loading && (forecast?.events || []).length === 0) return null;
+  const projected = forecast?.projectedBalanceNok ?? chartData[chartData.length - 1]?.balance ?? 0;
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
@@ -90,12 +113,12 @@ export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAcco
             <CalendarClock className="h-3.5 w-3.5" /> Likviditet fremover
           </div>
           <h2 className="text-xl font-bold text-slate-900">Kommende betalinger og innbetalinger</h2>
-          <p className="mt-1 text-sm text-slate-500">Lønn fra familiemedlemmer og forventede RealtyFlow-kommisjoner med dato og prognose.</p>
+          <p className="mt-1 text-sm text-slate-500">Datoer med årstall, søk, kalender og grafisk likviditet for valgt periode.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Likviditet etter {monthsAhead} mnd</p>
-            <p className="text-2xl font-extrabold text-slate-900">{loading ? 'Henter…' : formatMoney(forecast?.projectedBalanceNok || 0)}</p>
+            <p className="text-2xl font-extrabold text-slate-900">{loading ? 'Henter…' : formatMoney(projected)}</p>
           </div>
           <button onClick={load} disabled={loading} className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -112,38 +135,41 @@ export const LiquidityForecastCard: React.FC<Props> = ({ familyMembers, bankAcco
             <option value={9}>9 måneder</option>
             <option value={12}>12 måneder</option>
             <option value={18}>18 måneder</option>
+            <option value={24}>24 måneder</option>
           </select>
         </label>
         <label className="relative rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2">
           <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Søk i innbetalinger</span>
           <Search className="absolute bottom-3.5 left-4 h-4 w-4 text-slate-400" />
-          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Søk etter kunde, lønn, RealtyFlow, dato…" className="w-full bg-transparent pl-6 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400" />
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Søk etter kunde, lønn, RealtyFlow, dato eller kilde…" className="w-full bg-transparent pl-6 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400" />
         </label>
       </div>
 
-      {chartData.length > 0 && (
-        <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-slate-900">Grafisk likviditetsutvikling</h3>
-            <p className="text-xs text-slate-500">Start: {formatMoney(forecast?.openingBalanceNok || 0)}</p>
-          </div>
-          <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                <XAxis dataKey="name" stroke="#64748B" fontSize={12} axisLine={false} tickLine={false} />
-                <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                <Tooltip formatter={(value: any, name: any) => [formatMoney(Number(value)), name === 'balance' ? 'Likviditet' : 'Innbetalinger']} contentStyle={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 14 }} />
-                <Area type="monotone" dataKey="balance" stroke="#0F172A" strokeWidth={2} fill="#E2E8F0" dot />
-                <Area type="monotone" dataKey="incoming" stroke="#059669" strokeWidth={2} fill="#D1FAE5" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-bold text-slate-900">Grafisk likviditetsutvikling</h3>
+          <p className="text-xs text-slate-500">Start: {formatMoney(forecast?.openingBalanceNok || 0)}</p>
         </div>
-      )}
+        <div className="h-[240px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+              <XAxis dataKey="name" stroke="#64748B" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <Tooltip formatter={(value: any, name: any) => [formatMoney(Number(value)), name === 'balance' ? 'Likviditet' : name === 'incoming' ? 'Innbetalinger' : 'Utbetalinger']} contentStyle={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 14 }} />
+              <Area type="monotone" dataKey="balance" stroke="#0F172A" strokeWidth={2} fill="#E2E8F0" dot />
+              <Area type="monotone" dataKey="incoming" stroke="#059669" strokeWidth={2} fill="#D1FAE5" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-        {upcoming.map((event) => (
+        {upcoming.length === 0 ? (
+          <div className="md:col-span-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+            Ingen kommende innbetalinger i valgt periode eller søk.
+          </div>
+        ) : upcoming.map((event) => (
           <div key={event.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${event.type === TransactionType.INCOME ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
