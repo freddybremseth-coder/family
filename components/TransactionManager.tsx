@@ -4,7 +4,7 @@ import { Transaction, TransactionType, Currency, BankAccount, RealEstateDeal, Af
 import { Plus, Search, Trash2, Save, X, ArrowRightLeft, ShieldCheck, Edit3, Tags } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { BankStatementImporter } from './BankStatementImporter';
-import { FAMILY_CATEGORIES, normalizeFamilyCategory } from '../services/categoryService';
+import { FAMILY_CATEGORIES, normalizeFamilyCategory, rememberTransactionCategory } from '../services/categoryService';
 
 interface Props {
   transactions: Transaction[];
@@ -140,6 +140,7 @@ export const TransactionManager: React.FC<Props> = ({
     if (!tx.description || !tx.amount || tx.amount <= 0) return;
     tx.id = `tx-${Date.now()}`;
     tx.category = tx.category || normalizeFamilyCategory(tx.description);
+    rememberTransactionCategory({ description: tx.description, category: tx.category });
 
     if (tx.paymentMethod === 'Kontant') {
       setCashBalance(prev => tx.type === TransactionType.INCOME ? prev + tx.amount : tx.type === TransactionType.EXPENSE ? prev - tx.amount : prev);
@@ -165,6 +166,7 @@ export const TransactionManager: React.FC<Props> = ({
     if (!editingTransaction) return;
     const normalized = normalizeEditableTx(editingTransaction);
     if (!normalized.description || normalized.amount <= 0) return;
+    rememberTransactionCategory({ description: normalized.description, category: normalized.category });
     setTransactions(prev => prev.map(t => t.id === normalized.id ? { ...t, ...normalized } : t));
     setEditingTransaction(null);
   };
