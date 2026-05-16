@@ -49,6 +49,7 @@ type SaleCandidate = {
   payoutDate: string;
   status: string;
   confidence: number;
+  missingAmount?: boolean;
 };
 
 const FALLBACK_FX = 11.55;
@@ -111,7 +112,7 @@ function commissionPercentValue(row: any): number { return toNumber(getAny(row, 
 function plainAmountValue(row: any): number { return Math.abs(toNumber(getAny(row, ['amount', 'value', 'total', 'net', 'gross']))); }
 function isWonCustomer(row: any): boolean {
   const status = normalize(getAny(row, ['pipeline_status', 'status', 'deal_status', 'stage', 'customer_status', 'lead_status']));
-  const score = toNumber(getAny(row, ['buying_signal_score', 'purchase_signal_score', 'sentiment', 'score']));
+  const score = toNumber(getAny(row, ['buying_signal_score', 'purchase_signal_score', 'score']));
   return ['won', 'customer', 'vip', 'completed', 'closed', 'sold', 'closedwon', 'vunnet', 'solgt', 'kunde'].some((value) => status.includes(value)) || score >= 100;
 }
 function amountValue(row: any, table = ''): number {
@@ -200,8 +201,9 @@ function makeCandidate(row: any, table: string, fxRate: number): SaleCandidate |
   if (!isCommissionRow(row, table) || !isIncomeRow(row, table)) return null;
   if (table === 'contacts' && !isWonCustomer(row)) return null;
   const rawAmount = amountValue(row, table);
-  if (!rawAmount) return null;
-  const commissionEur = amountIsNok(row) ? rawAmount / fxRate : rawAmount;
+  const missingAmount = rawAmount <= 0;
+  if (missingAmount && table !== 'contacts') return null;
+  const commissionEur = rawAmount > 0 ? (amountIsNok(row) ? rawAmount / fxRate : rawAmount) : 0;
   const brand = brandKey(row);
   return {
     identity: stableSaleIdentity(row, table),
@@ -215,6 +217,7 @@ function makeCandidate(row: any, table: string, fxRate: number): SaleCandidate |
     payoutDate: payoutDateValue(row),
     status: String(getAny(row, ['pipeline_status', 'status', 'deal_status']) || ''),
     confidence: candidateConfidence(table, row),
+    missingAmount,
   };
 }
 function mergeCandidate(existing: SaleCandidate, incoming: SaleCandidate): SaleCandidate {
@@ -223,7 +226,7 @@ function mergeCandidate(existing: SaleCandidate, incoming: SaleCandidate): SaleC
   const commissionEur = primary.commissionEur || secondary.commissionEur;
   const salePriceEur = primary.salePriceEur || secondary.salePriceEur;
   const brand = primary.brandKey !== 'other' ? primary.brandKey : secondary.brandKey;
-  return { ...primary, brandKey: brand, rawBrand: primary.rawBrand || secondary.rawBrand, commissionEur, salePriceEur, payoutDate: primary.payoutDate || secondary.payoutDate, customerName: primary.customerName || secondary.customerName };
+  return { ...primary, brandKey: brand, rawBrand: primary.rawBrand || secondary.rawBrand, commissionEur, salePriceEur, payoutDate: primary.payoutDate || secondary.payoutDate, customerName: primary.customerName || secondary.customerName, missingAmount: !(commissionEur > 0) };
 }
 function makeEvent(candidate: SaleCandidate, fxRate: number): RealtyflowCommissionEvent {
   return { id: candidate.identity, customerName: candidate.customerName, brandKey: candidate.brandKey, brand: brandLabel(candidate.brandKey), salePriceEur: candidate.salePriceEur, commissionEur: candidate.commissionEur, commissionNok: candidate.commissionEur * fxRate, payoutDate: candidate.payoutDate, status: candidate.status, sourceTable: candidate.table };
@@ -273,11 +276,8 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
       const rawBrand = rawBrandValue(row); if (rawBrand) rawBrands.add(rawBrand);
       if (table === 'contacts' && isWonCustomer(row)) wonRows += 1;
       const candidate = makeCandidate(row, table, fxRate);
-      if (!candidate) {
-        if (table === 'contacts' && isWonCustomer(row) && !amountValue(row, table)) missingAmountRows += 1;
-        else rejectedRows += 1;
-        continue;
-      }
+      if (!candidate) { rejectedRows += 1; continue; }
+      if (candidate.missingAmount) missingAmountRows += 1;
       const existing = byIdentity.get(candidate.identity);
       if (existing) {
         duplicateRows += 1;
@@ -304,9 +304,9 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
   diagnostics.push(`Vunnet/kunde-rader fra contacts: ${wonRows}`);
   diagnostics.push(`Unike RealtyFlow-salg etter deduplisering: ${events.length}`);
+  diagnostics.push(`Vunnet/kunde-rader uten provisjon/salgspris tatt med som 0 kr: ${missingAmountRows}`);
   diagnostics.push(`Dupliserte brand-/finansrader slått sammen: ${duplicateRows}`);
   diagnostics.push(`Filtrerte ikke-kommisjonsrader: ${rejectedRows}`);
-  if (missingAmountRows > 0) diagnostics.push(`${missingAmountRows} vunnet/kunde-rader manglet commission_amount, amount, sale_price eller pipeline_value. Kontakter med salgspris bruker standard ${DEFAULT_COMMISSION_PERCENT}% provisjon.`);
   diagnostics.push(`RealtyFlow utbetalingshendelser med dato: ${events.filter((event) => !!event.payoutDate).length}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
   if (samples.length > 0) diagnostics.push(`Eksempel på felter lest: ${samples.join(' | ')}`);
