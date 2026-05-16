@@ -55,7 +55,6 @@ type SaleCandidate = {
 const FALLBACK_FX = 11.55;
 const READ_TIMEOUT_MS = 8000;
 const DEFAULT_COMMISSION_PERCENT = 5;
-
 const DEFAULT_TABLE_CANDIDATES = [
   'contacts',
   'business_financial_events',
@@ -68,7 +67,7 @@ const DEFAULT_TABLE_CANDIDATES = [
   'properties',
 ];
 
-function cleanEnv(value: unknown): string { return String(value || '').trim().replace(/^[`'"]|[`'"]$/g, '').trim(); }
+function cleanEnv(value: unknown): string { return String(value || '').trim().replace(/^[`'\"]|[`'\"]$/g, '').trim(); }
 function env() { return typeof import.meta !== 'undefined' ? import.meta.env : {}; }
 function configuredTables(): string[] {
   const raw = cleanEnv(env().VITE_REALTYFLOW_COMMISSION_TABLES || env().VITE_REALTYFLOW_TABLES || '');
@@ -81,11 +80,19 @@ function normalize(value: unknown): string {
     .replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\.com|\.no|\.es/g, '')
     .replace(/[^a-z0-9]+/g, '');
 }
-function getFirst(row: any, keys: string[]): any { for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key]; return undefined; }
-function nestedCandidates(row: any) { return [row?.metadata, row?.meta, row?.data, row?.details, row?.payload, row?.project, row?.developer, row?.brand, row?.company, row?.customer, row?.contact, row?.deal].filter(Boolean); }
+function getFirst(row: any, keys: string[]): any {
+  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
+  return undefined;
+}
+function nestedCandidates(row: any) {
+  return [row?.metadata, row?.meta, row?.data, row?.details, row?.payload, row?.project, row?.developer, row?.brand, row?.company, row?.customer, row?.contact, row?.deal].filter(Boolean);
+}
 function getAny(row: any, keys: string[]): any {
   const direct = getFirst(row, keys); if (direct !== undefined && direct !== null && direct !== '') return direct;
-  for (const nested of nestedCandidates(row)) { const value = getFirst(nested, keys); if (value !== undefined && value !== null && value !== '') return value; }
+  for (const nested of nestedCandidates(row)) {
+    const value = getFirst(nested, keys);
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
   return undefined;
 }
 function toNumber(value: any): number {
@@ -93,8 +100,7 @@ function toNumber(value: any): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   const raw = String(value).trim();
   const normalized = raw.includes(',') && raw.lastIndexOf(',') > raw.lastIndexOf('.') ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
-  const cleaned = normalized.replace(/[^0-9.-]/g, '');
-  const n = Number(cleaned);
+  const n = Number(normalized.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
 function brandKey(row: any): CommissionBrandKey {
@@ -187,6 +193,11 @@ function stableSaleIdentity(row: any, table: string) {
   const amount = amountValue(row, table);
   return `fallback:${payout}:${Math.round(salePrice || amount)}`;
 }
+function contactSafeIdentity(row: any) {
+  const base = stableSaleIdentity(row, 'contacts');
+  const contactId = getAny(row, ['id']);
+  return contactId ? `${base}:contact:${normalize(contactId)}` : base;
+}
 function candidateConfidence(table: string, row: any) {
   let score = 0;
   if (table === 'contacts') score += 100;
@@ -206,7 +217,7 @@ function makeCandidate(row: any, table: string, fxRate: number): SaleCandidate |
   const commissionEur = rawAmount > 0 ? (amountIsNok(row) ? rawAmount / fxRate : rawAmount) : 0;
   const brand = brandKey(row);
   return {
-    identity: stableSaleIdentity(row, table),
+    identity: table === 'contacts' ? contactSafeIdentity(row) : stableSaleIdentity(row, table),
     table,
     row,
     brandKey: brand,
@@ -243,6 +254,22 @@ function diagnosticSample(row: any) {
   const keys = Object.keys(row || {}).slice(0, 24);
   return keys.map((key) => `${key}=${JSON.stringify(row[key]).slice(0, 60)}`).join(', ');
 }
+function mergeFinanceIntoContacts(contacts: SaleCandidate[], others: SaleCandidate[]) {
+  const byLegacyIdentity = new Map<string, SaleCandidate>();
+  contacts.forEach((candidate) => byLegacyIdentity.set(stableSaleIdentity(candidate.row, 'contacts'), candidate));
+  let merged = 0;
+  others.forEach((candidate) => {
+    const target = byLegacyIdentity.get(stableSaleIdentity(candidate.row, candidate.table));
+    if (target && (!target.commissionEur || candidate.confidence > target.confidence)) {
+      target.commissionEur = target.commissionEur || candidate.commissionEur;
+      target.salePriceEur = target.salePriceEur || candidate.salePriceEur;
+      target.payoutDate = target.payoutDate || candidate.payoutDate;
+      target.missingAmount = !(target.commissionEur > 0);
+      merged += 1;
+    }
+  });
+  return merged;
+}
 
 export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
   const fx = await getEurToNokRate();
@@ -255,8 +282,11 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
 
   const diagnostics: string[] = [...baseDiagnostics, `EUR/NOK-kilde: ${fx.source}`, `RealtyFlow URL: ${SUPABASE_REFS.realtyflow}`, `RealtyFlow key konfigurert: ${SUPABASE_STATUS.realtyflowKeyConfigured ? 'ja' : 'nei'}`, `RealtyFlow key-navn: ${SUPABASE_STATUS.realtyflowResolvedKeyName || 'mangler'}`, `RealtyFlow key-lengde: ${SUPABASE_STATUS.realtyflowKeyLength || 0}`, usingExplicitTables ? `RealtyFlow-tabeller fra env: ${tables.join(', ')}` : `RealtyFlow-tabeller autodetekteres: ${tables.join(', ')}`];
   const byIdentity = new Map<string, SaleCandidate>();
+  const contactCandidates: SaleCandidate[] = [];
+  const otherCandidates: SaleCandidate[] = [];
   const rawBrands = new Set<string>();
   const samples: string[] = [];
+  const wonContactNames: string[] = [];
   let totalRows = 0, wonRows = 0, missingAmountRows = 0, missingTables = 0, existingTables = 0, rejectedRows = 0, duplicateRows = 0;
   let invalidKeySeen = false;
 
@@ -274,18 +304,29 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
     for (const row of result.rows) {
       if ((table === 'contacts' || table === 'business_financial_events') && samples.length < 6) samples.push(`${table}: ${diagnosticSample(row)}`);
       const rawBrand = rawBrandValue(row); if (rawBrand) rawBrands.add(rawBrand);
-      if (table === 'contacts' && isWonCustomer(row)) wonRows += 1;
+      if (table === 'contacts' && isWonCustomer(row)) {
+        wonRows += 1;
+        wonContactNames.push(`${customerName(row)} (${brandLabel(brandKey(row))}, ${String(getAny(row, ['pipeline_status', 'status']) || '')}, ${amountValue(row, table).toFixed(0)}€)`);
+      }
       const candidate = makeCandidate(row, table, fxRate);
       if (!candidate) { rejectedRows += 1; continue; }
       if (candidate.missingAmount) missingAmountRows += 1;
-      const existing = byIdentity.get(candidate.identity);
-      if (existing) {
-        duplicateRows += 1;
-        byIdentity.set(candidate.identity, mergeCandidate(existing, candidate));
-      } else {
-        byIdentity.set(candidate.identity, candidate);
-      }
+      if (table === 'contacts') contactCandidates.push(candidate); else otherCandidates.push(candidate);
     }
+  }
+
+  // Contacts are the master record for won sales. Finance/business rows are used only
+  // to fill missing amounts when they match a contact, never to reduce the contact count.
+  const financeMergedIntoContacts = mergeFinanceIntoContacts(contactCandidates, otherCandidates);
+  if (contactCandidates.length > 0) {
+    contactCandidates.forEach((candidate) => byIdentity.set(candidate.identity, candidate));
+    duplicateRows = financeMergedIntoContacts;
+  } else {
+    otherCandidates.forEach((candidate) => {
+      const existing = byIdentity.get(candidate.identity);
+      if (existing) { duplicateRows += 1; byIdentity.set(candidate.identity, mergeCandidate(existing, candidate)); }
+      else byIdentity.set(candidate.identity, candidate);
+    });
   }
 
   const byBrand = new Map<CommissionBrandKey, BrandCommission>();
@@ -301,13 +342,16 @@ export async function fetchRealtyflowCommissions(): Promise<RealtyflowSummary> {
 
   const brands = Array.from(byBrand.values()).filter((brand) => brand.key !== 'other' || brand.count > 0).map((b) => ({ ...b, totalNok: b.totalEur * fxRate, monthly: b.monthly.sort((a, b) => (a.month < b.month ? -1 : 1)) }));
   const totalEur = brands.reduce((sum, b) => sum + b.totalEur, 0);
+  const finalMissingAmountRows = Array.from(byIdentity.values()).filter((candidate) => candidate.missingAmount).length;
   diagnostics.push(`Totalt leste rader: ${totalRows}`);
   diagnostics.push(`Vunnet/kunde-rader fra contacts: ${wonRows}`);
   diagnostics.push(`Unike RealtyFlow-salg etter deduplisering: ${events.length}`);
-  diagnostics.push(`Vunnet/kunde-rader uten provisjon/salgspris tatt med som 0 kr: ${missingAmountRows}`);
+  diagnostics.push(`Vunnet/kunde-rader uten provisjon/salgspris tatt med som 0 kr: ${finalMissingAmountRows}`);
+  diagnostics.push(`Finansrader matchet inn på kontakt uten å påvirke antall: ${financeMergedIntoContacts}`);
   diagnostics.push(`Dupliserte brand-/finansrader slått sammen: ${duplicateRows}`);
   diagnostics.push(`Filtrerte ikke-kommisjonsrader: ${rejectedRows}`);
   diagnostics.push(`RealtyFlow utbetalingshendelser med dato: ${events.filter((event) => !!event.payoutDate).length}`);
+  if (wonContactNames.length > 0) diagnostics.push(`Vunnet/kunde-navn lest: ${wonContactNames.slice(0, 20).join(' | ')}`);
   if (rawBrands.size > 0) diagnostics.push(`Brand/business values funnet: ${Array.from(rawBrands).slice(0, 30).join(', ')}`);
   if (samples.length > 0) diagnostics.push(`Eksempel på felter lest: ${samples.join(' | ')}`);
 
