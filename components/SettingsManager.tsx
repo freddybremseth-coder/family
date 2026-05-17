@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { UserConfig, Currency, Language } from '../types';
 import { translations } from '../translations';
-import { Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2 } from 'lucide-react';
+import { CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
+import { MARKETPLACE_MODULES, PLAN_DEFINITIONS } from '../services/adminService';
 
 interface Props {
   userConfig: UserConfig;
@@ -11,7 +12,7 @@ interface Props {
   onApiUpdate: () => void;
 }
 
-type SettingsTab = 'profile' | 'ai' | 'integrations';
+type SettingsTab = 'profile' | 'ai' | 'integrations' | 'saas';
 
 type AiKeyName = 'user_gemini_api_key' | 'user_openai_api_key' | 'user_claude_api_key';
 
@@ -38,6 +39,10 @@ function maskedStatus(value: string) {
   return `Lagt inn · ${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
+function copyText(text: string) {
+  navigator.clipboard?.writeText(text).catch(() => {});
+}
+
 export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, onApiUpdate }) => {
   const [aiKeys, setAiKeys] = useState<Record<AiKeyName, string>>({
     user_gemini_api_key: localStorage.getItem('user_gemini_api_key') || '',
@@ -52,6 +57,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
     { id: 'profile' as const, label: 'Familie og app', icon: <Settings2 className="h-4 w-4" /> },
     { id: 'ai' as const, label: 'AI', icon: <Sparkles className="h-4 w-4" /> },
     { id: 'integrations' as const, label: 'Integrasjoner', icon: <PlugZap className="h-4 w-4" /> },
+    { id: 'saas' as const, label: 'SaaS-oppsett', icon: <Database className="h-4 w-4" /> },
   ], []);
 
   const handleSave = () => {
@@ -75,6 +81,8 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
 
   const updateAiKey = (key: AiKeyName, value: string) => setAiKeys(prev => ({ ...prev, [key]: value }));
 
+  const envTemplate = `VITE_SUPABASE_URL=https://<kundens-prosjekt>.supabase.co\nVITE_SUPABASE_ANON_KEY=<kundens-anon-key>\nVITE_APP_MODE=saas\nVITE_ADMIN_EMAILS=<kundens-admin-epost>\n\n# Valgfritt per installasjon\nVITE_REALTYFLOW_SUPABASE_URL=\nVITE_REALTYFLOW_SUPABASE_ANON_KEY=`;
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -89,7 +97,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
         <SaveButton saved={saved} onClick={handleSave} />
       </section>
 
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-4">
         {tabs.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`rounded-2xl border p-4 text-left transition ${activeTab === tab.id ? 'border-slate-900 bg-white shadow-sm ring-2 ring-slate-200' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
             <div className="flex items-center gap-3">
@@ -113,6 +121,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
                 <Home className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                 <input value={userConfig.familyName} onChange={e => setUserConfig({ ...userConfig, familyName: e.target.value.toUpperCase() })} className="pl-12" placeholder="F.eks. BREMSETH" />
               </div>
+              <p className="text-xs text-slate-500">Familienavn brukes som visningsnavn. Systemet lager egen family_id/household-id ved registrering.</p>
             </label>
             <label className="block space-y-2">
               <FieldLabel>{t.location || 'Lokasjon'}</FieldLabel>
@@ -150,7 +159,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
 
       {activeTab === 'ai' && (
         <Card className="p-5 md:p-6">
-          <div className="mb-6"><h2 className="text-xl font-bold text-slate-900">AI-nøkler</h2><p className="mt-1 text-sm text-slate-500">Hver bruker/familie kan bruke egne nøkler. Kvitteringsscan og kontoutskrift bruker fallback: Gemini → OpenAI → Claude.</p></div>
+          <div className="mb-6"><h2 className="text-xl font-bold text-slate-900">AI-nøkler</h2><p className="mt-1 text-sm text-slate-500">Hver bruker/familie må bruke egne nøkler. Kvitteringsscan og kontoutskrift bruker fallback: Gemini → OpenAI → Claude.</p></div>
           <div className="space-y-5">
             {[
               { key: 'user_gemini_api_key' as AiKeyName, label: 'Gemini API key', placeholder: 'AIza…', help: 'Brukes først for kvittering, kontoutskrift, dokumenter, kalender og AI-innsikt.' },
@@ -162,12 +171,63 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
                 <div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" /><input type="password" value={aiKeys[field.key]} onChange={e => updateAiKey(field.key, e.target.value)} className="pl-12" placeholder={field.placeholder} autoComplete="off" /></div><button type="button" onClick={() => clearAiKey(field.key)} className="btn-secondary justify-center text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Fjern</button></div>
               </div>
             ))}
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-bold text-amber-900">SaaS-notat</p><p className="mt-1 text-sm text-amber-800">Nøklene lagres nå lokalt i nettleseren for hver bruker. Før full SaaS-lansering bør de lagres kryptert per household i Supabase og brukes via Edge Function.</p></div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-bold text-amber-900">SaaS-notat</p><p className="mt-1 text-sm text-amber-800">Nye SaaS-brukere skal ikke bruke Freddy sine AI-nøkler. De må legge inn egne nøkler, eller du må tilby en betalt managed AI-pakke med kryptert lagring per household.</p></div>
           </div>
         </Card>
       )}
 
       {activeTab === 'integrations' && <IntegrationsSettings />}
+
+      {activeTab === 'saas' && (
+        <div className="space-y-6">
+          <Card className="p-5 md:p-6">
+            <div className="mb-5 flex items-start gap-3"><Database className="mt-1 h-5 w-5 text-slate-600" /><div><h2 className="text-xl font-bold text-slate-900">SaaS-oppsett for ny kunde</h2><p className="mt-1 text-sm text-slate-500">Kunden skal bruke egen Supabase og egne AI-nøkler. Dette hindrer at dine RealtyFlow/FamilyHub-data blandes med kundedata.</p></div></div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {[
+                ['1. Opprett Supabase-prosjekt', 'Kunden oppretter eget Supabase-prosjekt, kjører FamilyHub-migrasjoner og aktiverer Auth.'],
+                ['2. Sett miljøvariabler', 'Legg kundens Supabase URL og anon key i Vercel/hosting. Ikke bruk Freddy sine nøkler.'],
+                ['3. Opprett familie', 'Første innlogging lager familienavn, family_id og valg om tom start eller ufarlig random demo-data.'],
+                ['4. Legg inn AI-nøkler', 'Kunden legger inn egne Gemini/OpenAI/Claude-nøkler under AI.'],
+                ['5. Kjøp moduler', 'Basic kan utvides med moduler som bank, kvittering, dokumentlager, kalender pro og business.'],
+                ['6. Kontroller RLS', 'Alle tabeller må filtreres på user_id, household_id eller family_id slik at ingen ser andres data.'],
+              ].map(([title, text]) => <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-slate-900">{title}</p><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></div>)}
+            </div>
+          </Card>
+
+          <Card className="p-5 md:p-6">
+            <div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-lg font-black text-slate-900">Vercel/Supabase env-mal</h3><button onClick={() => copyText(envTemplate)} className="btn-secondary text-sm"><Copy className="h-4 w-4" /> Kopier</button></div>
+            <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100"><code>{envTemplate}</code></pre>
+          </Card>
+
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {PLAN_DEFINITIONS.map((plan) => <Card key={plan.id} className="p-5"><h3 className="font-black text-slate-900">{plan.label}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{plan.description}</p><p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">{plan.modules.length} moduler</p></Card>)}
+          </section>
+
+          <Card className="p-5 md:p-6">
+            <h3 className="text-lg font-black text-slate-900">Moduler som bør finnes i en kalender-/familieapp</h3>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {[
+                ['Gjentakelser og regler', 'Ukentlig, annenhver uke, månedlig, skolefri, ferier og egendefinerte regler.'],
+                ['Påminnelser', 'Push/e-post/SMS, flere varsler per hendelse og ansvarlig person.'],
+                ['Delt ansvar', 'Hvem kjører, hvem henter, hvem betaler, hvem må bekrefte.'],
+                ['Familie-/skolekalender', 'Skolerute, helligdager, lokale fiestaer og import fra Google/Apple/Outlook.'],
+                ['Avtaler og dokumenter', 'Koble hendelser til forsikring, kontrakt, legepapir, garanti eller kvittering.'],
+                ['Ressurser', 'Bil, bolig, rom, utstyr, kjæledyr, nøkler og lånte ting.'],
+                ['Likviditet fra kalender', 'Regninger, lønn, provisjon og forventede utgifter vist fremover.'],
+                ['AI-forslag', 'Foreslå kategori, oppgave, varsling, dokument og hvem hendelsen gjelder.'],
+                ['Modulbutikk', 'Kjøp Kalender Pro, dokumentlager, kvittering/AI, bank/eiendeler og business.'],
+              ].map(([title, text]) => <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-slate-900"><CheckCircle2 className="mr-2 inline h-4 w-4 text-emerald-600" />{title}</p><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></div>)}
+            </div>
+          </Card>
+
+          <Card className="p-5 md:p-6">
+            <h3 className="text-lg font-black text-slate-900">Modulbutikk</h3>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+              {MARKETPLACE_MODULES.map((module) => <div key={module.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-slate-900">{module.label}</p><p className="mt-2 text-sm leading-6 text-slate-600">{module.description}</p></div>)}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
