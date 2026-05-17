@@ -28,6 +28,7 @@ import { translations } from './translations';
 import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, ShoppingCart, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react';
 import { isAiAvailable } from './services/geminiService';
 import { loadFamilyPersistentData, syncAssets, syncBankAccounts, syncMembers, syncTransactions } from './services/familyPersistenceService';
+import { loadBills, syncBills } from './services/billsPersistenceService';
 import { inferTransactionCategory } from './services/categoryService';
 import { applySalaryAutomation } from './services/salaryAutomationService';
 
@@ -89,7 +90,8 @@ const App = () => {
       if (persistent.members) setFamilyMembers(persistent.members);
       if (persistent.assets) setAssets(persistent.assets);
       if (persistent.bankAccounts) setBankAccounts(persistent.bankAccounts);
-
+      const loadedBills = await loadBills(userId);
+      if (loadedBills) setBills(loadedBills);
       const { data: reData } = await supabase.from('real_estate_deals').select('*').eq('user_id', userId);
       if (reData) setRealEstateDeals(reData);
       const { data: farmData } = await supabase.from('farm_operations').select('*').eq('user_id', userId);
@@ -105,6 +107,7 @@ const App = () => {
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800); return () => clearTimeout(timer); }, [familyMembers, session?.user?.id, persistentReady]);
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncAssets(session.user.id, assets); }, 800); return () => clearTimeout(timer); }, [assets, session?.user?.id, persistentReady]);
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncBankAccounts(session.user.id, bankAccounts); }, 800); return () => clearTimeout(timer); }, [bankAccounts, session?.user?.id, persistentReady]);
+  useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncBills(session.user.id, bills); }, 800); return () => clearTimeout(timer); }, [bills, session?.user?.id, persistentReady]);
 
   useEffect(() => {
     if (!persistentReady || salaryAutomationBusy || familyMembers.length === 0 || bankAccounts.length === 0) return;
@@ -149,7 +152,7 @@ const App = () => {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setSession(session);
         if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err)); checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err)); }
-        else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); }
+        else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); setBills([]); }
       });
       return () => { cancelled = true; clearTimeout(safetyTimer); subscription?.unsubscribe(); };
     } catch (err) { console.warn('[App] startup failed', err); setPersistentReady(false); setLoading(false); }
@@ -164,7 +167,7 @@ const App = () => {
     return { ok: true };
   };
 
-  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); };
+  const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); setBills([]); };
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => { const txId = `tx-rcpt-${Date.now()}`; const receiptId = `receipt-${Date.now()}`; const smartCategory = inferTransactionCategory({ vendor: data.vendor, description: data.vendor || 'Kvittering', category: data.category, amount: data.totalAmount, items: data.items }); const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: smartCategory, type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId }; if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]); const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId }; setScannedReceipts(prev => [receipt, ...prev]); setTransactions(prev => [tx, ...prev]); setCashBalance(prev => prev - tx.amount); setActiveTab('transactions'); };
   const navigate = (tab: string) => { if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard'); setActiveTab(tab); setSidebarOpen(false); };
 
