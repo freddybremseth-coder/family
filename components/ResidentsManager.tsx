@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { FamilyMember, Language } from '../types';
+import { BankAccount, FamilyMember, Language } from '../types';
 import { translations } from '../translations';
 import { Users, UserPlus, Trash2, Edit3, Heart, Wallet, Baby, X, Save, Calendar, User, Landmark, Sparkles } from 'lucide-react';
 import { CyberButton } from './CyberButton';
@@ -9,11 +8,12 @@ interface Props {
   familyMembers: FamilyMember[];
   setFamilyMembers: React.Dispatch<React.SetStateAction<FamilyMember[]>>;
   lang: Language;
+  bankAccounts?: BankAccount[];
 }
 
 const formatCurrency = (amount: number, lang: Language) => {
   const symbol = lang === 'no' ? 'kr' : '€';
-  return `${symbol} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `${symbol} ${Number(amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
 function cleanSalaryDay(value: number) {
@@ -21,20 +21,13 @@ function cleanSalaryDay(value: number) {
   return Math.min(31, Math.max(1, Math.round(value)));
 }
 
-export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMembers, lang }) => {
+export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMembers, lang, bankAccounts = [] }) => {
   const t = translations[lang];
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
 
-  const emptyMember: FamilyMember = {
-    id: `fm-${Date.now()}`,
-    name: '',
-    birthDate: new Date().toISOString().split('T')[0],
-    monthlySalary: 0,
-    monthlyBenefits: 0,
-    monthlyChildBenefit: 0,
-    salaryDay: 25,
-  };
+  const emptyMember: FamilyMember = { id: `fm-${Date.now()}`, name: '', birthDate: new Date().toISOString().split('T')[0], monthlySalary: 0, monthlyBenefits: 0, monthlyChildBenefit: 0, salaryDay: 25, salaryAccountId: bankAccounts[0]?.id };
+  const accountLabel = (id?: string) => bankAccounts.find((a) => a.id === id)?.accountName || bankAccounts.find((a) => a.id === id)?.bankName || id || 'Ikke valgt';
 
   const handleSave = () => {
     if (!editingMember) return;
@@ -49,7 +42,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
     if (confirm('Er du sikker på at du vil fjerne denne beboeren?')) setFamilyMembers(prev => prev.filter(m => m.id !== id));
   };
 
-  const openEdit = (member: FamilyMember) => { setEditingMember({ ...member, salaryDay: member.salaryDay || 25 }); setIsAddingNew(false); };
+  const openEdit = (member: FamilyMember) => { setEditingMember({ ...member, salaryDay: member.salaryDay || 25, salaryAccountId: member.salaryAccountId || bankAccounts[0]?.id }); setIsAddingNew(false); };
   const openAdd = () => { setEditingMember(emptyMember); setIsAddingNew(true); };
 
   return (
@@ -65,9 +58,9 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
               <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-cyan-500" /> Fødselsdato</label><input type="date" value={editingMember.birthDate} onChange={e => setEditingMember({ ...editingMember, birthDate: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" /></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Wallet className="w-3 h-3 text-emerald-400" /> Månedslønn (Netto)</label><input type="number" value={editingMember.monthlySalary} onChange={e => setEditingMember({ ...editingMember, monthlySalary: Number(e.target.value) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none transition-all" /></div>
-                <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-emerald-400" /> Lønnsdag</label><input type="number" min={1} max={31} value={editingMember.salaryDay || ''} onChange={e => setEditingMember({ ...editingMember, salaryDay: cleanSalaryDay(Number(e.target.value)) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none transition-all" placeholder="25" /><p className="text-[10px] text-slate-500">Brukes til automatisk forventet lønn i likviditet.</p></div>
+                <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-emerald-400" /> Lønnsdag</label><input type="number" min={1} max={31} value={editingMember.salaryDay || ''} onChange={e => setEditingMember({ ...editingMember, salaryDay: cleanSalaryDay(Number(e.target.value)) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none transition-all" placeholder="25" /><p className="text-[10px] text-slate-500">På eller etter denne datoen bokføres lønn automatisk én gang per måned.</p></div>
               </div>
-              <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Landmark className="w-3 h-3 text-cyan-400" /> Konto for lønn</label><input value={editingMember.salaryAccountId || ''} onChange={e => setEditingMember({ ...editingMember, salaryAccountId: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" placeholder="Valgfritt konto-ID / kontonavn" /></div>
+              <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Landmark className="w-3 h-3 text-cyan-400" /> Konto for lønn</label>{bankAccounts.length > 0 ? <select value={editingMember.salaryAccountId || ''} onChange={e => setEditingMember({ ...editingMember, salaryAccountId: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all"><option value="">Velg konto</option>{bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountName} · {account.bankName} · {Number(account.balance || 0).toLocaleString('nb-NO')} {account.currency}</option>)}</select> : <input value={editingMember.salaryAccountId || ''} onChange={e => setEditingMember({ ...editingMember, salaryAccountId: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" placeholder="Opprett bankkonto først" />}<p className="text-[10px] text-slate-500">Lønn øker automatisk saldoen på valgt konto når lønnsdatoen passeres. Ved bankimport fjernes automatisk lønn hvis den matcher reell innbetaling.</p></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Heart className="w-3 h-3 text-magenta-400" /> Andre Ytelser</label><input type="number" value={editingMember.monthlyBenefits} onChange={e => setEditingMember({ ...editingMember, monthlyBenefits: Number(e.target.value) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-magenta-500 outline-none transition-all" /></div>
                 <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Baby className="w-3 h-3 text-cyan-400" /> Barnetrygd / Bidrag</label><input type="number" value={editingMember.monthlyChildBenefit} onChange={e => setEditingMember({ ...editingMember, monthlyChildBenefit: Number(e.target.value) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" /></div>
@@ -87,6 +80,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
             <div className="space-y-4 relative z-10">
               <div className="flex justify-between items-center p-3 bg-black/40 border border-white/5"><div className="flex items-center gap-2 text-slate-400"><Wallet className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Lønn</span></div><span className="text-sm font-black text-white font-mono">{formatCurrency(member.monthlySalary, lang)}</span></div>
               <div className="flex justify-between items-center p-3 bg-emerald-500/5 border border-emerald-500/10"><div className="flex items-center gap-2 text-emerald-400"><Calendar className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Lønnsdag</span></div><span className="text-sm font-black text-emerald-400 font-mono">{member.salaryDay ? `${member.salaryDay}. hver mnd` : 'Ikke satt'}</span></div>
+              <div className="flex justify-between items-center p-3 bg-cyan-500/5 border border-cyan-500/10"><div className="flex items-center gap-2 text-cyan-400"><Landmark className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Konto</span></div><span className="text-xs font-black text-cyan-400 font-mono text-right">{accountLabel(member.salaryAccountId)}</span></div>
               {member.monthlyBenefits > 0 && <div className="flex justify-between items-center p-3 bg-emerald-500/5 border border-emerald-500/10"><div className="flex items-center gap-2 text-emerald-400"><Heart className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Ytelser</span></div><span className="text-sm font-black text-emerald-400 font-mono">{formatCurrency(member.monthlyBenefits, lang)}</span></div>}
               {member.monthlyChildBenefit > 0 && <div className="flex justify-between items-center p-3 bg-purple-500/5 border border-purple-500/10"><div className="flex items-center gap-2 text-purple-400"><Baby className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Barnetrygd</span></div><span className="text-sm font-black text-purple-400 font-mono">{formatCurrency(member.monthlyChildBenefit, lang)}</span></div>}
               <div className="pt-2 flex justify-between items-center border-t border-white/5 mt-4"><span className="text-[8px] font-black uppercase text-slate-600 tracking-widest">Totalbidrag</span><span className="text-xs font-black text-cyan-400 font-mono">{formatCurrency(member.monthlySalary + member.monthlyBenefits + member.monthlyChildBenefit, lang)}</span></div>
@@ -96,7 +90,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
         ))}
         {familyMembers.length === 0 && <div className="col-span-full py-20 text-center glass-panel border-2 border-dashed border-white/5 opacity-30 flex flex-col items-center"><Users className="w-16 h-16 mb-4" /><p className="text-[10px] font-black uppercase tracking-[0.4em]">Registeret er tomt // Legg til beboere</p><CyberButton onClick={openAdd} variant="ghost" className="mt-6 text-[9px]">Start Database</CyberButton></div>}
       </div>
-      <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5 mt-12"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"><div><p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Total Husholdningsinntekt</p><p className="text-2xl font-black text-emerald-400 font-mono">{formatCurrency(familyMembers.reduce((acc, m) => acc + m.monthlySalary + m.monthlyBenefits + m.monthlyChildBenefit, 0), lang)}</p></div><div><p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Antall Beboere</p><p className="text-2xl font-black text-white font-mono">{familyMembers.length}</p></div><div className="md:col-span-2 flex items-center justify-end"><div className="p-4 bg-black/40 border border-emerald-500/20 flex items-center gap-4"><Sparkles className="text-yellow-400 w-5 h-5" /><p className="text-[10px] text-slate-400 italic leading-tight uppercase font-mono">Lønnsdag brukes i likviditetsprognosen og kan automatisk forventes som innbetaling på riktig dato.</p></div></div></div></div>
+      <div className="glass-panel p-8 border-l-4 border-l-emerald-500 bg-emerald-500/5 mt-12"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"><div><p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Total Husholdningsinntekt</p><p className="text-2xl font-black text-emerald-400 font-mono">{formatCurrency(familyMembers.reduce((acc, m) => acc + m.monthlySalary + m.monthlyBenefits + m.monthlyChildBenefit, 0), lang)}</p></div><div><p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Antall Beboere</p><p className="text-2xl font-black text-white font-mono">{familyMembers.length}</p></div><div className="md:col-span-2 flex items-center justify-end"><div className="p-4 bg-black/40 border border-emerald-500/20 flex items-center gap-4"><Sparkles className="text-yellow-400 w-5 h-5" /><p className="text-[10px] text-slate-400 italic leading-tight uppercase font-mono">Lønn bokføres automatisk én gang per måned når lønnsdatoen har passert, og kobles til valgt konto uten dobbeltføring ved bankimport.</p></div></div></div></div>
     </div>
   );
 };
