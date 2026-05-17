@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { FamilyMember, CalendarEvent, Task, LocalEvent, UserConfig } from '../types';
 import { translations } from '../translations';
 import { MEMBER_COLORS } from '../constants';
+import { FamilyCalendarModules } from './FamilyCalendarModules';
 import {
   CalendarDays,
   Plus,
@@ -53,8 +54,8 @@ const formatDate = (date: string, language: string, options: Intl.DateTimeFormat
   new Date(`${date}T12:00:00`).toLocaleDateString(language === 'no' ? 'no-NO' : 'en-US', options);
 
 const formatEventTime = (event: Partial<CalendarEvent>) => {
-  if (event.startTime && event.endTime) return `${event.startTime}–${event.endTime}`;
-  if (event.startTime) return event.startTime;
+  if ((event as any).startTime && (event as any).endTime) return `${(event as any).startTime}–${(event as any).endTime}`;
+  if ((event as any).startTime) return (event as any).startTime;
   return 'Tid ikke satt';
 };
 
@@ -82,7 +83,7 @@ export const FamilyCalendar: React.FC<Props> = ({
     priority: 'Medium',
     assignedToId: defaultMemberId,
     isComplete: false,
-  });
+  } as any);
 
   const [newEvent, setNewEvent] = useState<Partial<CalendarEvent>>({
     description: '',
@@ -90,7 +91,7 @@ export const FamilyCalendar: React.FC<Props> = ({
     assignedToId: defaultMemberId,
     startTime: '09:00',
     endTime: '',
-  });
+  } as any);
 
   const getMemberColor = (id?: string) => {
     const idx = familyMembers.findIndex(m => m.id === id);
@@ -102,47 +103,47 @@ export const FamilyCalendar: React.FC<Props> = ({
   const isVisibleForMember = (item: { assignedToId?: string }) =>
     selectedMemberId === 'all' || !item.assignedToId || item.assignedToId === selectedMemberId;
 
-  const filteredTasks = useMemo(() => tasks.filter(isVisibleForMember), [tasks, selectedMemberId]);
-  const filteredEvents = useMemo(() => calendarEvents.filter(isVisibleForMember), [calendarEvents, selectedMemberId]);
+  const filteredTasks = useMemo(() => (tasks as any[]).filter(isVisibleForMember), [tasks, selectedMemberId]);
+  const filteredEvents = useMemo(() => (calendarEvents as any[]).filter(isVisibleForMember), [calendarEvents, selectedMemberId]);
 
   const handleAddTask = () => {
-    if (!newTask.description?.trim()) return;
+    if (!(newTask as any).description?.trim()) return;
 
     setTasks(prev => [...prev, {
       id: `task-${Date.now()}`,
       date: selectedDate,
-      description: newTask.description!.trim(),
-      assignedToId: newTask.assignedToId || defaultMemberId,
-      priority: newTask.priority as 'Low' | 'Medium' | 'High',
+      description: (newTask as any).description!.trim(),
+      assignedToId: (newTask as any).assignedToId || defaultMemberId,
+      priority: (newTask as any).priority as 'Low' | 'Medium' | 'High',
       isComplete: false,
-    }]);
+    } as any]);
 
-    setNewTask(prev => ({ ...prev, description: '' }));
+    setNewTask(prev => ({ ...prev, description: '' } as any));
     setShowTaskForm(false);
   };
 
   const handleAddEvent = () => {
-    if (!newEvent.description?.trim()) return;
+    if (!(newEvent as any).description?.trim()) return;
 
     setCalendarEvents(prev => [...prev, {
       id: `event-${Date.now()}`,
       date: selectedDate,
-      startTime: newEvent.startTime || '',
-      endTime: newEvent.endTime || '',
-      description: newEvent.description!.trim(),
-      assignedToId: newEvent.assignedToId || defaultMemberId,
-      type: newEvent.type as CalendarEvent['type'],
-    }]);
+      startTime: (newEvent as any).startTime || '',
+      endTime: (newEvent as any).endTime || '',
+      description: (newEvent as any).description!.trim(),
+      assignedToId: (newEvent as any).assignedToId || defaultMemberId,
+      type: (newEvent as any).type as CalendarEvent['type'],
+    } as any]);
 
-    setNewEvent(prev => ({ ...prev, description: '', startTime: prev.startTime || '09:00', endTime: '' }));
+    setNewEvent(prev => ({ ...prev, description: '', startTime: (prev as any).startTime || '09:00', endTime: '' } as any));
     setShowEventForm(false);
   };
 
   const toggleTask = (id: string) =>
-    setTasks(prev => prev.map(task => task.id === id ? { ...task, isComplete: !task.isComplete } : task));
+    setTasks(prev => (prev as any[]).map(task => task.id === id ? { ...task, isComplete: !task.isComplete } : task) as any);
 
-  const deleteTask = (id: string) => setTasks(prev => prev.filter(task => task.id !== id));
-  const deleteEvent = (id: string) => setCalendarEvents(prev => prev.filter(event => event.id !== id));
+  const deleteTask = (id: string) => setTasks(prev => (prev as any[]).filter(task => task.id !== id) as any);
+  const deleteEvent = (id: string) => setCalendarEvents(prev => (prev as any[]).filter(event => event.id !== id) as any);
 
   const prevMonth = () => {
     if (selectedMonth === 0) {
@@ -166,7 +167,7 @@ export const FamilyCalendar: React.FC<Props> = ({
     const firstDay = new Date(year, selectedMonth, 1).getDay();
     const daysInMonth = new Date(year, selectedMonth + 1, 0).getDate();
     const padding = firstDay === 0 ? 6 : firstDay - 1;
-    const days: Array<null | { day: number; dateStr: string; tasks: Task[]; events: CalendarEvent[]; localEvents: LocalEvent[] }> = [];
+    const days: Array<null | { day: number; dateStr: string; tasks: any[]; events: any[]; localEvents: LocalEvent[] }> = [];
 
     for (let i = 0; i < padding; i++) days.push(null);
 
@@ -241,6 +242,8 @@ export const FamilyCalendar: React.FC<Props> = ({
           </div>
         </div>
       </section>
+
+      <FamilyCalendarModules familyMembers={familyMembers} selectedDate={selectedDate} userConfig={userConfig} setCalendarEvents={setCalendarEvents} setTasks={setTasks} onSelectDate={setSelectedDate} />
 
       <section className="card p-4 md:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -390,8 +393,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                   <label className="md:col-span-2">
                     <span className="text-sm font-semibold text-slate-700">Hva skjer?</span>
                     <input
-                      value={newEvent.description || ''}
-                      onChange={e => setNewEvent({ ...newEvent, description: e.target.value })}
+                      value={(newEvent as any).description || ''}
+                      onChange={e => setNewEvent({ ...newEvent, description: e.target.value } as any)}
                       placeholder="F.eks. fotballtrening, møte, legetime eller visning"
                       className={`${inputClass} mt-1`}
                       onKeyDown={e => e.key === 'Enter' && handleAddEvent()}
@@ -401,8 +404,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                     <span className="text-sm font-semibold text-slate-700">Starttid</span>
                     <input
                       type="time"
-                      value={newEvent.startTime || ''}
-                      onChange={e => setNewEvent({ ...newEvent, startTime: e.target.value })}
+                      value={(newEvent as any).startTime || ''}
+                      onChange={e => setNewEvent({ ...newEvent, startTime: e.target.value } as any)}
                       className={`${inputClass} mt-1`}
                     />
                   </label>
@@ -410,16 +413,16 @@ export const FamilyCalendar: React.FC<Props> = ({
                     <span className="text-sm font-semibold text-slate-700">Sluttid, valgfritt</span>
                     <input
                       type="time"
-                      value={newEvent.endTime || ''}
-                      onChange={e => setNewEvent({ ...newEvent, endTime: e.target.value })}
+                      value={(newEvent as any).endTime || ''}
+                      onChange={e => setNewEvent({ ...newEvent, endTime: e.target.value } as any)}
                       className={`${inputClass} mt-1`}
                     />
                   </label>
                   <label>
                     <span className="text-sm font-semibold text-slate-700">Type</span>
                     <select
-                      value={newEvent.type}
-                      onChange={e => setNewEvent({ ...newEvent, type: e.target.value as CalendarEvent['type'] })}
+                      value={(newEvent as any).type}
+                      onChange={e => setNewEvent({ ...newEvent, type: e.target.value as CalendarEvent['type'] } as any)}
                       className={`${inputClass} mt-1`}
                     >
                       {EVENT_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
@@ -428,8 +431,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                   <label>
                     <span className="text-sm font-semibold text-slate-700">Gjelder</span>
                     <select
-                      value={newEvent.assignedToId || defaultMemberId}
-                      onChange={e => setNewEvent({ ...newEvent, assignedToId: e.target.value })}
+                      value={(newEvent as any).assignedToId || defaultMemberId}
+                      onChange={e => setNewEvent({ ...newEvent, assignedToId: e.target.value } as any)}
                       className={`${inputClass} mt-1`}
                     >
                       {familyMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
@@ -457,8 +460,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                   <label className="md:col-span-2">
                     <span className="text-sm font-semibold text-slate-700">Hva må gjøres?</span>
                     <input
-                      value={newTask.description || ''}
-                      onChange={e => setNewTask({ ...newTask, description: e.target.value })}
+                      value={(newTask as any).description || ''}
+                      onChange={e => setNewTask({ ...newTask, description: e.target.value } as any)}
                       placeholder="F.eks. handle, hente, ringe eller betale"
                       className={`${inputClass} mt-1`}
                       onKeyDown={e => e.key === 'Enter' && handleAddTask()}
@@ -467,8 +470,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                   <label>
                     <span className="text-sm font-semibold text-slate-700">Prioritet</span>
                     <select
-                      value={newTask.priority}
-                      onChange={e => setNewTask({ ...newTask, priority: e.target.value as Task['priority'] })}
+                      value={(newTask as any).priority}
+                      onChange={e => setNewTask({ ...newTask, priority: e.target.value as any } as any)}
                       className={`${inputClass} mt-1`}
                     >
                       <option value="Low">Lav prioritet</option>
@@ -479,8 +482,8 @@ export const FamilyCalendar: React.FC<Props> = ({
                   <label>
                     <span className="text-sm font-semibold text-slate-700">Ansvarlig</span>
                     <select
-                      value={newTask.assignedToId || defaultMemberId}
-                      onChange={e => setNewTask({ ...newTask, assignedToId: e.target.value })}
+                      value={(newTask as any).assignedToId || defaultMemberId}
+                      onChange={e => setNewTask({ ...newTask, assignedToId: e.target.value } as any)}
                       className={`${inputClass} mt-1`}
                     >
                       {familyMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
@@ -533,6 +536,7 @@ export const FamilyCalendar: React.FC<Props> = ({
                                 <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
                                   <User className="w-3.5 h-3.5" /> {getMemberName(event.assignedToId)}
                                 </span>
+                                {event.sourceModule && <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">{event.sourceModule}</span>}
                               </div>
                               <p className="font-bold text-slate-900">{event.description}</p>
                               <p className="text-sm text-slate-500">{EVENT_TYPES.find(type => type.value === event.type)?.label || event.type}</p>
@@ -584,6 +588,7 @@ export const FamilyCalendar: React.FC<Props> = ({
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${PRIORITY_CONFIG[task.priority].color}`}>
                                   {PRIORITY_CONFIG[task.priority].label}
                                 </span>
+                                {task.sourceModule && <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">{task.sourceModule}</span>}
                               </div>
                             </div>
                           </div>
@@ -690,8 +695,8 @@ export const FamilyCalendar: React.FC<Props> = ({
               </h3>
               <div className="space-y-3">
                 {familyMembers.map((member, index) => {
-                  const memberTasks = tasks.filter(task => task.assignedToId === member.id);
-                  const memberEvents = calendarEvents.filter(event => event.assignedToId === member.id);
+                  const memberTasks = filteredTasks.filter(task => task.assignedToId === member.id);
+                  const memberEvents = filteredEvents.filter(event => event.assignedToId === member.id);
                   const done = memberTasks.filter(task => task.isComplete).length;
                   const percent = memberTasks.length > 0 ? (done / memberTasks.length) * 100 : 0;
 
