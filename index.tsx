@@ -29,6 +29,7 @@ import { Heart, LogOut, ShieldCheck, Loader2, Menu, X, LayoutDashboard, Shopping
 import { isAiAvailable } from './services/geminiService';
 import { loadFamilyPersistentData, syncAssets, syncBankAccounts, syncMembers, syncTransactions } from './services/familyPersistenceService';
 import { inferTransactionCategory } from './services/categoryService';
+import { applySalaryAutomation } from './services/salaryAutomationService';
 
 const ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 const TRIAL_DAYS = 3;
@@ -60,6 +61,7 @@ const App = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [salaryAutomationBusy, setSalaryAutomationBusy] = useState(false);
   const [developers, setDevelopers] = useState<Developer[]>([{ id: 'dev-default', name: 'Standard Utvikler', defaultCommissionPct: 5, payoutPhases: [] }]);
   const [realEstateDeals, setRealEstateDeals] = useState<RealEstateDeal[]>([]);
   const [afterSales, setAfterSales] = useState<AfterSaleCommission[]>([]);
@@ -103,6 +105,22 @@ const App = () => {
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncMembers(session.user.id, familyMembers); }, 800); return () => clearTimeout(timer); }, [familyMembers, session?.user?.id, persistentReady]);
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncAssets(session.user.id, assets); }, 800); return () => clearTimeout(timer); }, [assets, session?.user?.id, persistentReady]);
   useEffect(() => { if (!session?.user?.id || !persistentReady) return; const timer = setTimeout(() => { syncBankAccounts(session.user.id, bankAccounts); }, 800); return () => clearTimeout(timer); }, [bankAccounts, session?.user?.id, persistentReady]);
+
+  useEffect(() => {
+    if (!persistentReady || salaryAutomationBusy || familyMembers.length === 0 || bankAccounts.length === 0) return;
+    setSalaryAutomationBusy(true);
+    const timer = setTimeout(() => {
+      setTransactions(currentTransactions => {
+        let nextAccountsForState: BankAccount[] | null = null;
+        const result = applySalaryAutomation(familyMembers, currentTransactions, bankAccounts);
+        if (result.added > 0 || result.removedDuplicates > 0) nextAccountsForState = result.bankAccounts;
+        if (nextAccountsForState) setBankAccounts(nextAccountsForState);
+        return (result.added > 0 || result.removedDuplicates > 0) ? result.transactions : currentTransactions;
+      });
+      setSalaryAutomationBusy(false);
+    }, 500);
+    return () => { clearTimeout(timer); setSalaryAutomationBusy(false); };
+  }, [familyMembers, bankAccounts, persistentReady]);
 
   const checkSubscription = useCallback(async (user: any) => {
     if (user.email === ADMIN_EMAIL) { setSubscriptionStatus('lifetime'); return; }
@@ -157,7 +175,7 @@ const App = () => {
       case 'dashboard': return dashboardView;
       case 'shopping': return <ShoppingList cashBalance={cashBalance} groceryItems={groceryItems} setGroceryItems={setGroceryItems} weeklyMenu={weeklyMenu} setWeeklyMenu={setWeeklyMenu} lang={userConfig.language} userId={session?.user?.id} />;
       case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
-      case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} />;
+      case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} bankAccounts={bankAccounts} />;
       case 'settings': return <SettingsManager userConfig={userConfig} setUserConfig={setUserConfig} onApiUpdate={() => setAiConfigured(isAiAvailable())} />;
       case 'bank': return <div className="space-y-8"><NetWorthOverview bankAccounts={bankAccounts} assets={assets} realEstateDeals={realEstateDeals} userId={session?.user?.id} /><BankManager userId={session?.user?.id} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
       case 'documents': return <DocumentsManager userId={session?.user?.id} familyName={userConfig.familyName} familyLocation={userConfig.location} familyAddress={userConfig.address || ''} />;
