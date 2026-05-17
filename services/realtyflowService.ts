@@ -156,6 +156,9 @@ function isCommissionRow(row: any, table: string): boolean {
   return text.includes('commission') || text.includes('kommisjon') || text.includes('provisjon') || text.includes('provision') || text.includes('realtyflow') || amountValue(row, table) > 0;
 }
 function isIncomeRow(row: any, table: string): boolean {
+  // Contacts use type="buyer" even when pipeline_status="WON". A won contact is
+  // the source of truth for a sale and must not be rejected because type=buyer.
+  if (table === 'contacts' && isWonCustomer(row)) return true;
   if (table === 'business_financial_events') return !isRejectedRow(row);
   const direction = String(getAny(row, ['direction', 'type', 'kind', 'status', 'event_type', 'pipeline_status', 'stream']) || '').toLowerCase();
   if (!direction) return true;
