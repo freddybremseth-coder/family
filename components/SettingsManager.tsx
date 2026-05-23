@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { UserConfig, Currency, Language } from '../types';
 import { translations } from '../translations';
-import { CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2, Lock, Eye, EyeOff, Mail, Loader2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
 import { MARKETPLACE_MODULES, PLAN_DEFINITIONS } from '../services/adminService';
+import { supabase, isSupabaseConfigured } from '../supabase';
 
 interface Props {
   userConfig: UserConfig;
@@ -12,7 +13,7 @@ interface Props {
   onApiUpdate: () => void;
 }
 
-type SettingsTab = 'profile' | 'ai' | 'integrations' | 'saas';
+type SettingsTab = 'profile' | 'security' | 'ai' | 'integrations' | 'saas';
 
 type AiKeyName = 'user_gemini_api_key' | 'user_openai_api_key' | 'user_claude_api_key';
 
@@ -55,10 +56,83 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
 
   const tabs = useMemo(() => [
     { id: 'profile' as const, label: 'Familie og app', icon: <Settings2 className="h-4 w-4" /> },
+    { id: 'security' as const, label: 'Sikkerhet og passord', icon: <Lock className="h-4 w-4" /> },
     { id: 'ai' as const, label: 'AI', icon: <Sparkles className="h-4 w-4" /> },
     { id: 'integrations' as const, label: 'Integrasjoner', icon: <PlugZap className="h-4 w-4" /> },
     { id: 'saas' as const, label: 'SaaS-oppsett', icon: <Database className="h-4 w-4" /> },
   ], []);
+
+  // -- Konto + passordendring --
+  const [accountEmail, setAccountEmail] = useState<string>('');
+  const [createdAt, setCreatedAt] = useState<string>('');
+  const [lastSignIn, setLastSignIn] = useState<string>('');
+  const [provider, setProvider] = useState<string>('');
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data?.user;
+      if (!u) return;
+      setAccountEmail(u.email || '');
+      setCreatedAt(u.created_at || '');
+      setLastSignIn(u.last_sign_in_at || '');
+      setProvider((u.app_metadata as any)?.provider || (u.identities?.[0]?.provider) || 'email');
+    });
+  }, []);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwStatus, setPwStatus] = useState<{ kind: 'success' | 'error' | 'info' | null; message: string }>({ kind: null, message: '' });
+
+  const passwordStrength = useMemo(() => {
+    const pw = newPassword;
+    let score = 0;
+    if (pw.length >= 8) score += 1;
+    if (pw.length >= 12) score += 1;
+    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score += 1;
+    if (/\d/.test(pw)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+    return Math.min(score, 4);
+  }, [newPassword]);
+  const strengthLabel = ['Svakt', 'Svakt', 'Greit', 'Bra', 'Sterkt'][passwordStrength];
+  const strengthColor = ['bg-rose-500', 'bg-rose-500', 'bg-amber-500', 'bg-lime-500', 'bg-emerald-500'][passwordStrength];
+
+  const handlePasswordChange = async () => {
+    setPwStatus({ kind: null, message: '' });
+    if (!isSupabaseConfigured()) { setPwStatus({ kind: 'error', message: 'Supabase er ikke konfigurert. Kan ikke endre passord i demo-modus.' }); return; }
+    if (newPassword.length < 6) { setPwStatus({ kind: 'error', message: 'Nytt passord må være minst 6 tegn.' }); return; }
+    if (newPassword !== confirmPassword) { setPwStatus({ kind: 'error', message: 'De to nye passordene er ikke like.' }); return; }
+    if (!accountEmail) { setPwStatus({ kind: 'error', message: 'Fant ikke e-postadresse for kontoen.' }); return; }
+    setPwLoading(true);
+    try {
+      if (currentPassword) {
+        const { error: reAuthError } = await supabase.auth.signInWithPassword({ email: accountEmail, password: currentPassword });
+        if (reAuthError) { setPwStatus({ kind: 'error', message: 'Nåværende passord stemmer ikke. Sjekk og prøv igjen.' }); setPwLoading(false); return; }
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) setPwStatus({ kind: 'error', message: error.message || 'Klarte ikke å oppdatere passordet.' });
+      else { setPwStatus({ kind: 'success', message: 'Passordet er oppdatert. Neste innlogging bruker det nye passordet.' }); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }
+    } catch (err: any) { setPwStatus({ kind: 'error', message: err?.message || 'Uventet feil ved passordendring.' }); }
+    finally { setPwLoading(false); }
+  };
+
+  const handleResetEmail = async () => {
+    setPwStatus({ kind: null, message: '' });
+    if (!isSupabaseConfigured() || !accountEmail) { setPwStatus({ kind: 'error', message: 'Mangler e-post eller Supabase-konfigurasjon.' }); return; }
+    setPwLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(accountEmail, { redirectTo: `${window.location.origin}/?recover=1` });
+    setPwLoading(false);
+    if (error) setPwStatus({ kind: 'error', message: error.message });
+    else setPwStatus({ kind: 'info', message: `Tilbakestillingslenke sendt til ${accountEmail}. Sjekk innboksen.` });
+  };
+
+  const formatDate = (iso: string) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('nb-NO', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return iso; }
+  };
 
   const handleSave = () => {
     Object.entries(aiKeys).forEach(([key, value]) => {
@@ -97,7 +171,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
         <SaveButton saved={saved} onClick={handleSave} />
       </section>
 
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {tabs.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`rounded-2xl border p-4 text-left transition ${activeTab === tab.id ? 'border-slate-900 bg-white shadow-sm ring-2 ring-slate-200' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
             <div className="flex items-center gap-3">
@@ -155,6 +229,110 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
             </label>
           </div>
         </Card>
+      )}
+
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          <Card className="p-5 md:p-6">
+            <div className="mb-5">
+              <h2 className="text-xl font-bold text-slate-900">Konto</h2>
+              <p className="mt-1 text-sm text-slate-500">Informasjon om innlogget bruker. E-post brukes til innlogging og passord-tilbakestilling.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> E-post</p>
+                <p className="mt-1 text-base font-semibold text-slate-900 break-all">{accountEmail || '—'}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Innloggingsmetode</p>
+                <p className="mt-1 text-base font-semibold text-slate-900 capitalize">{provider}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Opprettet</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(createdAt)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Sist innlogget</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(lastSignIn)}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-5 md:p-6">
+            <div className="mb-5">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Lock className="h-5 w-5 text-indigo-500" /> Endre passord</h2>
+              <p className="mt-1 text-sm text-slate-500">Sett et nytt passord direkte. Av sikkerhetshensyn anbefales å oppgi nåværende passord for å bekrefte identiteten.</p>
+            </div>
+
+            <div className="space-y-4 max-w-xl">
+              <div>
+                <FieldLabel>Nåværende passord (anbefalt)</FieldLabel>
+                <div className="relative mt-2">
+                  <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input type={showCurrent ? 'text' : 'password'} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" className="pl-12 pr-12" />
+                  <button type="button" onClick={() => setShowCurrent(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+                    {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Nytt passord</FieldLabel>
+                <div className="relative mt-2">
+                  <Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minst 6 tegn" autoComplete="new-password" className="pl-12 pr-12" />
+                  <button type="button" onClick={() => setShowNew(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+                    {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {newPassword && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full transition-all ${strengthColor}`} style={{ width: `${(passwordStrength / 4) * 100}%` }} />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-600 w-14 text-right">{strengthLabel}</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <FieldLabel>Bekreft nytt passord</FieldLabel>
+                <div className="relative mt-2">
+                  <Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input type={showNew ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Skriv passordet på nytt" autoComplete="new-password" className="pl-12" />
+                </div>
+                {confirmPassword && newPassword !== confirmPassword && (
+                  <p className="mt-1 text-xs text-rose-600">Passordene er ikke like.</p>
+                )}
+              </div>
+
+              {pwStatus.kind && (
+                <div className={`rounded-2xl border p-3 text-sm flex items-start gap-2 ${
+                  pwStatus.kind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
+                  pwStatus.kind === 'info' ? 'border-sky-200 bg-sky-50 text-sky-800' :
+                  'border-rose-200 bg-rose-50 text-rose-800'
+                }`}>
+                  {pwStatus.kind === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+                  <p>{pwStatus.message}</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button onClick={handlePasswordChange} disabled={pwLoading || !newPassword || !confirmPassword} className="btn-primary justify-center">
+                  {pwLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  Oppdater passord
+                </button>
+                <button onClick={handleResetEmail} disabled={pwLoading} className="btn-secondary justify-center">
+                  <Mail className="h-4 w-4" /> Send reset-lenke på e-post
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Husker du ikke nåværende passord? Bruk «Send reset-lenke» — du får e-post med lenke til å sette nytt passord.
+              </p>
+            </div>
+          </Card>
+        </div>
       )}
 
       {activeTab === 'ai' && (
