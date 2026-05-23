@@ -5,12 +5,18 @@ import { GroceryItem, Language, SmartSuggestion, PurchaseHistoryEntry } from '..
 import {
   ShoppingCart, Plus, Trash2, CheckCircle2, Circle, X, RefreshCw, Scan, ChefHat,
   BrainCircuit, ListChecks, AlertTriangle, Check, ChevronRight, CalendarDays,
-  Sparkles, Zap, History,
+  Sparkles, Zap, History, Cake, Save, Pencil,
 } from 'lucide-react';
 import { analyzeFridge, generateSmartMenu, isAiAvailable } from '../services/geminiService';
 import {
   buildSuggestions, recordPurchase, hydrateHistoryFromSupabase, loadHistory, getFrequentItems,
 } from '../services/smartCartService';
+import {
+  GroceryList, loadGroceryLists, ensureDefaultList, createGroceryList, renameGroceryList,
+  deleteGroceryList, loadGroceryItems, addGroceryItem, toggleGroceryItem, deleteGroceryItem,
+  clearBoughtItems,
+} from '../services/groceryListService';
+import { isSupabaseConfigured } from '../supabase';
 import { translations } from '../translations';
 
 interface Props {
@@ -45,6 +51,68 @@ export const ShoppingList: React.FC<Props> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // --- Liste-state (multiple navngitte handlelister) ---
+  const persistenceEnabled = !!userId && isSupabaseConfigured();
+  const [lists, setLists] = useState<GroceryList[]>([]);
+  const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+  const [showNewListForm, setShowNewListForm] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [newListDate, setNewListDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [newListOccasion, setNewListOccasion] = useState('');
+  const [showRenameForm, setShowRenameForm] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameDate, setRenameDate] = useState<string>('');
+
+  const activeList = useMemo(() => lists.find((l) => l.id === activeListId) || null, [lists, activeListId]);
+
+  // Last lister + aktiver default / nyeste
+  useEffect(() => {
+    if (!persistenceEnabled || !userId) return;
+    let cancelled = false;
+    (async () => {
+      setListLoading(true);
+      const existing = await loadGroceryLists(userId);
+      if (cancelled) return;
+      if (existing.length === 0) {
+        const created = await ensureDefaultList(userId);
+        if (cancelled) return;
+        if (created) {
+          setLists([created]);
+          setActiveListId(created.id);
+        }
+      } else {
+        setLists(existing);
+        if (!activeListId) setActiveListId(existing[0].id);
+      }
+      setListLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, persistenceEnabled]);
+
+  // Last items hver gang aktiv liste endres
+  useEffect(() => {
+    if (!persistenceEnabled || !activeListId) return;
+    let cancelled = false;
+    setListLoading(true);
+    loadGroceryItems(activeListId).then((items) => {
+      if (cancelled) return;
+      setGroceryItems(items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        quantity: it.quantity,
+        unit: it.unit,
+        store: it.store || 'Andre',
+        isBought: it.isBought,
+        frequency: 'medium',
+      } as GroceryItem)));
+      setListLoading(false);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeListId, persistenceEnabled]);
+
   const boughtCount = groceryItems.filter((i) => i.isBought).length;
   const totalCount = groceryItems.length;
 
@@ -69,13 +137,26 @@ export const ShoppingList: React.FC<Props> = ({
   const frequentItems = useMemo(() => getFrequentItems(history, 12), [history]);
 
   const addItem = useCallback(
-    (name: string, isSuggestion = false) => {
+    async (name: string, isSuggestion = false) => {
       const clean = name.trim();
       if (!clean) return;
       const exists = groceryItems.some(
         (i) => !i.isBought && i.name.toLowerCase() === clean.toLowerCase()
       );
       if (exists) return;
+
+      // Persist til Supabase hvis vi har aktiv liste, ellers in-memory.
+      if (persistenceEnabled && activeListId && userId) {
+        const created = await addGroceryItem(activeListId, userId, { name: clean });
+        if (created) {
+          setGroceryItems((prev) => [
+            { id: created.id, name: created.name, quantity: created.quantity, unit: created.unit, store: created.store || 'Andre', isBought: false, isSuggestion, frequency: 'medium' } as GroceryItem,
+            ...prev,
+          ]);
+          setNewItemName('');
+          return;
+        }
+      }
       setGroceryItems((prev) => [
         {
           id: Math.random().toString(36).slice(2, 11),
@@ -91,7 +172,7 @@ export const ShoppingList: React.FC<Props> = ({
       ]);
       setNewItemName('');
     },
-    [groceryItems, setGroceryItems]
+    [groceryItems, setGroceryItems, persistenceEnabled, activeListId, userId]
   );
 
   const toggleItem = useCallback(
@@ -100,6 +181,9 @@ export const ShoppingList: React.FC<Props> = ({
       if (!item) return;
       const willBeBought = !item.isBought;
       setGroceryItems((prev) => prev.map((i) => (i.id === id ? { ...i, isBought: willBeBought } : i)));
+      if (persistenceEnabled) {
+        toggleGroceryItem(id, willBeBought).catch(() => {});
+      }
       if (willBeBought) {
         const entry = await recordPurchase(item.name, {
           quantity: item.quantity,
@@ -110,11 +194,71 @@ export const ShoppingList: React.FC<Props> = ({
         setHistory((prev) => [entry, ...prev]);
       }
     },
-    [groceryItems, setGroceryItems, userId]
+    [groceryItems, setGroceryItems, userId, persistenceEnabled]
   );
 
-  const removeItem = (id: string) => setGroceryItems((prev) => prev.filter((i) => i.id !== id));
-  const clearBought = () => setGroceryItems((prev) => prev.filter((i) => !i.isBought));
+  const removeItem = (id: string) => {
+    setGroceryItems((prev) => prev.filter((i) => i.id !== id));
+    if (persistenceEnabled) deleteGroceryItem(id).catch(() => {});
+  };
+
+  const clearBought = () => {
+    setGroceryItems((prev) => prev.filter((i) => !i.isBought));
+    if (persistenceEnabled && activeListId) clearBoughtItems(activeListId).catch(() => {});
+  };
+
+  // --- Liste-handlinger ---
+  const handleCreateList = async () => {
+    if (!userId || !persistenceEnabled) return;
+    const name = newListName.trim() || 'Ny handleliste';
+    const created = await createGroceryList(userId, {
+      name,
+      listDate: newListDate || null,
+      occasion: newListOccasion.trim() || null,
+    });
+    if (created) {
+      setLists((prev) => [created, ...prev]);
+      setActiveListId(created.id);
+      setGroceryItems([]);
+      setShowNewListForm(false);
+      setNewListName('');
+      setNewListOccasion('');
+      setNewListDate(new Date().toISOString().slice(0, 10));
+    }
+  };
+
+  const startRename = () => {
+    if (!activeList) return;
+    setRenameValue(activeList.name);
+    setRenameDate(activeList.listDate || '');
+    setShowRenameForm(true);
+  };
+
+  const handleRename = async () => {
+    if (!activeListId) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    await renameGroceryList(activeListId, { name, listDate: renameDate || null });
+    setLists((prev) => prev.map((l) => (l.id === activeListId ? { ...l, name, listDate: renameDate || null } : l)));
+    setShowRenameForm(false);
+  };
+
+  const handleDeleteList = async () => {
+    if (!activeListId || !activeList) return;
+    if (activeList.isDefault) return; // Ikke slett default-lista
+    if (!confirm(`Slette lista «${activeList.name}»? Alle varer i lista fjernes.`)) return;
+    await deleteGroceryList(activeListId);
+    const remaining = lists.filter((l) => l.id !== activeListId);
+    setLists(remaining);
+    const next = remaining.find((l) => l.isDefault) || remaining[0];
+    setActiveListId(next ? next.id : null);
+    if (!next) setGroceryItems([]);
+  };
+
+  const formatListDate = (iso?: string | null) => {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return iso; }
+  };
 
   // Camera lifecycle
   useEffect(() => {
@@ -303,23 +447,129 @@ export const ShoppingList: React.FC<Props> = ({
         <div className="lg:col-span-2">
           {/* SHOPPING LIST TAB */}
           {activeTab === 'list' && (
-            <div className="card p-5 sm:p-6 animate-fade-in">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="section-title">
-                    <ShoppingCart className="w-5 h-5 text-indigo-500" /> {t.shopping_list}
-                  </h2>
-                  {totalCount > 0 && (
-                    <p className="text-xs text-slate-400 mt-1">
-                      {t.bought_progress.replace('{bought}', String(boughtCount)).replace('{total}', String(totalCount))}
+            <div className="card p-5 sm:p-6 animate-fade-in space-y-4">
+              {/* LIST PICKER – flere navngitte handlelister */}
+              {persistenceEnabled && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                      <ListChecks className="h-3.5 w-3.5" /> Velg liste
                     </p>
+                    <button
+                      onClick={() => setShowNewListForm((v) => !v)}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Ny liste
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {lists.map((l) => {
+                      const isActive = l.id === activeListId;
+                      return (
+                        <button
+                          key={l.id}
+                          onClick={() => setActiveListId(l.id)}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                            isActive
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          {l.occasion ? <Cake className="h-3.5 w-3.5" /> : <ShoppingCart className="h-3.5 w-3.5" />}
+                          <span className="truncate max-w-[180px]">{l.name}</span>
+                          {l.listDate && (
+                            <span className={`text-[10px] ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
+                              · {formatListDate(l.listDate)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {lists.length === 0 && !listLoading && (
+                      <p className="text-xs text-slate-500">Ingen lister enda. Klikk «Ny liste» for å komme i gang.</p>
+                    )}
+                  </div>
+
+                  {showNewListForm && (
+                    <div className="mt-3 rounded-xl bg-white border border-indigo-100 p-3 space-y-2 animate-fade-in">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input
+                          value={newListName}
+                          onChange={(e) => setNewListName(e.target.value)}
+                          placeholder="F.eks. Victoria bursdag"
+                          className="input-field text-sm"
+                        />
+                        <input
+                          type="date"
+                          value={newListDate}
+                          onChange={(e) => setNewListDate(e.target.value)}
+                          className="input-field text-sm"
+                        />
+                        <input
+                          value={newListOccasion}
+                          onChange={(e) => setNewListOccasion(e.target.value)}
+                          placeholder="Anledning (valgfri)"
+                          className="input-field text-sm"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setShowNewListForm(false)} className="text-xs px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">Avbryt</button>
+                        <button onClick={handleCreateList} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-1">
+                          <Save className="h-3.5 w-3.5" /> Lagre liste
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {showRenameForm && activeList && (
+                    <div className="mt-3 rounded-xl bg-white border border-amber-200 p-3 space-y-2 animate-fade-in">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Omdøp lista</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="input-field text-sm" />
+                        <input type="date" value={renameDate} onChange={(e) => setRenameDate(e.target.value)} className="input-field text-sm" />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setShowRenameForm(false)} className="text-xs px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">Avbryt</button>
+                        <button onClick={handleRename} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600">Lagre endringer</button>
+                      </div>
+                    </div>
                   )}
                 </div>
-                {boughtCount > 0 && (
-                  <button onClick={clearBought} className="text-xs font-semibold text-red-500 hover:text-red-700">
-                    {t.clear_bought}
-                  </button>
-                )}
+              )}
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="section-title">
+                    <ShoppingCart className="w-5 h-5 text-indigo-500" /> {activeList?.name || t.shopping_list}
+                  </h2>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                    {activeList?.listDate && (
+                      <span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" /> {formatListDate(activeList.listDate)}</span>
+                    )}
+                    {totalCount > 0 && (
+                      <span>{t.bought_progress.replace('{bought}', String(boughtCount)).replace('{total}', String(totalCount))}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {persistenceEnabled && activeList && (
+                    <>
+                      <button onClick={startRename} title="Omdøp" className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      {!activeList.isDefault && (
+                        <button onClick={handleDeleteList} title="Slett liste" className="p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {boughtCount > 0 && (
+                    <button onClick={clearBought} className="text-xs font-semibold text-red-500 hover:text-red-700">
+                      {t.clear_bought}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {totalCount > 0 && (
