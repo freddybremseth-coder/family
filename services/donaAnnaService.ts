@@ -160,6 +160,8 @@ function envDiagnostics() {
     `Olivia URL konfigurert: ${SUPABASE_STATUS.donaAnnaUrlConfigured ? 'ja' : 'nei'}`,
     `Olivia key konfigurert: ${SUPABASE_STATUS.donaAnnaKeyConfigured ? 'ja' : 'nei'}`,
     `Olivia URL i build: ${SUPABASE_REFS.donaAnna || 'mangler'}`,
+    `Olivia schema: ${SUPABASE_STATUS.donaAnnaSchema || 'olivia'}`,
+    `Gammel Supabase oppdaget: ${SUPABASE_STATUS.donaAnnaLegacyProjectDetected ? 'ja - blokkert' : 'nei'}`,
     `Olivia key-navn: ${SUPABASE_STATUS.donaAnnaResolvedKeyName || 'mangler'}`,
     `Olivia-tabeller appen leser: ${OLIVIA_TABLES.join(', ')}`,
   ];
@@ -213,7 +215,9 @@ export async function fetchDonaAnnaSummary(): Promise<DonaAnnaSummary> {
     trees = direct.trees;
     rowsFound = direct.rowsFound;
   } else {
-    diagnostics.push('Olivia Supabase er ikke konfigurert i denne Vite-builden. Sett VITE_OLIVIA_SUPABASE_URL og VITE_OLIVIA_SUPABASE_ANON_KEY.');
+    diagnostics.push(SUPABASE_STATUS.donaAnnaLegacyProjectDetected
+      ? 'Olivia Supabase peker på gammel gratis Supabase og er blokkert. Sett VITE_OLIVIA_SUPABASE_URL til RealtyFlow-prosjektet og VITE_OLIVIA_SUPABASE_SCHEMA=olivia.'
+      : 'Olivia Supabase er ikke konfigurert i denne Vite-builden. Sett VITE_OLIVIA_SUPABASE_URL og VITE_OLIVIA_SUPABASE_ANON_KEY.');
   }
 
   const deduped = new Map<string, DonaAnnaOperation>();
