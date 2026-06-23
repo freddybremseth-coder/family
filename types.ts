@@ -223,3 +223,64 @@ export interface FarmOperation {
   expense: number;
   currency: Currency;
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Mondeo Eiendom AS – salgskontrakt med Odin Jacobsen / Nordic Invest AS
+// Selger: Extrade Holding AS (eier aksjene inntil fullt oppgjør)
+// ────────────────────────────────────────────────────────────────────
+export interface MondeoLoanSettings {
+  id: string;
+  initialPrincipal: number;             // 4 800 000 NOK
+  startDate: string;                    // dato kontrakten ble signert
+  // Rente
+  fixedAnnualRatePct?: number;          // 9 % avtalt – brukes hvis useFixedRate=true
+  useFixedRate?: boolean;
+  marginPct: number;                    // (legacy) margin over Norges Bank
+  norgesBankRatePct: number;            // (legacy) referanse-rente
+  norgesBankRateObservedAt?: string;
+  // Betalingsstart + minimum
+  interestStartDate?: string;           // 2026-06-01
+  minMonthlyPayment?: number;           // 33 000 NOK
+  // Partsinfo
+  buyerName?: string;                   // Odin Jacobsen
+  buyerCompany?: string;                // Nordic Invest AS
+  buyerOrgNumber?: string;
+  buyerEmail?: string;
+  sellerEntity?: string;                // Extrade Holding AS
+  sellerOrgNumber?: string;
+  // Kontrakt
+  contractStoragePath?: string;         // path i Supabase storage
+  contractFileName?: string;
+  notes?: string;
+}
+
+export interface MondeoLoanPayment {
+  id: string;
+  date: string;
+  amount: number;
+  note?: string;
+  postedTransactionId?: string;
+}
+
+export interface MondeoKpiAdjustment {
+  id: string;
+  year: number;                         // 2026, 2027, …
+  kpiPct: number;                       // f.eks. 3.2
+  appliedAt?: string;                   // når justeringen ble bokført
+  principalBefore?: number;
+  principalAfter?: number;
+  note?: string;
+}
+
+export interface MondeoLedgerRow {
+  id: string;
+  nr: number;
+  fromDate: string;
+  date: string;
+  openingBalance: number;
+  interestDue: number;
+  paid: number;
+  principalChange: number;              // positiv = avdrag, negativ = lånet øker
+  closingBalance: number;
+  status: 'Avdrag' | 'Lånet øker' | 'KPI-justering' | 'Manglende min.';
+}
