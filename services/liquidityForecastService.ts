@@ -278,9 +278,32 @@ export async function fetchLiquidityForecast(members: FamilyMember[], accounts: 
   });
   try {
     const realtyflowEvents = await fetchRealtyflowCommissionEvents();
-    realtyflowEvents.filter((event) => event.payoutDate && event.payoutDate >= today && event.payoutDate <= endDate).forEach((event) => {
-      events.push({ id: `realtyflow-${event.id}`, date: event.payoutDate, title: `${event.customerName} · ${event.brand}${event.commissionNok > 0 ? '' : ' · mangler provisjon'}`, amount: event.commissionNok, currency: 'NOK', type: TransactionType.INCOME, source: 'realtyflow_commission', confidence: 'estimated' });
-    });
+    realtyflowEvents
+      // Filtrer ut allerede betalte provisjoner – de er regnskapsført via transaksjoner.
+      // Behold kun forventede utbetalinger (recognized/pending/expected) innen horisonten.
+      .filter((event) => {
+        if (!event.payoutDate || event.payoutDate < today || event.payoutDate > endDate) return false;
+        const status = String(event.status || '').toLowerCase();
+        if (status === 'paid' || status === 'cancelled' || status === 'canceled') return false;
+        return true;
+      })
+      .forEach((event) => {
+        const status = String(event.status || '').toLowerCase();
+        // 'recognized' = provisjon opptjent, venter utbetaling → middels konfidens
+        // 'pending' / ukjent = lav konfidens
+        const isRecognized = status === 'recognized' || status === 'expected';
+        const tag = isRecognized ? 'forventet utbetaling' : 'avventer';
+        events.push({
+          id: `realtyflow-${event.id}`,
+          date: event.payoutDate,
+          title: `${event.customerName} · ${event.brand} · ${tag}${event.commissionNok > 0 ? '' : ' · mangler provisjon'}`,
+          amount: event.commissionNok,
+          currency: 'NOK',
+          type: TransactionType.INCOME,
+          source: 'realtyflow_commission',
+          confidence: 'estimated',
+        });
+      });
   } catch (err) { console.warn('[liquidityForecast] RealtyFlow commission forecast failed', err); }
   const sorted = events.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
   const openingBalanceNok = bankBalanceNok(accounts);
