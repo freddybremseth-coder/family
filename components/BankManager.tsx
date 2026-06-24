@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { BankAccount, Transaction, Currency } from '../types';
-import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle2, Upload, FileText, Loader2 } from 'lucide-react';
+import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle2, Upload, FileText, Loader2, Pencil } from 'lucide-react';
 import { deleteBankAccountFromSupabase, syncBankAccounts } from '../services/familyPersistenceService';
 import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
 import { extractClosingBalance, PdfBalanceResult } from '../services/bankBalanceFromPdf';
@@ -92,6 +92,50 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
   const [pdfPreview, setPdfPreview] = useState<{ accountId: string; result: PdfBalanceResult; oldBalance: number; selectedIndex: number } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Manuell saldo-endring
+  const [editingAccount, setEditingAccount] = useState<{ id: string; name: string; balance: string; currency: Currency } | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const startEdit = (account: any) => {
+    setEditingAccount({
+      id: account.id,
+      name: accountDisplayName(account),
+      balance: String(account.balance ?? 0),
+      currency: (account.currency || 'NOK') as Currency,
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingAccount) return;
+    setEditSaving(true);
+    setSaveStatus(null);
+    try {
+      const acc = bankAccounts.find(a => a.id === editingAccount.id) as any;
+      if (!acc) throw new Error('Konto ikke funnet');
+      const updated: BankAccount & any = {
+        ...acc,
+        balance: Number(editingAccount.balance) || 0,
+        currency: editingAccount.currency,
+        lastReconciledDate: new Date().toISOString().slice(0, 10),
+      };
+      const uid = await resolveUserId(userId);
+      if (uid) {
+        await upsertBankAccountDirect(uid, updated);
+        const next = bankAccounts.map(a => a.id === updated.id ? updated : a);
+        setBankAccounts(next);
+        await syncBankAccounts(uid, next);
+        setSaveStatus({ type: 'ok', message: `Saldo oppdatert manuelt: ${updated.balance} ${updated.currency}` });
+      } else {
+        setBankAccounts(bankAccounts.map(a => a.id === updated.id ? updated : a));
+      }
+      setEditingAccount(null);
+    } catch (err: any) {
+      setSaveStatus({ type: 'error', message: err?.message || 'Klarte ikke å lagre saldo' });
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const requestPdfUpload = (accountId: string) => {
     setPdfTargetAccountId(accountId);
@@ -268,6 +312,55 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
           </div>
         )}
 
+        {editingAccount && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !editSaving && setEditingAccount(null)} />
+            <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl p-6">
+              <button onClick={() => !editSaving && setEditingAccount(null)} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                <X className="w-4 h-4" />
+              </button>
+              <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-500" /> Rediger saldo
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">{editingAccount.name}</p>
+
+              <div className="space-y-3 mb-5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Saldo</label>
+                  <input
+                    type="number"
+                    value={editingAccount.balance}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, balance: e.target.value })}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                    autoFocus
+                    className="input-field text-lg font-bold"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Valuta</label>
+                  <select
+                    value={editingAccount.currency}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, currency: e.target.value as Currency })}
+                    className="input-field"
+                  >
+                    <option value="NOK">NOK (kr)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setEditingAccount(null)} disabled={editSaving} className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50">Avbryt</button>
+                <button onClick={saveEdit} disabled={editSaving} className="btn-gradient text-sm">
+                  {editSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {editSaving ? 'Lagrer…' : 'Lagre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {pdfPreview && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setPdfPreview(null)} />
@@ -324,6 +417,9 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
                   <div className="flex items-start justify-between mb-6">
                     <p className="text-[11px] uppercase tracking-widest font-bold text-white/85">{accountDisplayName(account)}</p>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEdit(account)} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors" title="Rediger saldo">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
                       <button onClick={() => requestPdfUpload(account.id)} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors" title="Last opp kontoutskrift">
                         <Upload className="w-3.5 h-3.5" />
                       </button>
@@ -332,11 +428,18 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
                       </button>
                     </div>
                   </div>
-                  <p className="text-3xl font-extrabold tracking-tight">{formatCurrency(Number(account.balance || 0), account.currency)}</p>
-                  <div className="flex items-center gap-1.5 mt-3 text-[11px] text-white/80"><TrendingUp className="w-3.5 h-3.5" /><span>Sist oppdatert {account.lastReconciledDate || new Date().toISOString().slice(0, 10)}</span></div>
-                  <button onClick={() => requestPdfUpload(account.id)} className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
-                    <FileText className="w-3 h-3" /> Last opp kontoutskrift
+                  <button onClick={() => startEdit(account)} className="text-left w-full" title="Klikk for å redigere saldo">
+                    <p className="text-3xl font-extrabold tracking-tight hover:underline decoration-white/40">{formatCurrency(Number(account.balance || 0), account.currency)}</p>
                   </button>
+                  <div className="flex items-center gap-1.5 mt-3 text-[11px] text-white/80"><TrendingUp className="w-3.5 h-3.5" /><span>Sist oppdatert {account.lastReconciledDate || new Date().toISOString().slice(0, 10)}</span></div>
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    <button onClick={() => startEdit(account)} className="flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                      <Pencil className="w-3 h-3" /> Rediger
+                    </button>
+                    <button onClick={() => requestPdfUpload(account.id)} className="flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                      <FileText className="w-3 h-3" /> PDF
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
