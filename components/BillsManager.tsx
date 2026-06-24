@@ -1,16 +1,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Bill, Currency } from '../types';
-import { 
-  Calendar, CheckCircle2, AlertTriangle, CreditCard, Activity, TrendingUp, TrendingDown, 
-  ShieldAlert, Check, RotateCcw, Plus, Repeat, List, Clock, FileSearch, RefreshCw, 
-  Sparkles, X, Wand2, AlertCircle, Zap, ShieldCheck, Filter, BrainCircuit, ChevronRight
+import { Bill, Currency, Transaction } from '../types';
+import {
+  Calendar, CheckCircle2, AlertTriangle, CreditCard, Activity, TrendingUp, TrendingDown,
+  ShieldAlert, Check, RotateCcw, Plus, Repeat, List, Clock, FileSearch, RefreshCw,
+  Sparkles, X, Wand2, AlertCircle, Zap, ShieldCheck, Filter, BrainCircuit, ChevronRight,
+  TimerReset
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { getBillsSmartAdvice } from '../services/geminiService';
+import { detectRecurringBills, billFromSuggestion, BillSuggestion } from '../services/recurringBillsDetector';
 
 interface Props {
   bills: Bill[];
   setBills: React.Dispatch<React.SetStateAction<Bill[]>>;
+  transactions?: Transaction[];
 }
 
 const formatCurrency = (amount: number, currency: Currency) => {
@@ -20,12 +23,44 @@ const formatCurrency = (amount: number, currency: Currency) => {
 
 type BillStatus = 'paid' | 'overdue' | 'pending';
 
-export const BillsManager: React.FC<Props> = ({ bills, setBills }) => {
+export const BillsManager: React.FC<Props> = ({ bills, setBills, transactions = [] }) => {
   const [filterMode, setFilterMode] = useState<'alle' | 'ubetalte' | 'faste'>('ubetalte');
   const [confirmingBillId, setConfirmingBillId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [aiAdvice, setAiAdvice] = useState<{insight: string, action: string, severity: string}[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
+
+  const billSuggestions = useMemo<BillSuggestion[]>(
+    () => transactions.length > 0 ? detectRecurringBills(transactions, bills) : [],
+    [transactions, bills],
+  );
+  const newSuggestions = billSuggestions.filter(s => !s.matchesExisting);
+
+  const acceptSuggestions = (suggestionIds?: Set<string>) => {
+    const ids = suggestionIds ?? selectedSuggestionIds;
+    if (ids.size === 0) return;
+    const toAdd = billSuggestions
+      .filter(s => ids.has(s.id) && !s.matchesExisting)
+      .map(billFromSuggestion);
+    setBills(prev => [...toAdd, ...prev]);
+    setSelectedSuggestionIds(new Set());
+    setShowSuggestions(false);
+  };
+
+  const acceptAllNew = () => {
+    const all = new Set(newSuggestions.map(s => s.id));
+    acceptSuggestions(all);
+  };
+
+  const toggleSuggestion = (id: string) => {
+    setSelectedSuggestionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   
   const [newBill, setNewBill] = useState<Partial<Bill>>({
     name: '',
@@ -226,13 +261,84 @@ export const BillsManager: React.FC<Props> = ({ bills, setBills }) => {
               </div>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              {newSuggestions.length > 0 && (
+                <CyberButton onClick={() => setShowSuggestions(true)} variant="secondary" className="text-[10px] py-1.5 px-4 border-cyan-500/40 text-cyan-300">
+                  <Wand2 className="w-3 h-3 mr-1" /> Foreslå fra historikk ({newSuggestions.length})
+                </CyberButton>
+              )}
               <CyberButton onClick={() => setShowAddForm(!showAddForm)} variant="secondary" className="text-[10px] py-1.5 px-4">
                  {showAddForm ? <X className="w-3 h-3 mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
                  {showAddForm ? 'Lukk' : 'Ny regning'}
               </CyberButton>
             </div>
           </div>
+
+          {/* SUGGESTIONS MODAL */}
+          {showSuggestions && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowSuggestions(false)} />
+              <div className="glass-panel relative w-full max-w-2xl max-h-[85vh] flex flex-col border-2 border-cyan-500/40 bg-slate-950">
+                <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Wand2 className="w-4 h-4 text-cyan-400" /> Foreslåtte regninger fra historikk
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-1">Mønstre detektert i {transactions.length} transaksjoner. Velg hvilke som skal legges til.</p>
+                  </div>
+                  <button onClick={() => setShowSuggestions(false)} className="p-1 rounded hover:bg-white/10 text-slate-400">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {newSuggestions.length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-10">Ingen nye forslag — alle gjenkjente regninger er allerede lagt til.</p>
+                  )}
+                  {newSuggestions.map(s => {
+                    const selected = selectedSuggestionIds.has(s.id);
+                    return (
+                      <label
+                        key={s.id}
+                        className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-all ${selected ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/10 hover:border-white/20 bg-white/5'}`}
+                      >
+                        <input type="checkbox" checked={selected} onChange={() => toggleSuggestion(s.id)} className="mt-1" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-bold text-white text-sm">{s.name}</p>
+                            <p className="font-mono font-black text-cyan-300 text-sm">{formatCurrency(s.amount, s.currency)}</p>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            {s.category} · {s.cadence === 'monthly' ? 'månedlig' : s.cadence === 'quarterly' ? 'kvartalsvis' : '2-månedlig'} · forfall ca dag {s.dueDay}
+                          </p>
+                          <p className="text-[10px] text-slate-500 mt-0.5 italic">{s.rationale}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="p-4 border-t border-white/10 flex flex-col sm:flex-row gap-2 justify-between items-center">
+                  <p className="text-[11px] text-slate-400">
+                    {selectedSuggestionIds.size} av {newSuggestions.length} valgt
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowSuggestions(false)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-300 border border-white/10 hover:bg-white/5">
+                      Avbryt
+                    </button>
+                    <button onClick={acceptAllNew} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white bg-cyan-600 hover:bg-cyan-700 rounded">
+                      Legg til alle ({newSuggestions.length})
+                    </button>
+                    <button
+                      onClick={() => acceptSuggestions()}
+                      disabled={selectedSuggestionIds.size === 0}
+                      className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Legg til valgte
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showAddForm && (
             <div className="glass-panel p-6 border border-magenta-500/30 mb-8 bg-magenta-500/5 animate-in slide-in-from-top-4">

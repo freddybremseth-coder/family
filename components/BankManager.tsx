@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { BankAccount, Transaction, Currency } from '../types';
-import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle2, Upload, FileText, Loader2 } from 'lucide-react';
 import { deleteBankAccountFromSupabase, syncBankAccounts } from '../services/familyPersistenceService';
 import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
+import { extractClosingBalance, PdfBalanceResult } from '../services/bankBalanceFromPdf';
 
 interface Props {
   bankAccounts: BankAccount[];
@@ -85,6 +86,70 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
   const [currency, setCurrency] = useState<Currency>('NOK');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'ok' | 'error'; message: string } | null>(null);
+
+  const [pdfTargetAccountId, setPdfTargetAccountId] = useState<string | null>(null);
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<{ accountId: string; result: PdfBalanceResult; oldBalance: number } | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const requestPdfUpload = (accountId: string) => {
+    setPdfTargetAccountId(accountId);
+    setPdfError(null);
+    setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+
+  const handlePdfSelected = async (file: File | undefined) => {
+    if (!file || !pdfTargetAccountId) return;
+    setPdfParsing(true);
+    setPdfError(null);
+    try {
+      const result = await extractClosingBalance(file);
+      if (!result) {
+        setPdfError('Fant ikke sluttsaldo i PDF-en. Sjekk at det er en kontoutskrift med "Utgående balanse" eller "Closing balance".');
+        return;
+      }
+      const account = bankAccounts.find(a => a.id === pdfTargetAccountId);
+      setPdfPreview({
+        accountId: pdfTargetAccountId,
+        result,
+        oldBalance: Number(account?.balance || 0),
+      });
+    } catch (err: any) {
+      setPdfError(err?.message || 'Klarte ikke å lese PDF-en.');
+    } finally {
+      setPdfParsing(false);
+      setPdfTargetAccountId(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const applyPdfBalance = async () => {
+    if (!pdfPreview) return;
+    const acc = bankAccounts.find(a => a.id === pdfPreview.accountId) as any;
+    if (!acc) return;
+    const updated: BankAccount & any = {
+      ...acc,
+      balance: pdfPreview.result.amount,
+      currency: pdfPreview.result.currency,
+      lastReconciledDate: new Date().toISOString().slice(0, 10),
+    };
+    const uid = await resolveUserId(userId);
+    if (uid) {
+      try {
+        await upsertBankAccountDirect(uid, updated);
+        const next = bankAccounts.map(a => a.id === updated.id ? updated : a);
+        setBankAccounts(next);
+        await syncBankAccounts(uid, next);
+        setSaveStatus({ type: 'ok', message: `Saldo oppdatert fra PDF: ${updated.balance} ${updated.currency}` });
+      } catch (err: any) {
+        setSaveStatus({ type: 'error', message: err?.message || 'Klarte ikke å lagre ny saldo.' });
+      }
+    } else {
+      setBankAccounts(bankAccounts.map(a => a.id === updated.id ? updated : a));
+    }
+    setPdfPreview(null);
+  };
 
   const totalNok = bankAccounts.reduce(
     (s, a) => s + (a.currency === 'NOK' ? Number(a.balance || 0) : Number(a.balance || 0) * 11.55),
@@ -176,6 +241,59 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
           </div>
         )}
 
+        {/* Skjult filinput for PDF-upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => handlePdfSelected(e.target.files?.[0])}
+        />
+
+        {pdfParsing && (
+          <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800 flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Leser PDF og søker etter sluttsaldo…
+          </div>
+        )}
+
+        {pdfError && (
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">PDF-feil</p>
+              <p>{pdfError}</p>
+            </div>
+          </div>
+        )}
+
+        {pdfPreview && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setPdfPreview(null)} />
+            <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl p-6">
+              <button onClick={() => setPdfPreview(null)} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                <X className="w-4 h-4" />
+              </button>
+              <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-500" /> Sluttsaldo fra PDF</h3>
+              <p className="text-xs text-slate-500 mb-4">Fant en sluttsaldo i kontoutskriften. Bekreft for å oppdatere kontoen.</p>
+              <div className="space-y-3 mb-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Nåværende saldo</p>
+                  <p className="text-lg font-bold text-slate-900">{formatCurrency(pdfPreview.oldBalance, currency)}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-bold">Ny saldo fra PDF</p>
+                  <p className="text-2xl font-extrabold text-emerald-900">{formatCurrency(pdfPreview.result.amount, pdfPreview.result.currency)}</p>
+                  <p className="text-[10px] text-emerald-700 mt-1 italic">Kilde: {pdfPreview.result.source.replace(/_/g, ' ')} · «{pdfPreview.result.rawMatch}»</p>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setPdfPreview(null)} className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg">Avbryt</button>
+                <button onClick={applyPdfBalance} className="btn-gradient text-sm"><CheckCircle2 className="w-4 h-4" /> Oppdater saldo</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {bankAccounts.length === 0 ? (
           <div className="empty-state"><div className="empty-state-icon"><Banknote className="w-9 h-9" /></div><p className="font-semibold text-slate-700">Ingen kontoer enda</p><p className="text-sm mt-1">Legg til din første bankkonto for å se total saldo.</p></div>
         ) : (
@@ -184,9 +302,22 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
               <div key={account.id} className="relative rounded-2xl p-5 text-white overflow-hidden shadow-lg group" style={{ background: accountGradients[idx % accountGradients.length] }}>
                 <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl pointer-events-none" style={{ background: 'rgba(255,255,255,0.20)' }} />
                 <div className="relative">
-                  <div className="flex items-start justify-between mb-6"><p className="text-[11px] uppercase tracking-widest font-bold text-white/85">{accountDisplayName(account)}</p><button onClick={() => removeAccount(account.id)} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors opacity-0 group-hover:opacity-100" title="Slett"><Trash2 className="w-3.5 h-3.5" /></button></div>
+                  <div className="flex items-start justify-between mb-6">
+                    <p className="text-[11px] uppercase tracking-widest font-bold text-white/85">{accountDisplayName(account)}</p>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => requestPdfUpload(account.id)} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors" title="Last opp kontoutskrift">
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => removeAccount(account.id)} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors" title="Slett">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                   <p className="text-3xl font-extrabold tracking-tight">{formatCurrency(Number(account.balance || 0), account.currency)}</p>
                   <div className="flex items-center gap-1.5 mt-3 text-[11px] text-white/80"><TrendingUp className="w-3.5 h-3.5" /><span>Sist oppdatert {account.lastReconciledDate || new Date().toISOString().slice(0, 10)}</span></div>
+                  <button onClick={() => requestPdfUpload(account.id)} className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                    <FileText className="w-3 h-3" /> Last opp kontoutskrift
+                  </button>
                 </div>
               </div>
             ))}
