@@ -6,14 +6,29 @@
 -- Idempotent: ON CONFLICT (id) DO NOTHING.
 -- ===================================================================
 
+-- Tips: Kjør først for å se hvilke brukere som finnes:
+--   select id, email from auth.users order by created_at;
+--
+-- Sett deretter user_id under (hentet fra konsoll: 0fe68471-6c3e-4745-b8cc-25fdc4d5a8ee)
+-- eller bruk e-post-oppslag.
+
 do $$
 declare
   uid uuid;
 begin
-  -- Finn innlogget bruker (juster e-post om nødvendig)
-  select id into uid from auth.users where email = 'mail@extrade.es' limit 1;
+  -- Variant A (anbefalt): direkte user_id fra konsoll
+  uid := '0fe68471-6c3e-4745-b8cc-25fdc4d5a8ee'::uuid;
+
+  -- Variant B (bytt ut over og bruk denne): finn etter e-post
+  -- select id into uid from auth.users where email = 'din@epost.no' limit 1;
+
   if uid is null then
-    raise exception 'Fant ikke bruker mail@extrade.es i auth.users. Juster e-posten over.';
+    raise exception 'user_id er null – sett ID manuelt eller bruk e-post-oppslag (Variant B).';
+  end if;
+
+  -- Verifiser at brukeren finnes
+  if not exists (select 1 from auth.users where id = uid) then
+    raise exception 'Bruker med id % finnes ikke i auth.users. Kjør: select id, email from auth.users; for å finne riktig ID.', uid;
   end if;
 
   insert into family.transactions
