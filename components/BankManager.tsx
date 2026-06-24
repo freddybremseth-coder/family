@@ -89,7 +89,7 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
 
   const [pdfTargetAccountId, setPdfTargetAccountId] = useState<string | null>(null);
   const [pdfParsing, setPdfParsing] = useState(false);
-  const [pdfPreview, setPdfPreview] = useState<{ accountId: string; result: PdfBalanceResult; oldBalance: number } | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ accountId: string; result: PdfBalanceResult; oldBalance: number; selectedIndex: number } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,6 +114,7 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
         accountId: pdfTargetAccountId,
         result,
         oldBalance: Number(account?.balance || 0),
+        selectedIndex: 0,
       });
     } catch (err: any) {
       setPdfError(err?.message || 'Klarte ikke å lese PDF-en.');
@@ -128,10 +129,11 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
     if (!pdfPreview) return;
     const acc = bankAccounts.find(a => a.id === pdfPreview.accountId) as any;
     if (!acc) return;
+    const chosen = pdfPreview.result.candidates[pdfPreview.selectedIndex] || pdfPreview.result;
     const updated: BankAccount & any = {
       ...acc,
-      balance: pdfPreview.result.amount,
-      currency: pdfPreview.result.currency,
+      balance: chosen.amount,
+      currency: chosen.currency,
       lastReconciledDate: new Date().toISOString().slice(0, 10),
     };
     const uid = await resolveUserId(userId);
@@ -269,23 +271,40 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
         {pdfPreview && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setPdfPreview(null)} />
-            <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl p-6">
+            <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
               <button onClick={() => setPdfPreview(null)} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
                 <X className="w-4 h-4" />
               </button>
-              <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-500" /> Sluttsaldo fra PDF</h3>
-              <p className="text-xs text-slate-500 mb-4">Fant en sluttsaldo i kontoutskriften. Bekreft for å oppdatere kontoen.</p>
-              <div className="space-y-3 mb-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Nåværende saldo</p>
-                  <p className="text-lg font-bold text-slate-900">{formatCurrency(pdfPreview.oldBalance, currency)}</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-bold">Ny saldo fra PDF</p>
-                  <p className="text-2xl font-extrabold text-emerald-900">{formatCurrency(pdfPreview.result.amount, pdfPreview.result.currency)}</p>
-                  <p className="text-[10px] text-emerald-700 mt-1 italic">Kilde: {pdfPreview.result.source.replace(/_/g, ' ')} · «{pdfPreview.result.rawMatch}»</p>
-                </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-500" /> Saldo fra kontoutskrift</h3>
+              <p className="text-xs text-slate-500 mb-4">Fant {pdfPreview.result.candidates.length} mulig{pdfPreview.result.candidates.length === 1 ? '' : 'e'} saldo{pdfPreview.result.candidates.length === 1 ? '' : 'er'}. Velg den som passer kontoen.</p>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 mb-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Nåværende saldo</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(pdfPreview.oldBalance, currency)}</p>
               </div>
+
+              <div className="space-y-2 mb-4">
+                {pdfPreview.result.candidates.map((c, idx) => {
+                  const selected = pdfPreview.selectedIndex === idx;
+                  return (
+                    <button
+                      key={`${c.source}-${idx}`}
+                      onClick={() => setPdfPreview({ ...pdfPreview, selectedIndex: idx })}
+                      className={`w-full text-left rounded-xl border p-3 transition-all ${selected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`text-[11px] uppercase tracking-wide font-bold ${selected ? 'text-emerald-700' : 'text-slate-600'}`}>{c.label}</p>
+                        {selected && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                      </div>
+                      <p className={`text-xl font-extrabold mt-1 ${selected ? 'text-emerald-900' : 'text-slate-900'}`}>
+                        {formatCurrency(c.amount, c.currency)}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-1 italic truncate">«{c.rawMatch}»</p>
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="flex gap-2 justify-end">
                 <button onClick={() => setPdfPreview(null)} className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg">Avbryt</button>
                 <button onClick={applyPdfBalance} className="btn-gradient text-sm"><CheckCircle2 className="w-4 h-4" /> Oppdater saldo</button>
