@@ -16,6 +16,9 @@ export interface PdfBalanceResult {
 async function readPdfText(file: File): Promise<string> {
   // Dynamic import slik at pdfjs-dist bare lastes når brukeren trenger det
   const pdfjs = await import('pdfjs-dist');
+  // pdfjs trenger worker — Vite kan importere worker-filen med ?url-suffiks
+  const worker = await import('pdfjs-dist/build/pdf.worker.mjs?url');
+  (pdfjs as any).GlobalWorkerOptions.workerSrc = (worker as any).default;
   const buf = await file.arrayBuffer();
   const doc = await (pdfjs as any).getDocument({ data: buf }).promise;
   let text = '';
