@@ -158,7 +158,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
               {/* EKSTRA BIDRAG */}
               <div className="space-y-3 border-t border-white/5 pt-6">
                 <div className="flex items-center justify-between">
-                  <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Sparkles className="w-3 h-3 text-yellow-400" /> Ekstra bidrag (provisjon, renter, depositum)</label>
+                  <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Ekstra bidrag (provisjon, renter, depositum)</label>
                   <button type="button" onClick={addContribution} className="text-[10px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 flex items-center gap-1"><Plus className="w-3 h-3" /> Legg til</button>
                 </div>
                 {(editingMember.extraContributions || []).length === 0 && (
@@ -206,15 +206,12 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
 
                 {/* EKSTRA BIDRAG */}
                 {(member.extraContributions || []).map(c => (
-                  <div key={c.id} className="flex justify-between items-center p-3 bg-yellow-500/5 border border-yellow-500/20">
-                    <div className="flex items-center gap-2 text-yellow-300 min-w-0">
-                      <Sparkles className="w-3 h-3 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-[9px] uppercase font-black truncate">{c.label}</p>
-                        <p className="text-[8px] text-yellow-500/60 font-mono uppercase">{c.frequency === 'monthly' ? 'pr mnd' : c.frequency === 'annual' ? 'pr år' : 'engangs'}</p>
-                      </div>
+                  <div key={c.id} className="flex justify-between items-center p-3 bg-fuchsia-500/10 border border-fuchsia-500/30">
+                    <div className="min-w-0">
+                      <p className="text-[9px] uppercase font-black text-fuchsia-200 truncate">{c.label}</p>
+                      <p className="text-[8px] text-fuchsia-300 font-mono uppercase">{c.frequency === 'monthly' ? 'pr mnd' : c.frequency === 'annual' ? 'pr år' : 'engangs'}</p>
                     </div>
-                    <span className="text-sm font-black text-yellow-300 font-mono shrink-0">{formatCurrency(c.amount, lang)}</span>
+                    <span className="text-sm font-black text-fuchsia-100 font-mono shrink-0 ml-3">{formatCurrency(c.amount, lang)}</span>
                   </div>
                 ))}
 
