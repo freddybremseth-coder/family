@@ -89,6 +89,15 @@ export const NetWorthOverview: React.FC<Props> = ({ bankAccounts, assets, realEs
     setDebtAmount('');
   };
 
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Visuelt highlight i 1.5 sek
+    el.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-2', 'transition');
+    setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-2'), 1500);
+  };
+
   return (
     <div className="space-y-6">
       <section className="card p-5 md:p-6">
@@ -105,34 +114,50 @@ export const NetWorthOverview: React.FC<Props> = ({ bankAccounts, assets, realEs
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Nettoformue" value={formatNOK(summary.netWorth)} symbol="kr" />
-        <StatCard title="Brutto eiendeler" value={formatNOK(summary.grossAssets)} symbol="+" />
-        <StatCard title="Gjeld" value={formatNOK(summary.debtValue)} symbol="−" />
-        <StatCard title="Mondeo utestående" value={formatNOK(mondeoBalance)} symbol="M" />
+        <button type="button" onClick={() => scrollToSection('section-bankkontoer')} className="text-left transition hover:scale-[1.01]">
+          <StatCard title="Nettoformue" value={formatNOK(summary.netWorth)} symbol="kr" />
+        </button>
+        <button type="button" onClick={() => scrollToSection('section-eiendeler')} className="text-left transition hover:scale-[1.01]">
+          <StatCard title="Brutto eiendeler" value={formatNOK(summary.grossAssets)} symbol="+" />
+        </button>
+        <button type="button" onClick={() => scrollToSection('section-gjeld')} className="text-left transition hover:scale-[1.01]">
+          <StatCard title="Gjeld" value={formatNOK(summary.debtValue)} symbol="−" />
+        </button>
+        <button type="button" onClick={() => scrollToSection('section-mondeo')} className="text-left transition hover:scale-[1.01]">
+          <StatCard title="Mondeo utestående" value={formatNOK(mondeoBalance)} symbol="M" />
+        </button>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="card p-5 xl:col-span-2">
           <h2 className="text-xl font-bold">Fordeling av verdier</h2>
-          <p className="mt-1 text-sm text-slate-500">Mondeo Eiendom AS føres som utestående lånesaldo. Når kjøper betaler ned, reduseres verdien hos dere.</p>
+          <p className="mt-1 text-sm text-slate-500">Klikk på en rad for å hoppe til detaljene under. Mondeo Eiendom AS føres som utestående lånesaldo — når kjøper betaler ned, reduseres verdien hos dere.</p>
           <div className="mt-5 space-y-3">
-            {[
-              ['Bankkontoer', summary.bankValue],
-              ['Registrerte eiendeler', summary.assetValue],
-              ['Mondeo Eiendom AS, utestående', mondeoBalance],
-              ['Forventede eiendomsprovisjoner', summary.expectedCommission],
-            ].map(([label, value]: any) => (
-              <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4">
+            {([
+              { label: 'Bankkontoer',                       value: summary.bankValue,         target: 'section-bankkontoer' },
+              { label: 'Registrerte eiendeler',             value: summary.assetValue,        target: 'section-eiendeler' },
+              { label: 'Mondeo Eiendom AS, utestående',     value: mondeoBalance,             target: 'section-mondeo' },
+              { label: 'Forventede eiendomsprovisjoner',    value: summary.expectedCommission, target: 'section-provisjoner' },
+            ] as const).map(row => (
+              <button
+                key={row.label}
+                type="button"
+                onClick={() => scrollToSection(row.target)}
+                className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/30 hover:shadow-sm"
+              >
                 <div className="flex items-center justify-between gap-4">
-                  <p className="font-semibold text-slate-700">{label}</p>
-                  <p className="font-bold text-slate-900">{formatNOK(value)}</p>
+                  <p className="font-semibold text-slate-700 flex items-center gap-2">
+                    {row.label}
+                    <span className="text-xs text-indigo-500 opacity-0 group-hover:opacity-100">→</span>
+                  </p>
+                  <p className="font-bold text-slate-900">{formatNOK(row.value)}</p>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
 
-        <div className="card p-5">
+        <div id="section-gjeld" className="card p-5 scroll-mt-24">
           <h2 className="text-xl font-bold">Legg inn gjeld</h2>
           <p className="mt-1 text-sm text-slate-500">Gjeld trekkes fra nettoformuen.</p>
           <div className="mt-5 space-y-3">
@@ -151,8 +176,23 @@ export const NetWorthOverview: React.FC<Props> = ({ bankAccounts, assets, realEs
         </div>
       </section>
 
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div id="section-mondeo" className="card p-5 scroll-mt-24">
+          <h2 className="text-xl font-bold flex items-center gap-2"><Building2 className="h-5 w-5 text-amber-500" /> Mondeo Eiendom AS — utestående</h2>
+          <p className="mt-1 text-sm text-slate-500">Selgerkreditt til Odin Jacobsen / Nordic Invest AS. Saldo oppdateres etter hver innbetaling.</p>
+          <p className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">{formatNOK(mondeoBalance)}</p>
+          <p className="mt-1 text-xs text-slate-500">Detaljer i Forretning → Mondeo Lån</p>
+        </div>
+        <div id="section-provisjoner" className="card p-5 scroll-mt-24">
+          <h2 className="text-xl font-bold flex items-center gap-2"><Banknote className="h-5 w-5 text-emerald-500" /> Forventede eiendomsprovisjoner</h2>
+          <p className="mt-1 text-sm text-slate-500">Provisjoner fra RealtyFlow Pro som ikke er utbetalt enda. Konfidens: estimert.</p>
+          <p className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">{formatNOK(summary.expectedCommission)}</p>
+          <p className="mt-1 text-xs text-slate-500">Detaljer i Forretning → Eiendom</p>
+        </div>
+      </section>
+
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="card p-5">
+        <div id="section-bankkontoer" className="card p-5 scroll-mt-24">
           <h2 className="text-xl font-bold">Bankkontoer</h2>
           <div className="mt-4 space-y-2">
             {bankAccounts.length === 0 ? <p className="text-sm text-slate-500">Ingen bankkontoer registrert ennå.</p> : bankAccounts.map((account: any) => {
@@ -173,7 +213,7 @@ export const NetWorthOverview: React.FC<Props> = ({ bankAccounts, assets, realEs
             })}
           </div>
         </div>
-        <div className="card p-5">
+        <div id="section-eiendeler" className="card p-5 scroll-mt-24">
           <h2 className="text-xl font-bold">Eiendeler</h2>
           <div className="mt-4 space-y-2">
             {assets.length === 0 ? <p className="text-sm text-slate-500">Ingen biler, hus, tomter eller andre eiendeler registrert ennå.</p> : assets.map(asset => (

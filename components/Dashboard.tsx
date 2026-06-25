@@ -22,6 +22,7 @@ interface Props {
   afterSales?: AfterSaleCommission[];
   farmOps?: FarmOperation[];
   bills?: Bill[];
+  onNavigate?: (tab: string) => void;
 }
 
 type Debt = { id: string; name: string; amount: number; note?: string };
@@ -32,12 +33,16 @@ const toNok = (amount: number, currency?: string) => currency === 'EUR' ? Number
 const formatMoney = (amount: number) => new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(Number(amount || 0));
 const getGreeting = (lang: Language) => { const t = translations[lang]; const h = new Date().getHours(); if (h < 12) return t.good_morning || 'God morgen'; if (h < 18) return t.good_afternoon || 'God ettermiddag'; return t.good_evening || 'God kveld'; };
 
-function MetricCard({ title, value, hint, symbol }: { title: string; value: string; hint?: string; symbol: React.ReactNode }) {
-  return <div className="card p-5"><div className="flex items-center justify-between gap-4"><div><p className="text-sm text-slate-500">{title}</p><p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>{hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}</div><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">{symbol}</div></div></div>;
+function MetricCard({ title, value, hint, symbol, onClick }: { title: string; value: string; hint?: string; symbol: React.ReactNode; onClick?: () => void }) {
+  const inner = <div className="flex items-center justify-between gap-4"><div><p className="text-sm text-slate-500">{title}</p><p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>{hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}</div><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">{symbol}</div></div>;
+  if (onClick) {
+    return <button type="button" onClick={onClick} className="card p-5 w-full text-left transition hover:border-indigo-300 hover:shadow-md hover:-translate-y-0.5">{inner}</button>;
+  }
+  return <div className="card p-5">{inner}</div>;
 }
 function EmptyState({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">{text}</p>; }
 
-export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], assets = [], familyMembers = [], tasks = [], calendarEvents = [], groceryCount = 0, lang, userId, realEstateDeals = [], afterSales = [], farmOps = [], bills = [] }) => {
+export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], assets = [], familyMembers = [], tasks = [], calendarEvents = [], groceryCount = 0, lang, userId, realEstateDeals = [], afterSales = [], farmOps = [], bills = [], onNavigate }) => {
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [economy, setEconomy] = useState<EconomySummary | null>(null);
@@ -147,7 +152,12 @@ export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], as
 
   return <div className="space-y-6 animate-fade-in">
     <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><div className="mb-2 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><Heart className="h-5 w-5" /></div><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">FamilieHub</span></div><h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">{getGreeting(lang)}</h1><p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">Her er dagens oversikt basert på transaksjoner, kontoer, eiendeler, Business, kalender og oppgaver.</p></div><div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{now.toLocaleDateString(lang === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></section>
-    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard title="Banksaldo" value={formatMoney(stats.bankBalance)} hint={`${bankAccounts.length} kontoer`} symbol={<Landmark className="h-5 w-5" />} /><MetricCard title="Eiendeler" value={formatMoney(stats.assetValue)} hint={`Registrert + Mondeo${stats.expectedCommission > 0 ? ' + provisjon' : ''}`} symbol={<Home className="h-5 w-5" />} /><MetricCard title="Inntekt denne måneden" value={formatMoney(stats.income)} symbol={<ArrowUpRight className="h-5 w-5" />} /><MetricCard title="Utgifter denne måneden" value={formatMoney(stats.expenses)} symbol={<ArrowDownRight className="h-5 w-5" />} /></section>
+    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <MetricCard title="Banksaldo" value={formatMoney(stats.bankBalance)} hint={`${bankAccounts.length} kontoer`} symbol={<Landmark className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('bank') : undefined} />
+      <MetricCard title="Eiendeler" value={formatMoney(stats.assetValue)} hint={`Registrert + Mondeo${stats.expectedCommission > 0 ? ' + provisjon' : ''}`} symbol={<Home className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('bank') : undefined} />
+      <MetricCard title="Inntekt denne måneden" value={formatMoney(stats.income)} symbol={<ArrowUpRight className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('transactions') : undefined} />
+      <MetricCard title="Utgifter denne måneden" value={formatMoney(stats.expenses)} symbol={<ArrowDownRight className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('transactions') : undefined} />
+    </section>
 
     {/* FAMILIEREGNSKAP – samlet visning av kontantstrøm, regninger og formue */}
     <section className="card p-5 md:p-6">

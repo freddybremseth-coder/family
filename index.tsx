@@ -76,7 +76,7 @@ const App = () => {
   const visibleNavigation = useMemo(() => filterModulesForUser(ALL_NAVIGATION, userEmail), [userEmail]);
   const t = translations[userConfig.language] || translations['no'];
   const labelFor = (id: string, fallback?: string) => id === 'business' ? 'Business' : (t[id] || fallback || id);
-  const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills };
+  const dashboardProps = { transactions, bankAccounts, assets, familyMembers, tasks, calendarEvents, groceryCount: groceryItems.filter(i => !i.isBought).length, lang: userConfig.language, userId: session?.user?.id, realEstateDeals, afterSales, farmOps, bills, onNavigate: setActiveTab };
   const dashboardView = <AppErrorBoundary label="Oversikt"><div className="space-y-6"><Dashboard {...dashboardProps} /><LiquidityForecastCard familyMembers={familyMembers} bankAccounts={bankAccounts} transactions={transactions} /></div></AppErrorBoundary>;
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
