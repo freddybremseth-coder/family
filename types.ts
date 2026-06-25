@@ -125,6 +125,14 @@ export interface Bill {
   paidDate?: string;
 }
 
+export interface FamilyMemberContribution {
+  id: string;
+  label: string;            // F.eks. "Provisjon eiendomssalg", "Mondeo renteinntekt", "Depositum"
+  amount: number;           // i preferert valuta (NOK)
+  frequency: 'monthly' | 'annual' | 'oneoff';
+  note?: string;
+}
+
 export interface FamilyMember {
   id: string;
   name: string;
@@ -134,6 +142,7 @@ export interface FamilyMember {
   monthlyChildBenefit: number;
   salaryDay?: number;
   salaryAccountId?: string;
+  extraContributions?: FamilyMemberContribution[];
 }
 
 export interface BankAccount {
