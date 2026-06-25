@@ -45,6 +45,7 @@ async function upsertBankAccountDirect(userId: string, account: BankAccount & an
     bank_name: account.bankName || account.name || account.accountName || 'Bank',
     account_name: account.accountName || account.name || account.bankName || 'Konto',
     account_number: account.accountNumber || null,
+    iban: account.iban || null,
     balance: Number(account.balance || 0),
     currency: account.currency || 'NOK',
     type: account.type || 'CHECKING',
@@ -84,6 +85,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [currency, setCurrency] = useState<Currency>('NOK');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [iban, setIban] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'ok' | 'error'; message: string } | null>(null);
 
@@ -93,8 +96,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
   const [pdfError, setPdfError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Manuell saldo-endring
-  const [editingAccount, setEditingAccount] = useState<{ id: string; name: string; balance: string; currency: Currency } | null>(null);
+  // Manuell saldo + detaljer-endring
+  const [editingAccount, setEditingAccount] = useState<{ id: string; name: string; balance: string; currency: Currency; accountNumber: string; iban: string } | null>(null);
   const [editSaving, setEditSaving] = useState(false);
 
   const startEdit = (account: any) => {
@@ -103,6 +106,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
       name: accountDisplayName(account),
       balance: String(account.balance ?? 0),
       currency: (account.currency || 'NOK') as Currency,
+      accountNumber: String(account.accountNumber || ''),
+      iban: String(account.iban || ''),
     });
   };
 
@@ -113,8 +118,14 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
     try {
       const acc = bankAccounts.find(a => a.id === editingAccount.id) as any;
       if (!acc) throw new Error('Konto ikke funnet');
+      const trimmedName = editingAccount.name.trim() || acc.accountName || acc.name || 'Konto';
       const updated: BankAccount & any = {
         ...acc,
+        name: trimmedName,
+        bankName: trimmedName,
+        accountName: trimmedName,
+        accountNumber: editingAccount.accountNumber.trim() || undefined,
+        iban: editingAccount.iban.trim() || undefined,
         balance: Number(editingAccount.balance) || 0,
         currency: editingAccount.currency,
         lastReconciledDate: new Date().toISOString().slice(0, 10),
@@ -217,6 +228,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
       name: cleanName,
       bankName: cleanName,
       accountName: cleanName,
+      accountNumber: accountNumber.trim() || undefined,
+      iban: iban.trim() || undefined,
       balance: Number(balance) || 0,
       currency,
       type: 'CHECKING',
@@ -233,6 +246,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
       setSaveStatus({ type: 'ok', message: 'Bankkonto lagret i Supabase.' });
       setName('');
       setBalance('');
+      setAccountNumber('');
+      setIban('');
       setShowAdd(false);
     } catch (err: any) {
       setSaveStatus({ type: 'error', message: `Bankkonto ble ikke lagret: ${err?.message || 'ukjent feil'}` });
@@ -283,6 +298,8 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
             <div className="md:col-span-2"><label className="text-xs font-semibold text-slate-600 mb-1 block">Kontonavn</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="F.eks. DNB Lønnskonto" className="input-field" /></div>
             <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Saldo</label><input type="number" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" className="input-field" /></div>
             <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Valuta</label><select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} className="input-field"><option value="NOK">NOK</option><option value="EUR">EUR</option></select></div>
+            <div className="md:col-span-2"><label className="text-xs font-semibold text-slate-600 mb-1 block">Kontonummer</label><input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="F.eks. 1234.56.78901" className="input-field" /></div>
+            <div className="md:col-span-2"><label className="text-xs font-semibold text-slate-600 mb-1 block">IBAN</label><input value={iban} onChange={(e) => setIban(e.target.value)} placeholder="NO00 0000 0000 000 / ES00 0000 0000…" className="input-field" /></div>
             <div className="md:col-span-4 flex justify-end"><button onClick={addAccount} className="btn-gradient text-sm" disabled={saving}>{saving ? 'Lagrer…' : <><Plus className="w-4 h-4" /> Legg til</>}</button></div>
           </div>
         )}
@@ -320,33 +337,65 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
                 <X className="w-4 h-4" />
               </button>
               <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-indigo-500" /> Rediger saldo
+                <Pencil className="w-5 h-5 text-indigo-500" /> Rediger bankkonto
               </h3>
-              <p className="text-xs text-slate-500 mb-4">{editingAccount.name}</p>
+              <p className="text-xs text-slate-500 mb-4">Endre navn, saldo, kontonummer eller IBAN</p>
 
               <div className="space-y-3 mb-5">
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Saldo</label>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Kontonavn</label>
                   <input
-                    type="number"
-                    value={editingAccount.balance}
-                    onChange={(e) => setEditingAccount({ ...editingAccount, balance: e.target.value })}
-                    onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                    type="text"
+                    value={editingAccount.name}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, name: e.target.value })}
                     autoFocus
-                    className="input-field text-lg font-bold"
-                    placeholder="0"
+                    className="input-field"
+                    placeholder="F.eks. DNB Lønnskonto"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 mb-1 block">Saldo</label>
+                    <input
+                      type="number"
+                      value={editingAccount.balance}
+                      onChange={(e) => setEditingAccount({ ...editingAccount, balance: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                      className="input-field text-lg font-bold"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 mb-1 block">Valuta</label>
+                    <select
+                      value={editingAccount.currency}
+                      onChange={(e) => setEditingAccount({ ...editingAccount, currency: e.target.value as Currency })}
+                      className="input-field"
+                    >
+                      <option value="NOK">NOK (kr)</option>
+                      <option value="EUR">EUR (€)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Kontonummer</label>
+                  <input
+                    type="text"
+                    value={editingAccount.accountNumber}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, accountNumber: e.target.value })}
+                    className="input-field"
+                    placeholder="F.eks. 1234.56.78901"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Valuta</label>
-                  <select
-                    value={editingAccount.currency}
-                    onChange={(e) => setEditingAccount({ ...editingAccount, currency: e.target.value as Currency })}
-                    className="input-field"
-                  >
-                    <option value="NOK">NOK (kr)</option>
-                    <option value="EUR">EUR (€)</option>
-                  </select>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">IBAN</label>
+                  <input
+                    type="text"
+                    value={editingAccount.iban}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, iban: e.target.value })}
+                    className="input-field font-mono"
+                    placeholder="NO00 0000 0000 000 / ES00 0000 0000…"
+                  />
                 </div>
               </div>
 
@@ -428,9 +477,15 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
                       </button>
                     </div>
                   </div>
-                  <button onClick={() => startEdit(account)} className="text-left w-full" title="Klikk for å redigere saldo">
+                  <button onClick={() => startEdit(account)} className="text-left w-full" title="Klikk for å redigere">
                     <p className="text-3xl font-extrabold tracking-tight hover:underline decoration-white/40">{formatCurrency(Number(account.balance || 0), account.currency)}</p>
                   </button>
+                  {(account as any).accountNumber && (
+                    <p className="mt-2 text-[10px] text-white/75 font-mono tracking-wide">Konto: {(account as any).accountNumber}</p>
+                  )}
+                  {(account as any).iban && (
+                    <p className="text-[10px] text-white/75 font-mono tracking-wide">IBAN: {(account as any).iban}</p>
+                  )}
                   <div className="flex items-center gap-1.5 mt-3 text-[11px] text-white/80"><TrendingUp className="w-3.5 h-3.5" /><span>Sist oppdatert {account.lastReconciledDate || new Date().toISOString().slice(0, 10)}</span></div>
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <button onClick={() => startEdit(account)} className="flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">

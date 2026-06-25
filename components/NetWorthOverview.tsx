@@ -155,9 +155,22 @@ export const NetWorthOverview: React.FC<Props> = ({ bankAccounts, assets, realEs
         <div className="card p-5">
           <h2 className="text-xl font-bold">Bankkontoer</h2>
           <div className="mt-4 space-y-2">
-            {bankAccounts.length === 0 ? <p className="text-sm text-slate-500">Ingen bankkontoer registrert ennå.</p> : bankAccounts.map(account => (
-              <div key={account.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100"><Landmark className="h-5 w-5" /></div><div><p className="font-bold text-slate-900">{account.name}</p><p className="text-sm text-slate-500">{account.currency}</p></div></div><p className="font-bold">{formatNOK(toNok(account.balance, account.currency))}</p></div>
-            ))}
+            {bankAccounts.length === 0 ? <p className="text-sm text-slate-500">Ingen bankkontoer registrert ennå.</p> : bankAccounts.map((account: any) => {
+              const displayName = account.accountName || account.name || account.bankName || account.currency || 'Bankkonto';
+              const detailParts = [account.accountNumber, account.iban, account.currency].filter(Boolean);
+              return (
+                <div key={account.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 shrink-0"><Landmark className="h-5 w-5" /></div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 truncate">{displayName}</p>
+                      <p className="text-xs text-slate-500 font-mono truncate">{detailParts.join(' · ')}</p>
+                    </div>
+                  </div>
+                  <p className="font-bold shrink-0">{formatNOK(toNok(account.balance, account.currency))}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="card p-5">

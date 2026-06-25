@@ -141,6 +141,7 @@ export interface BankAccount {
   bankName: string;
   accountName: string;
   accountNumber?: string;
+  iban?: string;
   balance: number;
   currency: Currency;
   type: 'CHECKING' | 'SAVINGS' | 'CREDIT' | 'LOAN' | 'INVESTMENT';
