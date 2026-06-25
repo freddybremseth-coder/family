@@ -217,21 +217,20 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
           const memberDocs = documentsForMember.get(member.id) || [];
           return (
             <div key={member.id} className="glass-panel p-8 border-l-4 border-l-cyan-500 bg-cyan-500/5 relative overflow-hidden group hover:border-l-cyan-400 transition-all">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Users className="w-20 h-20" /></div>
               <div className="flex items-center gap-6 mb-8 relative z-10"><div className="w-20 h-20 rounded-full border-2 border-cyan-500 p-1 bg-black overflow-hidden shadow-[0_0_20px_rgba(0,243,255,0.2)]"><img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.name}`} alt={member.name} className="w-full h-full" /></div><div><h3 className="text-2xl font-black text-white uppercase tracking-tighter">{member.name}</h3><p className="text-[10px] text-cyan-400 font-mono uppercase tracking-[0.2em]">{t.age}: {new Date().getFullYear() - new Date(member.birthDate).getFullYear()}</p></div></div>
               <div className="space-y-4 relative z-10">
-                <div className="flex justify-between items-center p-3 bg-black/40 border border-white/5"><div className="flex items-center gap-2 text-slate-400"><Wallet className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Lønn / mnd</span></div><span className="text-sm font-black text-white font-mono">{formatCurrency(member.monthlySalary, lang)}</span></div>
-                {member.monthlyBenefits > 0 && <div className="flex justify-between items-center p-3 bg-emerald-500/5 border border-emerald-500/10"><div className="flex items-center gap-2 text-emerald-400"><Heart className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Ytelser / mnd</span></div><span className="text-sm font-black text-emerald-400 font-mono">{formatCurrency(member.monthlyBenefits, lang)}</span></div>}
-                {member.monthlyChildBenefit > 0 && <div className="flex justify-between items-center p-3 bg-purple-500/5 border border-purple-500/10"><div className="flex items-center gap-2 text-purple-400"><Baby className="w-3 h-3" /><span className="text-[9px] uppercase font-black">Barnetrygd / mnd</span></div><span className="text-sm font-black text-purple-400 font-mono">{formatCurrency(member.monthlyChildBenefit, lang)}</span></div>}
+                <div className="flex justify-between items-center p-3 bg-black/40 border border-white/5"><span className="text-[9px] uppercase font-black text-slate-400">Lønn / mnd</span><span className="text-sm font-black text-white font-mono">{formatCurrency(member.monthlySalary, lang)}</span></div>
+                {member.monthlyBenefits > 0 && <div className="flex justify-between items-center p-3 bg-emerald-500/5 border border-emerald-500/10"><span className="text-[9px] uppercase font-black text-emerald-400">Ytelser / mnd</span><span className="text-sm font-black text-emerald-400 font-mono">{formatCurrency(member.monthlyBenefits, lang)}</span></div>}
+                {member.monthlyChildBenefit > 0 && <div className="flex justify-between items-center p-3 bg-purple-500/5 border border-purple-500/10"><span className="text-[9px] uppercase font-black text-purple-400">Barnetrygd / mnd</span><span className="text-sm font-black text-purple-400 font-mono">{formatCurrency(member.monthlyChildBenefit, lang)}</span></div>}
 
-                {/* EKSTRA BIDRAG */}
+                {/* EKSTRA BIDRAG — bruker pink (ikke overstyrt av app-polish.css) */}
                 {(member.extraContributions || []).map(c => (
-                  <div key={c.id} className="flex justify-between items-center p-3 bg-fuchsia-500/10 border border-fuchsia-500/30">
+                  <div key={c.id} className="flex justify-between items-center p-3 bg-pink-50 border border-pink-300">
                     <div className="min-w-0">
-                      <p className="text-[9px] uppercase font-black text-fuchsia-200 truncate">{c.label}</p>
-                      <p className="text-[8px] text-fuchsia-300 font-mono uppercase truncate" title={c.note || ''}>{contributionTag(c)}</p>
+                      <p className="text-[10px] uppercase font-black text-pink-800 truncate">{c.label}</p>
+                      <p className="text-[9px] text-pink-600 font-mono uppercase truncate" title={c.note || ''}>{contributionTag(c)}</p>
                     </div>
-                    <span className="text-sm font-black text-fuchsia-100 font-mono shrink-0 ml-3">{formatCurrency(c.amount, lang)}</span>
+                    <span className="text-sm font-black text-pink-700 font-mono shrink-0 ml-3">{formatCurrency(c.amount, lang)}</span>
                   </div>
                 ))}
 

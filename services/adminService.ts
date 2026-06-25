@@ -120,3 +120,28 @@ export async function setUserModuleAccess(userId: string, moduleId: string, enab
 export function defaultUserModules() {
   return DEFAULT_USER_MODULES;
 }
+
+export async function deleteAdminUser(userId: string, email?: string) {
+  if (!userId) throw new Error('Bruker-ID mangler.');
+  if (normalizeEmail(email) === LIFETIME_ADMIN_EMAIL) {
+    throw new Error('Kan ikke slette livstid-admin (eier).');
+  }
+
+  // 1. Fjern modul-tilganger
+  await supabase.from('user_module_access').delete().eq('user_id', userId);
+
+  // 2. Fjern bruker-profil
+  const { error: profileError } = await supabase.from('user_profiles').delete().eq('id', userId);
+  if (profileError) throw profileError;
+
+  // 3. Forsøk å slette auth.user via admin-API (krever service_role / Edge Function)
+  //    Hvis ikke tilgjengelig, beholdes auth-recorden — kan slettes manuelt fra Supabase-dashboard.
+  try {
+    const adminClient = (supabase as any).auth?.admin;
+    if (adminClient && typeof adminClient.deleteUser === 'function') {
+      await adminClient.deleteUser(userId);
+    }
+  } catch (err) {
+    console.warn('[adminService] auth.users delete krever Edge Function eller service_role-nøkkel', err);
+  }
+}

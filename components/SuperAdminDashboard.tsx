@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Crown, Loader2, PackagePlus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
-import { ADMIN_MODULES, AdminUserProfile, fetchAdminUsers, MARKETPLACE_MODULES, PLAN_DEFINITIONS, setUserModuleAccess } from '../services/adminService';
+import { AlertCircle, CheckCircle2, Crown, Loader2, PackagePlus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { ADMIN_MODULES, AdminUserProfile, deleteAdminUser, fetchAdminUsers, MARKETPLACE_MODULES, PLAN_DEFINITIONS, setUserModuleAccess } from '../services/adminService';
 import { supabase } from '../supabase';
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -26,6 +26,8 @@ export const SuperAdminDashboard = () => {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<AdminUserProfile | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -56,6 +58,24 @@ export const SuperAdminDashboard = () => {
     business: users.filter((user) => user.enabledModules.includes('business')).length,
   }), [users]);
 
+  const handleDeleteUser = async () => {
+    if (!confirmDelete) return;
+    const user = confirmDelete;
+    setDeletingId(user.id);
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteAdminUser(user.id, user.email);
+      setUsers(prev => prev.filter(u => u.id !== user.id));
+      setMessage(`Bruker «${user.email || user.id}» slettet. Auth-recorden kan beholdes i Supabase – slett manuelt om nødvendig.`);
+      setConfirmDelete(null);
+    } catch (err: any) {
+      setError(err?.message || 'Klarte ikke å slette brukeren.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const toggleModule = async (user: AdminUserProfile, moduleId: string) => {
     const enabled = !user.enabledModules.includes(moduleId);
     const key = `${user.id}:${moduleId}`;
@@ -83,6 +103,30 @@ export const SuperAdminDashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Bekreftelses-modal for sletting */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setConfirmDelete(null)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <button onClick={() => setConfirmDelete(null)} className="absolute right-4 top-4 text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700"><Trash2 className="h-5 w-5" /></div>
+              <div className="flex-1">
+                <h3 className="text-lg font-black text-slate-900">Slett bruker?</h3>
+                <p className="mt-2 text-sm text-slate-600">Du er i ferd med å slette <span className="font-bold text-slate-900">{confirmDelete.email || confirmDelete.id}</span> ({confirmDelete.familyName}). Dette fjerner bruker-profilen og modul-tilgangene.</p>
+                <p className="mt-2 text-xs text-amber-700"><span className="font-bold">Merk:</span> Auth-recorden i Supabase kan bli liggende — slett manuelt fra Authentication-fanen om nødvendig.</p>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-2 justify-end">
+              <button onClick={() => setConfirmDelete(null)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Avbryt</button>
+              <button onClick={handleDeleteUser} disabled={deletingId === confirmDelete.id} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-2">
+                {deletingId === confirmDelete.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Slett bruker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -141,7 +185,7 @@ export const SuperAdminDashboard = () => {
           ) : filtered.length === 0 ? (
             <div className="p-12 text-center text-slate-500">Ingen brukere funnet. Opprett en testbruker, eller kjør admin-migrasjonen i FamilyHub Supabase.</div>
           ) : (
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1240px] text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-4">Bruker</th>
@@ -149,6 +193,7 @@ export const SuperAdminDashboard = () => {
                   <th className="px-5 py-4">Plan/status</th>
                   <th className="px-5 py-4">Opprettet</th>
                   <th className="px-5 py-4">Moduler</th>
+                  <th className="px-5 py-4 text-right">Handling</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -181,6 +226,21 @@ export const SuperAdminDashboard = () => {
                         })}
                       </div>
                       {user.enabledModules.includes('business') && <p className="mt-3 text-xs font-semibold text-amber-700">Denne brukeren har Business-tilgang. For SaaS skal dette kobles til brukerens egne API-nøkler/databaser.</p>}
+                    </td>
+                    <td className="px-5 py-5 text-right">
+                      {String(user.email).toLowerCase() === 'freddy.bremseth@gmail.com' ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-400" title="Livstid-admin kan ikke slettes"><Crown className="h-3 w-3" /> Eier</span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDelete(user)}
+                          disabled={deletingId === user.id}
+                          className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:opacity-50"
+                          title={`Slett bruker ${user.email}`}
+                        >
+                          {deletingId === user.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          Slett
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
