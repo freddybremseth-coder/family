@@ -29,6 +29,19 @@ function newContribution(): FamilyMemberContribution {
   return { id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', amount: 0, frequency: 'annual' };
 }
 
+function formatDateNo(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+
+function contributionTag(c: FamilyMemberContribution): string {
+  if (c.periodStart && c.periodEnd) return `${formatDateNo(c.periodStart)} – ${formatDateNo(c.periodEnd)}`;
+  if (c.periodStart) return `fra ${formatDateNo(c.periodStart)}`;
+  return c.frequency === 'monthly' ? 'pr mnd' : c.frequency === 'annual' ? 'pr år' : 'engangs';
+}
+
 // Sum av bidrag på månedsbasis (engangs vises adskilt)
 function monthlyExtras(contribs: FamilyMemberContribution[] = []): number {
   return contribs.reduce((sum, c) => {
@@ -165,15 +178,22 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
                   <p className="text-[10px] text-slate-500 italic">Eksempler: «Provisjon eiendomssalg» (årlig), «Mondeo renteinntekt» (årlig), «Depositum» (engangs)</p>
                 )}
                 {(editingMember.extraContributions || []).map(c => (
-                  <div key={c.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 bg-black/40 border border-white/5 p-3">
-                    <input value={c.label} onChange={e => updateContribution(c.id, { label: e.target.value })} placeholder="Beskrivelse" className="md:col-span-5 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none" />
-                    <input type="number" value={c.amount} onChange={e => updateContribution(c.id, { amount: Number(e.target.value) })} placeholder="Beløp NOK" className="md:col-span-3 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none font-mono" />
-                    <select value={c.frequency} onChange={e => updateContribution(c.id, { frequency: e.target.value as FamilyMemberContribution['frequency'] })} className="md:col-span-3 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none">
-                      <option value="monthly">Månedlig</option>
-                      <option value="annual">Årlig</option>
-                      <option value="oneoff">Engangs</option>
-                    </select>
-                    <button type="button" onClick={() => removeContribution(c.id)} className="md:col-span-1 text-slate-500 hover:text-rose-400 transition-colors flex items-center justify-center"><Trash2 className="w-4 h-4" /></button>
+                  <div key={c.id} className="bg-black/40 border border-white/5 p-3 space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                      <input value={c.label} onChange={e => updateContribution(c.id, { label: e.target.value })} placeholder="Beskrivelse" className="md:col-span-5 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none" />
+                      <input type="number" value={c.amount} onChange={e => updateContribution(c.id, { amount: Number(e.target.value) })} placeholder="Beløp NOK" className="md:col-span-3 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none font-mono" />
+                      <select value={c.frequency} onChange={e => updateContribution(c.id, { frequency: e.target.value as FamilyMemberContribution['frequency'] })} className="md:col-span-3 bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none">
+                        <option value="monthly">Månedlig</option>
+                        <option value="annual">Årlig</option>
+                        <option value="oneoff">Engangs</option>
+                      </select>
+                      <button type="button" onClick={() => removeContribution(c.id)} className="md:col-span-1 text-slate-500 hover:text-rose-400 transition-colors flex items-center justify-center"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div><label className="text-[8px] uppercase font-black text-slate-500">Periode fra</label><input type="date" value={c.periodStart || ''} onChange={e => updateContribution(c.id, { periodStart: e.target.value || undefined })} className="w-full bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none" /></div>
+                      <div><label className="text-[8px] uppercase font-black text-slate-500">Periode til</label><input type="date" value={c.periodEnd || ''} onChange={e => updateContribution(c.id, { periodEnd: e.target.value || undefined })} className="w-full bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none" /></div>
+                    </div>
+                    <input value={c.note || ''} onChange={e => updateContribution(c.id, { note: e.target.value })} placeholder="Notat (valgfritt) – f.eks. beregning eller kilde" className="w-full bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-cyan-500 outline-none" />
                   </div>
                 ))}
               </div>
@@ -209,7 +229,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
                   <div key={c.id} className="flex justify-between items-center p-3 bg-fuchsia-500/10 border border-fuchsia-500/30">
                     <div className="min-w-0">
                       <p className="text-[9px] uppercase font-black text-fuchsia-200 truncate">{c.label}</p>
-                      <p className="text-[8px] text-fuchsia-300 font-mono uppercase">{c.frequency === 'monthly' ? 'pr mnd' : c.frequency === 'annual' ? 'pr år' : 'engangs'}</p>
+                      <p className="text-[8px] text-fuchsia-300 font-mono uppercase truncate" title={c.note || ''}>{contributionTag(c)}</p>
                     </div>
                     <span className="text-sm font-black text-fuchsia-100 font-mono shrink-0 ml-3">{formatCurrency(c.amount, lang)}</span>
                   </div>

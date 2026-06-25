@@ -131,6 +131,8 @@ export interface FamilyMemberContribution {
   amount: number;           // i preferert valuta (NOK)
   frequency: 'monthly' | 'annual' | 'oneoff';
   note?: string;
+  periodStart?: string;     // YYYY-MM-DD — historisk bidrag i en periode
+  periodEnd?: string;       // YYYY-MM-DD
 }
 
 export interface FamilyMember {
