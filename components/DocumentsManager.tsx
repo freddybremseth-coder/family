@@ -88,7 +88,13 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
   }, [documents]);
 
   const addDocument = async () => {
-    if (!newDoc.title.trim()) return;
+    if (!newDoc.title.trim()) {
+      setError('Skriv inn en tittel før du legger til dokumentet (f.eks. «Bilforsikring Mondeo»).');
+      // Fokuser tittel-feltet
+      const titleInput = document.querySelector<HTMLInputElement>('input[data-doc-title]');
+      titleInput?.focus();
+      return;
+    }
     if (!userId) { setError('Du må være innlogget for å lagre dokumenter.'); return; }
     setSaving(true);
     setError(null);
@@ -157,7 +163,7 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-1"><div className="space-y-4 p-5"><div><h2 className="text-xl font-bold text-slate-900">Legg til dokument</h2><p className="mt-1 text-sm text-slate-500">Metadata lagres i Supabase, og valgfri fil lagres sikkert i privat Storage bucket.</p></div>
-          <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Tittel</span><input value={newDoc.title} onChange={(e) => setNewDoc({ ...newDoc, title: e.target.value })} placeholder="F.eks. Bilforsikring Mondeo" /></label>
+          <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Tittel <span className="text-rose-600">*</span></span><input data-doc-title value={newDoc.title} onChange={(e) => { setNewDoc({ ...newDoc, title: e.target.value }); if (error && e.target.value.trim()) setError(null); }} placeholder="F.eks. Bilforsikring Mondeo" className={!newDoc.title.trim() && error ? 'ring-2 ring-rose-400 focus:ring-rose-500' : ''} /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Kategori</span><select value={newDoc.category} onChange={(e) => setNewDoc({ ...newDoc, category: e.target.value as DocumentCategory })}>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Gjelder</span><input value={newDoc.owner} onChange={(e) => setNewDoc({ ...newDoc, owner: e.target.value })} placeholder="Familien, Freddy, Anna, barn, bil, bolig..." /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Utløpsdato, valgfritt</span><input type="date" value={newDoc.expiryDate} onChange={(e) => setNewDoc({ ...newDoc, expiryDate: e.target.value })} /></label>
@@ -165,7 +171,8 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Last opp fil, valgfritt</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} /></label>
           {selectedFile && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"><p className="font-semibold text-slate-800">{selectedFile.name}</p><p>{formatFileSize(selectedFile.size)} · {selectedFile.type || 'ukjent filtype'}</p></div>}
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Notat</span><textarea value={newDoc.note} onChange={(e) => setNewDoc({ ...newDoc, note: e.target.value })} placeholder="Hvor ligger originalen, hva må huskes?" rows={3} /></label>
-          <button onClick={addDocument} className="btn-primary w-full" disabled={saving || !newDoc.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Legg til dokument</button>
+          <button onClick={addDocument} className="btn-primary w-full" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Legg til dokument</button>
+          {!newDoc.title.trim() && <p className="text-[11px] text-slate-500 -mt-1">Tittel er påkrevd. Resten er valgfritt.</p>}
         </div></Card>
 
         <Card className="xl:col-span-2"><div className="p-5"><div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Dokumentoversikt</h2><p className="mt-1 text-sm text-slate-500">Søk, filtrer og finn det familien trenger raskt.</p></div><div className="relative w-full md:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Søk dokumenter" /></div></div>
