@@ -37,8 +37,8 @@ function formatDateNo(iso: string): string {
 }
 
 function contributionTag(c: FamilyMemberContribution): string {
-  if (c.periodStart && c.periodEnd) return `${formatDateNo(c.periodStart)} – ${formatDateNo(c.periodEnd)}`;
-  if (c.periodStart) return `fra ${formatDateNo(c.periodStart)}`;
+  if (c.periodStart && c.periodEnd && c.periodStart !== c.periodEnd) return `${formatDateNo(c.periodStart)} – ${formatDateNo(c.periodEnd)}`;
+  if (c.periodStart) return formatDateNo(c.periodStart); // Enkelt-dato (f.eks. kjøp av tomt)
   return c.frequency === 'monthly' ? 'pr mnd' : c.frequency === 'annual' ? 'pr år' : 'engangs';
 }
 
@@ -152,10 +152,10 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
       {editingMember && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setEditingMember(null)} />
-          <div className="glass-panel w-full max-w-2xl p-10 border-t-4 border-cyan-500 animate-in zoom-in-95 duration-300 relative max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setEditingMember(null)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
-            <div className="mb-10"><h3 className="text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3"><Edit3 className="text-cyan-400" /> {isAddingNew ? 'Legg til Beboer' : 'Oppdater Profil'}</h3><p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-mono mt-1">Husholdningsregister v.4.2</p></div>
-            <div className="space-y-6">
+          <div className="glass-panel w-full max-w-2xl border-t-4 border-cyan-500 animate-in zoom-in-95 duration-300 relative flex flex-col" style={{ maxHeight: '90vh' }}>
+            <button onClick={() => setEditingMember(null)} className="absolute top-6 right-6 z-10 text-slate-500 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
+            <div className="px-10 pt-10 pb-4 shrink-0"><h3 className="text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3"><Edit3 className="text-cyan-400" /> {isAddingNew ? 'Legg til Beboer' : 'Oppdater Profil'}</h3><p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-mono mt-1">Husholdningsregister v.4.3</p></div>
+            <div className="flex-1 overflow-y-auto px-10 pb-10 space-y-6" style={{ WebkitOverflowScrolling: 'touch' }}>
               <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><User className="w-3 h-3 text-cyan-500" /> Fullt Navn</label><input value={editingMember.name} onChange={e => setEditingMember({ ...editingMember, name: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" placeholder="Navn" /></div>
               <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-cyan-500" /> Fødselsdato</label><input type="date" value={editingMember.birthDate} onChange={e => setEditingMember({ ...editingMember, birthDate: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" /></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -217,7 +217,7 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
           const memberDocs = documentsForMember.get(member.id) || [];
           return (
             <div key={member.id} className="glass-panel p-8 border-l-4 border-l-cyan-500 bg-cyan-500/5 relative overflow-hidden group hover:border-l-cyan-400 transition-all">
-              <div className="flex items-center gap-6 mb-8 relative z-10"><div className="w-20 h-20 rounded-full border-2 border-cyan-500 p-1 bg-black overflow-hidden shadow-[0_0_20px_rgba(0,243,255,0.2)]"><img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.name}`} alt={member.name} className="w-full h-full" /></div><div><h3 className="text-2xl font-black text-white uppercase tracking-tighter">{member.name}</h3><p className="text-[10px] text-cyan-400 font-mono uppercase tracking-[0.2em]">{t.age}: {new Date().getFullYear() - new Date(member.birthDate).getFullYear()}</p></div></div>
+              <div className="mb-8 relative z-10"><h3 className="text-2xl font-black text-white uppercase tracking-tighter">{member.name}</h3><p className="text-[10px] text-cyan-400 font-mono uppercase tracking-[0.2em] mt-1">{t.age}: {new Date().getFullYear() - new Date(member.birthDate).getFullYear()}</p></div>
               <div className="space-y-4 relative z-10">
                 <div className="flex justify-between items-center p-3 bg-black/40 border border-white/5"><span className="text-[9px] uppercase font-black text-slate-400">Lønn / mnd</span><span className="text-sm font-black text-white font-mono">{formatCurrency(member.monthlySalary, lang)}</span></div>
                 {member.monthlyBenefits > 0 && <div className="flex justify-between items-center p-3 bg-emerald-500/5 border border-emerald-500/10"><span className="text-[9px] uppercase font-black text-emerald-400">Ytelser / mnd</span><span className="text-sm font-black text-emerald-400 font-mono">{formatCurrency(member.monthlyBenefits, lang)}</span></div>}
