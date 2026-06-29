@@ -4,7 +4,7 @@ import {
   Printer, RefreshCw, Trash2, Upload, Users, Percent,
 } from 'lucide-react';
 import {
-  MondeoKpiAdjustment, MondeoLedgerRow, MondeoLoanPayment, MondeoLoanSettings,
+  MondeoAdditionalCharge, MondeoKpiAdjustment, MondeoLedgerRow, MondeoLoanPayment, MondeoLoanSettings,
   Transaction, TransactionType,
 } from '../types';
 import { fetchNorgesBankPolicyRate } from '../services/norgesBankService';
@@ -74,6 +74,12 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   const [settings, setSettings] = useState<MondeoLoanSettings>(defaultSettings);
   const [payments, setPayments] = useState<MondeoLoanPayment[]>([]);
   const [kpiAdjustments, setKpiAdjustments] = useState<MondeoKpiAdjustment[]>([]);
+  const [charges, setCharges] = useState<MondeoAdditionalCharge[]>([]);
+
+  const [chargeDate, setChargeDate] = useState<string>(todayISO());
+  const [chargeAmount, setChargeAmount] = useState<string>('');
+  const [chargeType, setChargeType] = useState<MondeoAdditionalCharge['type']>('Strøm');
+  const [chargeNote, setChargeNote] = useState<string>('');
 
   const [paymentDate, setPaymentDate] = useState<string>(todayISO());
   const [paymentAmount, setPaymentAmount] = useState<string>(String(DEFAULT_MIN_MONTHLY));
@@ -139,6 +145,16 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           note: r.note ?? undefined,
         })));
       }
+      // Tillegg (strøm, kommunalt) — fra Supabase med localStorage-fallback
+      try {
+        const { data: chargeRows, error } = await supabase.from('mondeo_additional_charges').select('*').eq('user_id', userId).order('date', { ascending: true });
+        if (!error && chargeRows) {
+          setCharges(chargeRows.map((r: any) => ({ id: r.id, date: r.date, amount: Number(r.amount), type: r.type, note: r.note ?? undefined })));
+        }
+      } catch {
+        const local = localStorage.getItem(`mondeo_charges_${userId}`);
+        if (local) try { setCharges(JSON.parse(local)); } catch {}
+      }
     })();
   }, [userId]);
 
@@ -172,38 +188,69 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     });
   };
 
-  // Ledger med KPI-linjer
+  // MÅNEDLIG AVREGNER:
+  // - For hver måned fra renteoppstart til i dag:
+  //   1. KPI-justering 1. januar (hvis satt)
+  //   2. Påløpt rente = balance × månedlig rente
+  //   3. Tillegg (strøm/kommunalt) som ble registrert i måneden
+  //   4. Betalinger i måneden (sum)
+  //   5. principalChange = paid - interestDue - charges
+  //      Positiv = avdrag, negativ = hovedstol vokser
   const ledger: MondeoLedgerRow[] = useMemo(() => {
     let balance = Number(settings.initialPrincipal || 0);
-    let lastDate = settings.startDate;
+    const interestStart = settings.interestStartDate || settings.startDate;
     const rows: MondeoLedgerRow[] = [];
-    const events = [
-      ...payments.map((p) => ({ kind: 'payment' as const, date: p.date, payload: p })),
-      ...kpiAdjustments.filter((k) => k.kpiPct).map((k) => ({ kind: 'kpi' as const, date: `${k.year}-01-01`, payload: k })),
-    ].sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!interestStart) return rows;
+
+    const start = new Date(interestStart);
+    const now = new Date();
     let nr = 0;
-    for (const ev of events) {
-      if (ev.kind === 'payment') {
-        const interestDue = balance * monthlyRate;
-        const paid = Number(ev.payload.amount || 0);
-        const principalChange = paid - interestDue;
-        const newBalance = balance - principalChange;
-        nr += 1;
-        rows.push({ id: ev.payload.id, nr, fromDate: lastDate, date: ev.payload.date, openingBalance: balance, interestDue, paid, principalChange, closingBalance: newBalance, status: principalChange >= 0 ? 'Avdrag' : 'Lånet øker' });
-        balance = newBalance;
-        lastDate = ev.payload.date;
-      } else {
-        const factor = 1 + Number(ev.payload.kpiPct || 0) / 100;
+
+    const kpiByYear = new Map<number, MondeoKpiAdjustment>();
+    for (const k of kpiAdjustments.filter((k) => k.kpiPct)) kpiByYear.set(k.year, k);
+
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (cursor <= now) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth();
+      const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const periodStart = new Date(year, month, 1).toISOString().slice(0, 10);
+      const periodEnd = new Date(year, month + 1, 0).toISOString().slice(0, 10);
+
+      // KPI 1. januar
+      if (month === 0 && kpiByYear.has(year)) {
+        const k = kpiByYear.get(year)!;
+        const factor = 1 + Number(k.kpiPct || 0) / 100;
         const newBalance = balance * factor;
         const adjustment = newBalance - balance;
         nr += 1;
-        rows.push({ id: ev.payload.id, nr, fromDate: lastDate, date: ev.payload.date, openingBalance: balance, interestDue: 0, paid: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
+        rows.push({ id: `kpi-${k.id}`, nr, fromDate: periodStart, date: `${year}-01-01`, openingBalance: balance, interestDue: 0, paid: 0, charges: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
         balance = newBalance;
-        lastDate = ev.payload.date;
       }
+
+      const interestDue = balance * monthlyRate;
+      const monthPayments = payments.filter((p) => p.date && p.date.slice(0, 7) === monthKey);
+      const paid = monthPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+      const monthCharges = charges.filter((c) => c.date && c.date.slice(0, 7) === monthKey);
+      const chargeSum = monthCharges.reduce((s, c) => s + Number(c.amount || 0), 0);
+
+      const principalChange = paid - interestDue - chargeSum;
+      const newBalance = balance - principalChange;
+      nr += 1;
+
+      let status: MondeoLedgerRow['status'];
+      if (chargeSum > 0 && paid < interestDue + chargeSum) status = 'Tillegg påløpt';
+      else if (paid < interestDue) status = 'Rente kapitaliseres';
+      else status = 'Avdrag';
+
+      rows.push({ id: `month-${monthKey}`, nr, fromDate: periodStart, date: periodEnd, openingBalance: balance, interestDue, paid, charges: chargeSum, principalChange, closingBalance: newBalance, status });
+      balance = newBalance;
+
+      cursor.setMonth(cursor.getMonth() + 1);
     }
+
     return rows;
-  }, [payments, kpiAdjustments, settings.initialPrincipal, settings.startDate, monthlyRate]);
+  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate]);
 
   const currentBalance = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
   const totalPaid = ledger.reduce((s, r) => s + r.paid, 0);
@@ -263,6 +310,36 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       await supabase.from('mondeo_loan_payments').delete().eq('id', payment.id);
       if (payment.postedTransactionId) await supabase.from('transactions').delete().eq('id', payment.postedTransactionId);
     }
+  };
+
+  // TILLEGG (strøm, kommunalt, andre utlegg)
+  const persistCharges = async (next: MondeoAdditionalCharge[]) => {
+    setCharges(next);
+    if (!userId) return;
+    if (isSupabaseConfigured()) {
+      try {
+        // Best-effort: synk hver rad. Tabell må eksistere (mondeo_additional_charges).
+        await supabase.from('mondeo_additional_charges').upsert(next.map(c => ({ id: c.id, user_id: userId, date: c.date, amount: c.amount, type: c.type, note: c.note ?? null })));
+      } catch {
+        try { localStorage.setItem(`mondeo_charges_${userId}`, JSON.stringify(next)); } catch {}
+      }
+    }
+    try { localStorage.setItem(`mondeo_charges_${userId}`, JSON.stringify(next)); } catch {}
+  };
+
+  const addCharge = async () => {
+    const amount = Number(chargeAmount || 0);
+    if (!chargeDate || amount <= 0) return;
+    const next: MondeoAdditionalCharge = { id: createId(), date: chargeDate, amount, type: chargeType, note: chargeNote || undefined };
+    await persistCharges([...charges, next].sort((a, b) => (a.date < b.date ? -1 : 1)));
+    setChargeAmount(''); setChargeNote('');
+  };
+
+  const deleteCharge = async (id: string) => {
+    if (userId && isSupabaseConfigured()) {
+      try { await supabase.from('mondeo_additional_charges').delete().eq('id', id); } catch {}
+    }
+    await persistCharges(charges.filter(c => c.id !== id));
   };
 
   // KPI
@@ -375,27 +452,33 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         <MetricCard title="Ved minimum" value={monthlyDifferenceAtMinimum >= 0 ? `${formatNOK(monthlyDifferenceAtMinimum)} avdrag` : `${formatNOK(Math.abs(monthlyDifferenceAtMinimum))} økning`} symbol="±" hint={monthlyDifferenceAtMinimum < 0 ? `${formatNOK(annualNegativeAmortizationAtMinimum)} økning/år` : 'Positiv amortisering'} tone={monthlyDifferenceAtMinimum < 0 ? 'warning' : 'success'} />
       </section>
 
-      {/* MIN-BETALING-VARSEL */}
-      {minPaymentStatus.totalMissing > 0 && (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-bold">Manglende minimumsbetaling — hovedstolen øker</p>
-              <p className="text-rose-800 mt-1">{minPaymentStatus.monthsBehind} {minPaymentStatus.monthsBehind === 1 ? 'måned' : 'måneder'} under {formatNOK(minMonthly)}. Total mangel: <strong>{formatNOK(minPaymentStatus.totalMissing)}</strong> som tillegges hovedstolen.</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-                {minPaymentStatus.months.filter((m) => m.missing > 0).slice(-8).map((m) => (
-                  <div key={m.key} className="rounded-xl bg-white border border-rose-200 p-2 text-xs">
-                    <p className="font-bold text-rose-700">{m.key}</p>
-                    <p className="text-slate-700">Betalt: {formatNOK(m.sum)}</p>
-                    <p className="text-rose-700">Mangler: {formatNOK(m.missing)}</p>
-                  </div>
-                ))}
+      {/* RENTE KAPITALISERES / TILLEGG-VARSEL — basert på faktisk ledger */}
+      {(() => {
+        const monthsWithGrowth = ledger.filter((r) => r.principalChange < 0 && r.status !== 'KPI-justering');
+        if (monthsWithGrowth.length === 0) return null;
+        const totalGrowth = monthsWithGrowth.reduce((s, r) => s + Math.abs(r.principalChange), 0);
+        return (
+          <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-bold">Hovedstolen vokser — rente kapitaliseres eller tillegg påløpt</p>
+                <p className="text-rose-800 mt-1">{monthsWithGrowth.length} {monthsWithGrowth.length === 1 ? 'måned' : 'måneder'} hvor påløpt rente + tillegg har vært større enn innbetalingen. Total økning: <strong>{formatNOK(totalGrowth)}</strong></p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                  {monthsWithGrowth.slice(-8).map((r) => (
+                    <div key={r.id} className="rounded-xl bg-white border border-rose-200 p-2 text-xs">
+                      <p className="font-bold text-rose-700">{r.date.slice(0, 7)}</p>
+                      <p className="text-slate-700">Rente: {formatNOK(r.interestDue)}{r.charges ? ` + tillegg ${formatNOK(r.charges)}` : ''}</p>
+                      <p className="text-slate-700">Betalt: {formatNOK(r.paid)}</p>
+                      <p className="text-rose-700">Hovedstol +{formatNOK(Math.abs(r.principalChange))}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-bold">Avtalegrunnlag</p><p>Fast rente {formatPercent(settings.fixedAnnualRatePct ?? DEFAULT_FIXED_RATE)} fra {formatDate(settings.interestStartDate)}. Restgjeld KPI-justeres årlig 1. januar. Innbetalinger fra kjøper øker formuen til <strong>{settings.sellerEntity}</strong> som eier aksjene inntil fullt oppgjør.</p></div></div>
@@ -482,12 +565,12 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       {/* REGISTRER BETALING */}
       <Card>
         <div className="space-y-5 p-5">
-          <div><h2 className="text-xl font-bold flex items-center gap-2"><Coins className="h-5 w-5 text-slate-500" /> Registrer betaling fra kjøper</h2><p className="mt-1 text-sm text-slate-500">Renteandelen bokføres automatisk som inntekt for {settings.sellerEntity}. Hvis beløpet er under {formatNOK(minMonthly)} legges differansen til hovedstolen.</p></div>
+          <div><h2 className="text-xl font-bold flex items-center gap-2"><Coins className="h-5 w-5 text-slate-500" /> Registrer betaling fra kjøper</h2><p className="mt-1 text-sm text-slate-500">Renteandelen bokføres automatisk som inntekt for {settings.sellerEntity}. Påløpt månedsrente ≈ {formatNOK(estimatedMonthlyInterest)}. Betalt under dette → resten kapitaliseres til hovedstolen. Betalt over min ({formatNOK(minMonthly)}) → ekstra avdrag.</p></div>
           <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-5">
             <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Dato</span><input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></label>
-            <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Beløp</span><input type="number" placeholder={String(minMonthly)} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></label>
+            <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Beløp (inkl. evt. ekstra)</span><input type="number" placeholder={String(minMonthly)} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></label>
             <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Metode</span><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option>Bank</option><option>Kontant</option><option>On-Chain</option></select></label>
-            <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Notat</span><input value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} placeholder="Valgfritt" /></label>
+            <label className="block space-y-1"><span className="text-xs font-medium text-slate-700">Notat</span><input value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} placeholder="F.eks. Min termin + 10k ekstra" /></label>
             <button onClick={addPayment} className="btn-primary justify-center"><Plus className="h-4 w-4" /> Legg inn</button>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -495,6 +578,51 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm text-slate-500">Betalt totalt</p><p className="mt-1 text-lg font-bold text-slate-900">{formatNOK(totalPaid)}</p></div>
             <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm text-slate-500">Formel</p><p className="mt-1 font-medium text-slate-900">Ny saldo = gammel saldo + månedsrente − betaling</p></div>
           </div>
+        </div>
+      </Card>
+
+      {/* TILLEGG (strøm, kommunalt, andre utlegg) */}
+      <Card>
+        <div className="space-y-5 p-5">
+          <div><h2 className="text-xl font-bold flex items-center gap-2"><Plus className="h-5 w-5 text-slate-500" /> Tillegg til hovedstol — strøm, kommunalt, andre utlegg</h2><p className="mt-1 text-sm text-slate-500">Kostnader som {settings.sellerEntity} har dekket på vegne av kjøper, men som ikke er overført til {settings.buyerName}. Tillegges hovedstolen i den måneden de er datert.</p></div>
+          <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+            <label className="block space-y-1 md:col-span-2"><span className="text-xs font-medium text-slate-700">Dato</span><input type="date" value={chargeDate} onChange={(e) => setChargeDate(e.target.value)} /></label>
+            <label className="block space-y-1 md:col-span-2"><span className="text-xs font-medium text-slate-700">Beløp NOK</span><input type="number" value={chargeAmount} onChange={(e) => setChargeAmount(e.target.value)} placeholder="F.eks. 1850" /></label>
+            <label className="block space-y-1 md:col-span-2"><span className="text-xs font-medium text-slate-700">Type</span><select value={chargeType} onChange={(e) => setChargeType(e.target.value as MondeoAdditionalCharge['type'])}>
+              <option>Strøm</option>
+              <option>Kommunalt</option>
+              <option>Forsikring</option>
+              <option>Eiendomsskatt</option>
+              <option>Vedlikehold</option>
+              <option>Annet</option>
+            </select></label>
+            <label className="block space-y-1 md:col-span-4"><span className="text-xs font-medium text-slate-700">Notat</span><input value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} placeholder="Periode / fakturanummer" /></label>
+            <button onClick={addCharge} className="btn-primary justify-center md:col-span-2"><Plus className="h-4 w-4" /> Tillegg</button>
+          </div>
+          {charges.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-4 py-3 text-left">Dato</th><th className="px-4 py-3 text-left">Type</th><th className="px-4 py-3 text-right">Beløp</th><th className="px-4 py-3 text-left">Notat</th><th className="px-4 py-3"></th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {charges.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 whitespace-nowrap">{formatDate(c.date)}</td>
+                      <td className="px-4 py-3">{c.type}</td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-rose-700">+ {formatNOK(c.amount)}</td>
+                      <td className="px-4 py-3 text-slate-600">{c.note || '—'}</td>
+                      <td className="px-4 py-3 text-right"><button onClick={() => deleteCharge(c.id)} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 text-sm">
+                  <tr><td colSpan={2} className="px-4 py-3 font-bold">Sum tillegg som ikke er overført</td><td className="px-4 py-3 text-right font-mono font-bold text-rose-700">+ {formatNOK(charges.reduce((s, c) => s + Number(c.amount || 0), 0))}</td><td colSpan={2}></td></tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+          <p className="text-xs text-slate-500">💡 Disse beløpene tillegges hovedstolen automatisk i den måneden de er datert, slik at gjelden til {settings.buyerName} reflekterer det totale tilgodehavendet til {settings.sellerEntity}.</p>
         </div>
       </Card>
 

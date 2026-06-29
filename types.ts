@@ -274,6 +274,17 @@ export interface MondeoLoanPayment {
   postedTransactionId?: string;
 }
 
+// Påløpte kostnader (strøm, kommunalt, andre utlegg)
+// som Mondeo Eiendom / Extrade Holding har dekket på vegne av kjøper
+// og som skal tillegges hovedstolen til avtalen er gjort opp
+export interface MondeoAdditionalCharge {
+  id: string;
+  date: string;
+  amount: number;
+  type: 'Strøm' | 'Kommunalt' | 'Forsikring' | 'Eiendomsskatt' | 'Vedlikehold' | 'Annet';
+  note?: string;
+}
+
 export interface MondeoKpiAdjustment {
   id: string;
   year: number;                         // 2026, 2027, …
@@ -292,7 +303,8 @@ export interface MondeoLedgerRow {
   openingBalance: number;
   interestDue: number;
   paid: number;
+  charges?: number;                     // Påløpte tillegg (strøm/kommunalt) i perioden
   principalChange: number;              // positiv = avdrag, negativ = lånet øker
   closingBalance: number;
-  status: 'Avdrag' | 'Lånet øker' | 'KPI-justering' | 'Manglende min.';
+  status: 'Avdrag' | 'Lånet øker' | 'KPI-justering' | 'Manglende min.' | 'Rente kapitaliseres' | 'Tillegg påløpt';
 }
