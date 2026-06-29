@@ -146,14 +146,23 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         })));
       }
       // Tillegg (strøm, kommunalt) — fra Supabase med localStorage-fallback
+      let loadedFromDb = false;
       try {
         const { data: chargeRows, error } = await supabase.from('mondeo_additional_charges').select('*').eq('user_id', userId).order('date', { ascending: true });
-        if (!error && chargeRows) {
+        if (!error && chargeRows && chargeRows.length > 0) {
           setCharges(chargeRows.map((r: any) => ({ id: r.id, date: r.date, amount: Number(r.amount), type: r.type, note: r.note ?? undefined })));
+          loadedFromDb = true;
+        } else if (error) {
+          console.warn('[Mondeo] charges-tabell ikke tilgjengelig (kjør 20260629_mondeo_additional_charges.sql):', error.message);
         }
-      } catch {
-        const local = localStorage.getItem(`mondeo_charges_${userId}`);
-        if (local) try { setCharges(JSON.parse(local)); } catch {}
+      } catch (e) {
+        console.warn('[Mondeo] charges-fetch feil:', e);
+      }
+      if (!loadedFromDb) {
+        try {
+          const local = localStorage.getItem(`mondeo_charges_${userId}`);
+          if (local) setCharges(JSON.parse(local));
+        } catch {}
       }
     })();
   }, [userId]);
@@ -406,13 +415,22 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         h1 { font-size: 22px; margin: 0 0 4px; }
         h2 { font-size: 14px; margin: 24px 0 8px; color: #475569; text-transform: uppercase; letter-spacing: 0.06em; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
-        th, td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+        th, td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
         th { background: #f1f5f9; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
         .kv { display: grid; grid-template-columns: 200px 1fr; gap: 4px 16px; font-size: 13px; }
         .kv dt { color: #64748b; }
         .kv dd { margin: 0; font-weight: 600; }
         .meta { color: #64748b; font-size: 11px; margin-bottom: 24px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0 18px; }
+        .summary-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
+        .summary-card .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .summary-card .val { font-size: 18px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+        .summary-card.danger .val { color: #b91c1c; }
+        .summary-card.success .val { color: #047857; }
+        .summary-card.warn .val { color: #b45309; }
+        .page-break { page-break-after: always; }
+        .summary-section { padding-bottom: 8px; }
       </style></head><body>${html}</body></html>`);
     win.document.close();
     setTimeout(() => win.print(), 300);
@@ -666,20 +684,23 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{ledger.length} hendelser</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead><tr className="border-b text-left text-slate-500"><th className="py-3 pr-4">#</th><th className="py-3 pr-4">Periode</th><th className="py-3 pr-4 text-right">Startsaldo</th><th className="py-3 pr-4 text-right">Rente</th><th className="py-3 pr-4 text-right">Betalt</th><th className="py-3 pr-4 text-right">Avdrag / økning</th><th className="py-3 pr-4 text-right">Ny saldo</th><th className="py-3 pr-4">Status</th><th className="py-3">Handling</th></tr></thead>
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead><tr className="border-b text-left text-slate-500"><th className="py-3 pr-4">#</th><th className="py-3 pr-4">Periode</th><th className="py-3 pr-4 text-right">Startsaldo</th><th className="py-3 pr-4 text-right">Rente</th><th className="py-3 pr-4 text-right">Betalt</th><th className="py-3 pr-4 text-right">Tillegg</th><th className="py-3 pr-4 text-right">Avdrag / økning</th><th className="py-3 pr-4 text-right">Ny saldo</th><th className="py-3 pr-4">Status / spesifikasjon</th><th className="py-3">Handling</th></tr></thead>
               <tbody>
                 {ledger.length === 0 ? (
-                  <tr><td colSpan={9} className="py-8 text-center text-slate-500">Ingen hendelser registrert ennå.</td></tr>
+                  <tr><td colSpan={10} className="py-8 text-center text-slate-500">Ingen hendelser registrert ennå.</td></tr>
                 ) : ledger.map((row) => {
                   const payment = payments.find((p) => p.id === row.id);
+                  const monthKey = row.date.slice(0, 7);
+                  const rowCharges = charges.filter((c) => c.date && c.date.slice(0, 7) === monthKey);
                   return (
-                    <tr key={row.id} className="border-b last:border-b-0">
+                    <tr key={row.id} className="border-b last:border-b-0 align-top">
                       <td className="py-3 pr-4">{row.nr}</td>
                       <td className="whitespace-nowrap py-3 pr-4">{row.fromDate} → {row.date}</td>
                       <td className="whitespace-nowrap py-3 pr-4 text-right">{formatNOK(row.openingBalance)}</td>
                       <td className="whitespace-nowrap py-3 pr-4 text-right">{formatNOK(row.interestDue)}</td>
                       <td className="whitespace-nowrap py-3 pr-4 text-right">{formatNOK(row.paid)}</td>
+                      <td className="whitespace-nowrap py-3 pr-4 text-right">{row.charges ? <span className="text-rose-700 font-semibold">+ {formatNOK(row.charges)}</span> : '—'}</td>
                       <td className="whitespace-nowrap py-3 pr-4 text-right">{row.principalChange >= 0 ? '− ' : '+ '}{formatNOK(Math.abs(row.principalChange))}</td>
                       <td className="whitespace-nowrap py-3 pr-4 text-right font-semibold">{formatNOK(row.closingBalance)}</td>
                       <td className="py-3 pr-4">
@@ -688,6 +709,13 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
                           row.principalChange >= 0 ? 'border-emerald-200 bg-emerald-100 text-emerald-800' :
                           'border-red-200 bg-red-100 text-red-800'
                         }`}>{row.status}</span>
+                        {rowCharges.length > 0 && (
+                          <div className="mt-1 space-y-0.5">
+                            {rowCharges.map((c) => (
+                              <p key={c.id} className="text-[11px] text-slate-600">• {c.type}: {formatNOK(c.amount)}{c.note ? ` – ${c.note}` : ''}</p>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3">{payment && (<button className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100" onClick={() => deletePayment(payment)}><Trash2 className="h-4 w-4" /></button>)}</td>
                     </tr>
@@ -702,7 +730,31 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       {/* SKJULT UTSKRIFTSOMRÅDE */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
         <h1>Mondeo Eiendom AS · Salgskontrakt — Regnskap</h1>
-        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')}</p>
+        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany})</p>
+
+        {/* SAMMENDRAG ØVERST */}
+        <div className="summary-section">
+          <h2>Sammendrag</h2>
+          <div className="summary-grid">
+            <div className="summary-card"><div className="lbl">Hovedstol (start)</div><div className="val">{formatNOK(settings.initialPrincipal)}</div></div>
+            <div className="summary-card danger"><div className="lbl">Nåværende saldo</div><div className="val">{formatNOK(currentBalance)}</div></div>
+            <div className="summary-card success"><div className="lbl">Innbetalt totalt</div><div className="val">{formatNOK(totalPaid)}</div></div>
+            <div className="summary-card warn"><div className="lbl">Renteinntekt hittil</div><div className="val">{formatNOK(totalInterest)}</div></div>
+            <div className="summary-card"><div className="lbl">Tillegg påløpt (sum)</div><div className="val">{formatNOK(charges.reduce((s, c) => s + Number(c.amount || 0), 0))}</div></div>
+            <div className="summary-card"><div className="lbl">Antall tillegg</div><div className="val">{charges.length}</div></div>
+            <div className="summary-card"><div className="lbl">Antall innbetalinger</div><div className="val">{payments.length}</div></div>
+            <div className="summary-card"><div className="lbl">Avregningsperioder</div><div className="val">{ledger.length}</div></div>
+          </div>
+          {(() => {
+            const monthsWithGrowth = ledger.filter((r) => r.principalChange < 0 && r.status !== 'KPI-justering');
+            const growth = monthsWithGrowth.reduce((s, r) => s + Math.abs(r.principalChange), 0);
+            if (growth > 0) {
+              return <p style={{ fontSize: '11px', color: '#b91c1c', margin: '4px 0 12px' }}><strong>⚠ Hovedstolen har vokst med {formatNOK(growth)}</strong> fordelt på {monthsWithGrowth.length} {monthsWithGrowth.length === 1 ? 'måned' : 'måneder'} hvor rente + tillegg har vært større enn innbetalingen.</p>;
+            }
+            return null;
+          })()}
+        </div>
+        <hr style={{ border: 0, borderTop: '2px solid #0f172a', margin: '8px 0 16px' }} />
 
         <h2>Parter</h2>
         <dl className="kv">
