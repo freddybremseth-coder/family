@@ -127,6 +127,19 @@ const App = () => {
 
   const checkSubscription = useCallback(async (user: any) => {
     if (user.email === ADMIN_EMAIL) { setSubscriptionStatus('lifetime'); return; }
+
+    // 24-timers test-utløp (fra user_metadata satt ved signup)
+    const trialExpiresAt = user?.user_metadata?.trial_expires_at;
+    const isTrial = user?.user_metadata?.is_trial === true;
+    if (isTrial && trialExpiresAt) {
+      const expiresMs = new Date(trialExpiresAt).getTime();
+      if (Number.isFinite(expiresMs) && expiresMs < Date.now()) {
+        alert(`Din 24-timers test utløp ${new Date(expiresMs).toLocaleString('nb-NO')}.\n\nFor å fortsette må du oppgradere til abonnement.`);
+        await supabase.auth.signOut();
+        return;
+      }
+    }
+
     if (!isSupabaseConfigured()) return;
     const { data: profile } = await supabase.from('user_profiles').select('subscription_status, trial_started_at').eq('id', user.id).single();
     if (!profile) { await supabase.from('user_profiles').insert({ id: user.id }); setSubscriptionStatus('trial'); setTrialDaysLeft(TRIAL_DAYS); return; }
