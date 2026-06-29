@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from '../supabase';
 import { translations } from '../translations';
 import { Language } from '../types';
@@ -89,6 +89,24 @@ export const LandingPageClean: React.FC<Props> = ({ onLogin, lang, setLang }) =>
   const [message, setMessage] = useState('');
   const [showSubscriptionInfo, setShowSubscriptionInfo] = useState(false);
   translations[lang];
+
+  // Les ?mode=... fra URL og åpne riktig flyt automatisk
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('mode');
+      if (mode === 'trial') { setAuthMode('trial'); setShowAuth(true); }
+      else if (mode === 'login') { setAuthMode('login'); setShowAuth(true); }
+      else if (mode === 'subscribe') { setShowSubscriptionInfo(true); }
+      else if (mode === 'signup') { setAuthMode('signup'); setShowAuth(true); }
+      if (mode) {
+        // Rydd query-param fra URL
+        const url = new URL(window.location.href);
+        url.searchParams.delete('mode');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {}
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
