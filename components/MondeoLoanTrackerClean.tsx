@@ -741,13 +741,61 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           </table>
         </>)}
 
+        {charges.length > 0 && (<>
+          <h2>Påløpte tillegg til hovedstol</h2>
+          <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 8px' }}>
+            Kostnader som {settings.sellerEntity} har dekket på vegne av {settings.buyerName}, men som ikke er overført til kjøper. Tillegges hovedstolen i den måneden de er datert.
+          </p>
+          <table>
+            <thead><tr><th>Dato</th><th>Type</th><th className="num">Beløp</th><th>Spesifikasjon / fakturareferanse</th></tr></thead>
+            <tbody>
+              {charges.map((c) => (
+                <tr key={c.id}>
+                  <td>{formatDate(c.date)}</td>
+                  <td>{c.type}</td>
+                  <td className="num">+ {formatNOK(c.amount)}</td>
+                  <td>{c.note || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 'bold', borderTop: '2px solid #0f172a' }}>
+                <td colSpan={2}>Sum tillegg</td>
+                <td className="num">+ {formatNOK(charges.reduce((s, c) => s + Number(c.amount || 0), 0))}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </>)}
+
         <h2>Avregningshistorikk</h2>
         <table>
-          <thead><tr><th>#</th><th>Periode</th><th className="num">Startsaldo</th><th className="num">Rente</th><th className="num">Betalt</th><th className="num">Avdrag/økning</th><th className="num">Ny saldo</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Periode</th><th className="num">Startsaldo</th><th className="num">Rente</th><th className="num">Betalt</th><th className="num">Tillegg</th><th className="num">Avdrag/økning</th><th className="num">Ny saldo</th><th>Status / spesifikasjon</th></tr></thead>
           <tbody>
-            {ledger.map((row) => (
-              <tr key={row.id}><td>{row.nr}</td><td>{row.fromDate} → {row.date}</td><td className="num">{formatNOK(row.openingBalance)}</td><td className="num">{formatNOK(row.interestDue)}</td><td className="num">{formatNOK(row.paid)}</td><td className="num">{row.principalChange >= 0 ? '−' : '+'}{formatNOK(Math.abs(row.principalChange))}</td><td className="num">{formatNOK(row.closingBalance)}</td><td>{row.status}</td></tr>
-            ))}
+            {ledger.map((row) => {
+              // Slå opp tillegg-detaljer for raden — vis type+notat-liste i status-kolonnen
+              const monthKey = row.date.slice(0, 7);
+              const rowCharges = charges.filter((c) => c.date && c.date.slice(0, 7) === monthKey);
+              const chargeSpec = rowCharges.length > 0
+                ? rowCharges.map((c) => `${c.type}: ${formatNOK(c.amount)}${c.note ? ` (${c.note})` : ''}`).join('; ')
+                : '';
+              return (
+                <tr key={row.id}>
+                  <td>{row.nr}</td>
+                  <td>{row.fromDate} → {row.date}</td>
+                  <td className="num">{formatNOK(row.openingBalance)}</td>
+                  <td className="num">{formatNOK(row.interestDue)}</td>
+                  <td className="num">{formatNOK(row.paid)}</td>
+                  <td className="num">{row.charges ? `+ ${formatNOK(row.charges)}` : '—'}</td>
+                  <td className="num">{row.principalChange >= 0 ? '−' : '+'}{formatNOK(Math.abs(row.principalChange))}</td>
+                  <td className="num">{formatNOK(row.closingBalance)}</td>
+                  <td>
+                    <div>{row.status}</div>
+                    {chargeSpec && <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>{chargeSpec}</div>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
