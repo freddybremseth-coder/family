@@ -107,8 +107,25 @@ export const getLocalCalendarEvents = async (location: string, year: number) => 
   try {
     return await safeGeminiJson(async () => {
       const ai = getAi();
-      const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: `Finn alle helligdager (bank holidays), nasjonale fridager, og lokale fiestas i ${location} for året ${year}. Returner resultatet som et JSON-objekt med en liste "events".`, config: { tools: [{ googleSearch: {} }], responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { events: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, title: { type: Type.STRING }, description: { type: Type.STRING }, type: { type: Type.STRING, enum: ['Holiday', 'Fiesta', 'Bank Holiday', 'Market'] }, isLocal: { type: Type.BOOLEAN } }, required: ['date', 'title', 'description', 'type'] } } }, required: ['events'] } } });
-      return JSON.parse(response.text || '{"events": []}');
+      const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: `Finn KUN offisielle helligdager (bank holidays), nasjonale fridager, og lokale fiestas/markeder i ${location} for året ${year}.
+
+VIKTIG:
+- IKKE inkluder sportskamper, fotballkamper, OL, VM, EM, ligakamper, eller andre konkurranser
+- IKKE finn på navn på lag eller resultater
+- IKKE inkluder hendelser hvor du er usikker på datoen
+- KUN tradisjonelle helligdager, religiøse høytider, byfester, og fastsatte markeder
+- Hvis du er usikker på en dato eller hendelse, hopp over den
+- Returner tom liste hvis du ikke finner pålitelige data
+
+Returner som JSON-objekt med liste "events".`, config: { tools: [{ googleSearch: {} }], responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { events: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, title: { type: Type.STRING }, description: { type: Type.STRING }, type: { type: Type.STRING, enum: ['Holiday', 'Fiesta', 'Bank Holiday', 'Market'] }, isLocal: { type: Type.BOOLEAN } }, required: ['date', 'title', 'description', 'type'] } } }, required: ['events'] } } });
+      const parsed = JSON.parse(response.text || '{"events": []}');
+      // Filtrer ut sportskamper og konkurranser som likevel skulle sklippe gjennom
+      const sportsKeywords = /\b(kamp|match|fotball|football|soccer|vm|em|ol|olympic|fifa|uefa|liga|cup|finale|kvartfinale|åttendedel|semifinal|gruppe[ -]?[a-z]|round of|knockout|playoff|tennis|håndball|handball|hockey|basketball|spiller|player|coach|stadion|stadium|vs\.?|mot|møter|—|–)\b|\b(brasil|argentina|tyskland|germany|nederland|netherlands|mexico|ecuador|paraguay|kongo|congo|frankrike|france|spania|italia|portugal|england|usa|japan|korea)\b.*\b(brasil|argentina|tyskland|germany|nederland|netherlands|mexico|ecuador|paraguay|kongo|congo|frankrike|france|spania|italia|portugal|england|usa|japan|korea)\b/i;
+      parsed.events = (parsed.events || []).filter((e: any) => {
+        const haystack = `${e.title || ''} ${e.description || ''}`;
+        return !sportsKeywords.test(haystack);
+      });
+      return parsed;
     });
   } catch (err) {
     console.warn("AI Calendar disabled/error:", friendlyAiError(err));
