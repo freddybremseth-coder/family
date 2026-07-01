@@ -153,7 +153,55 @@ export const getSmartShoppingSuggestions = async (history: string[]) => safeGemi
 
 export const analyzeFridge = async (b64: string) => safeGeminiJson(async () => {
   const ai = getAi();
-  const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType: 'image/jpeg', data: b64 } }, { text: "Hva ser du i dette kjøleskapet? Lag en liste over ingredienser og foreslå 2 retter man kan lage." }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { identifiedItems: { type: Type.ARRAY, items: { type: Type.STRING } }, recipes: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, missingIngredients: { type: Type.ARRAY, items: { type: Type.STRING } }, fullIngredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } } }, instructions: { type: Type.ARRAY, items: { type: Type.STRING } } } } } } } } });
+  // Bruker Gemini Pro (bedre bildeforståelse) + strammere prompt for grundigere skann.
+  // Kall kan ta 30-60 sekunder — verdt det for full ingrediens-liste.
+  const prompt = `Du er en ekspert på matvare-identifikasjon. Analyser dette kjøleskap-/spiskammer-bildet SVÆRT GRUNDIG.
+
+INSTRUKS:
+1. Skanne HVER hylle, HVER dørhylle, HVER krok. Ikke hopp over noe.
+2. Identifiser HVER eneste synlige matvare/drikke — også de bak andre, i emballasje, med etikett vendt bort, delvis skjulte, i lys eller mørke områder.
+3. Vær ekstra oppmerksom på:
+   - Melk, yoghurt, smør, ost, egg
+   - Grønnsaker og frukt (også i grønnsak-skuffen)
+   - Kjøtt, fisk, pålegg
+   - Krydder, sauser, dressinger, syltetøy, marmelade
+   - Brød, wraps
+   - Drikke: juice, brus, vann, øl, vin
+   - Rester i beholdere (identifiser hvis mulig)
+   - Frysvarer hvis synlig
+4. Skille mellom lignende varer: "H-melk" vs "økologisk melk" vs "havremelk" hvis etikett viser
+5. Angi omtrentlig mengde/tilstand hvis mulig (halvfull, nesten tom, uåpnet)
+6. Bruk spanske produktnavn hvis emballasjen er spansk (leche, aceite, jamón, etc.)
+
+Returner MINIMUM 15 varer hvis kjøleskapet er normalt fullt. Hvis du er usikker på en vare, ta den med og prefixe med «(usikker) ».
+
+Foreslå deretter 3-4 realistiske retter familien kan lage NÅ med disse ingrediensene, og eventuelt hva som mangler.`;
+  const response = await ai.models.generateContent({
+    model: GEMINI_PRO,
+    contents: [{ inlineData: { mimeType: 'image/jpeg', data: b64 } }, { text: prompt }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          identifiedItems: { type: Type.ARRAY, items: { type: Type.STRING } },
+          recipes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                description: { type: Type.STRING },
+                missingIngredients: { type: Type.ARRAY, items: { type: Type.STRING } },
+                fullIngredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } } },
+                instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
   return JSON.parse(response.text || '{"identifiedItems": [], "recipes": []}');
 });
 

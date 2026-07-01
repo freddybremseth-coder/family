@@ -311,10 +311,12 @@ export const ShoppingList: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     try {
-      const result = await analyzeFridge(base64);
+      // Grundig scan bruker Gemini Pro — kan ta 30-60 sek
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout etter 90s')), 90000));
+      const result = await Promise.race([analyzeFridge(base64), timeoutPromise]);
       setFridgeResults(result);
-    } catch {
-      setError('Fridge analysis failed. Try a new picture.');
+    } catch (err: any) {
+      setError(err?.message?.includes('Timeout') ? 'AI tok for lang tid (>90s). Prøv med et klarere bilde eller sjekk API-nøkkelen.' : 'Fridge analysis failed. Try a new picture.');
     } finally {
       setLoading(false);
     }
@@ -739,9 +741,10 @@ export const ShoppingList: React.FC<Props> = ({
               )}
 
               {loading && (
-                <div className="empty-state py-12">
-                  <RefreshCw className="w-10 h-10 text-indigo-400 animate-spin mb-3" />
-                  <p className="text-slate-500 font-medium">{t.loading}</p>
+                <div className="empty-state py-12 text-center">
+                  <RefreshCw className="w-10 h-10 text-indigo-400 animate-spin mb-3 mx-auto" />
+                  <p className="text-slate-700 font-bold">{t.loading}</p>
+                  <p className="text-xs text-slate-500 mt-2">Grundig skanning kan ta 30-60 sekunder for å fange alle detaljer.</p>
                 </div>
               )}
 
