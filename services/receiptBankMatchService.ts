@@ -1,8 +1,16 @@
 // Matcher skannede kvitteringer mot bank-transaksjoner slik at brukeren ser
 // hvilke transaksjoner har kvittering-detaljer og hvilke som mangler.
 
-import { Transaction } from '../types';
+import { Transaction, TransactionType } from '../types';
 import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
+
+interface ReceiptGroup {
+  vendor: string;
+  date: string;
+  total: number;
+  items: Array<{ name: string; total_price: number }>;
+  transactionId?: string;
+}
 
 export interface ReceiptMatchRow {
   transactionId: string;
@@ -40,8 +48,8 @@ export async function matchReceiptsToTransactions(userId: string, transactions: 
     if (!items) return [];
 
     // Grupper på receipt_id (eller transaction_id, eller vendor+date som fallback)
-    const receipts = new Map<string, { vendor: string; date: string; total: number; items: Array<{ name: string; total_price: number }>; transactionId?: string }>();
-    for (const r of items as any[]) {
+    const receipts: Map<string, ReceiptGroup> = new Map();
+    for (const r of (items as any[])) {
       const key = r.transaction_id || r.receipt_id || `${r.vendor}-${r.date}`;
       if (!receipts.has(key)) receipts.set(key, { vendor: r.vendor, date: r.date, total: 0, items: [], transactionId: r.transaction_id });
       const receipt = receipts.get(key)!;
@@ -54,9 +62,9 @@ export async function matchReceiptsToTransactions(userId: string, transactions: 
     const usedReceipts = new Set<string>();
 
     for (const tx of transactions) {
-      if (!tx.date || tx.type !== 'EXPENSE' as any) continue;
+      if (!tx.date || tx.type !== TransactionType.EXPENSE) continue;
 
-      let bestMatch: { key: string; receipt: typeof receipts extends Map<string, infer V> ? V : never; days: number; confidence: 'exact' | 'close' | 'none' } | null = null;
+      let bestMatch: { key: string; receipt: ReceiptGroup; days: number; confidence: 'exact' | 'close' } | null = null;
 
       for (const [key, receipt] of receipts) {
         if (usedReceipts.has(key)) continue;
