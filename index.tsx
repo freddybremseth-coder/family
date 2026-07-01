@@ -65,6 +65,16 @@ const App = () => {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // Custom event for programmatisk navigasjon (fra child-komponenter via dispatchEvent)
+  useEffect(() => {
+    const navHandler = (e: any) => {
+      const tab = e?.detail;
+      if (typeof tab === 'string') setActiveTab(tab);
+    };
+    window.addEventListener('navigate-tab', navHandler);
+    return () => window.removeEventListener('navigate-tab', navHandler);
+  }, []);
   const [cashBalance, setCashBalance] = useState(4250);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);

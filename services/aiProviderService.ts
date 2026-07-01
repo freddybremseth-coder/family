@@ -42,6 +42,8 @@ function cleanEnv(value: unknown): string {
 function env() { return typeof import.meta !== 'undefined' ? import.meta.env : {}; }
 function isPdf(mimeType = '') { return mimeType.toLowerCase().includes('pdf'); }
 function timeoutMs(kind: 'receipt' | 'statement') { return kind === 'statement' ? 45000 : 25000; }
+// Kortere timeout for Gemini kvittering-scan så vi hopper raskere til OpenAI/Claude ved treghet
+function geminiReceiptTimeoutMs() { return 18000; }
 
 async function withTimeout<T>(promise: Promise<T>, label: string, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -191,18 +193,47 @@ export async function analyzeBankStatementWithClaude(b64: string, mimeType = 'im
 export async function runReceiptFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
   const errors: string[] = [];
   const providers: ProviderName[] = ['gemini', 'openai', 'claude'];
+  const availability = { gemini: !geminiBlacklistReason(), openai: hasOpenAI(), claude: hasClaude() };
+  const anyAvailable = availability.gemini || availability.openai || availability.claude;
+  if (!anyAvailable) {
+    throw new Error('Ingen AI-nøkkel er konfigurert. Gå til Innstillinger → AI og legg inn minst én av Gemini, OpenAI eller Claude API-nøkkel.');
+  }
+
   for (const provider of providers) {
     try {
       let result: any = null;
-      if (provider === 'gemini') result = await withTimeout(geminiFn(), 'Gemini kvittering', timeoutMs('receipt'));
-      if (provider === 'openai' && hasOpenAI()) result = await analyzeReceiptWithOpenAI(b64, mimeType);
-      if (provider === 'claude' && hasClaude()) result = await analyzeReceiptWithClaude(b64, mimeType);
+      if (provider === 'gemini' && availability.gemini) {
+        // Kortere timeout for Gemini så vi kommer raskere til OpenAI/Claude
+        result = await withTimeout(geminiFn(), 'Gemini kvittering', geminiReceiptTimeoutMs());
+      } else if (provider === 'openai' && availability.openai) {
+        result = await analyzeReceiptWithOpenAI(b64, mimeType);
+      } else if (provider === 'claude' && availability.claude) {
+        result = await analyzeReceiptWithClaude(b64, mimeType);
+      } else {
+        // Provider ikke konfigurert — hopp over stille
+        continue;
+      }
       if (!result) continue;
       if (hasUsableReceiptTotal(result)) return { provider, result };
       errors.push(`${provider}: ${unusableReceiptReason(result)}`);
-    } catch (err) { errors.push(`${provider}: ${friendlyProviderError(err)}`); }
+    } catch (err) {
+      const errMsg = friendlyProviderError(err);
+      errors.push(`${provider}: ${errMsg}`);
+      // Hvis Gemini blir blocked/permission-nekt, marker og hopp videre
+      if (provider === 'gemini' && isPermissionError(err)) {
+        blacklistGemini(errMsg);
+      }
+    }
   }
-  throw new Error(`Jeg klarte ikke å lese totalbeløpet sikkert nok. ${errors.join(' | ') || 'Legg inn Gemini, OpenAI eller Claude API-nøkkel.'}`);
+
+  // Konstruér hjelpsom feilmelding basert på hva som er konfigurert
+  const missing: string[] = [];
+  if (!availability.openai) missing.push('OpenAI');
+  if (!availability.claude) missing.push('Claude');
+  const suggest = missing.length > 0
+    ? ` Vurder å legge til ${missing.join(' eller ')} API-nøkkel i Innstillinger → AI for mer robust fallback.`
+    : '';
+  throw new Error(`Jeg klarte ikke å lese totalbeløpet sikkert nok. ${errors.join(' | ') || 'Ingen provider svarte.'}${suggest}`);
 }
 
 export interface ProviderAttempt {
