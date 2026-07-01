@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../supabase';
+import { supabaseFamilyData as supabase, isSupabaseConfigured } from '../supabase';
 
 export interface Household {
   id: string;
