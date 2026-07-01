@@ -103,6 +103,73 @@ export const analyzeFamilyDocument = async (b64: string, mimeType = 'image/jpeg'
   return JSON.parse(response.text || '{"title":"","category":"Annet","owner":"Familien","note":""}');
 });
 
+/**
+ * AI-familieoppgave-sjef: evaluerer ukens oppgaver, foreslår omfordeling
+ * og påpeker hva som mangler for en typisk familie-uke.
+ */
+export const analyzeWeeklyTasks = async (
+  tasks: Array<{ description: string; date?: string; assignedTo?: string; isComplete?: boolean; priority?: string; recurrence?: string }>,
+  familyMembers: Array<{ name: string; id: string }>,
+) => safeGeminiJson(async () => {
+  const ai = getAi();
+  const memberNames = familyMembers.map(m => m.name).join(', ');
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
+  const context = tasks
+    .filter(t => t.date && new Date(t.date) >= weekStart)
+    .map(t => `${t.date} · ${t.description} · ansvarlig: ${t.assignedTo || 'ingen'} · ${t.isComplete ? 'FERDIG' : 'ÅPEN'}${t.recurrence ? ` · gjentakelse: ${t.recurrence}` : ''}`)
+    .join('\n');
+
+  const prompt = `Du er «familieoppgave-sjefen» for BREMSETH-familien. Familiemedlemmer: ${memberNames}.
+
+Ukens oppgaver (fra i dag):
+${context || '(Ingen oppgaver denne uken)'}
+
+Analyser og gi tilbake JSON med:
+1. summary: kort sammendrag av ukens status (2-3 setninger)
+2. coverage: er ukens typiske familie-oppgaver dekket? (handling, matplan, husarbeid, barnepass, transport, økonomi, sosialt)
+3. missingCategories: hvilke typiske familie-oppgave-kategorier mangler helt
+4. suggestedTasks: 3-5 konkrete oppgaver som ville vært naturlig å ha
+5. balanceWarning: hvis én person har mange flere oppgaver enn andre (skjevfordeling)
+6. celebration: hva som er dekket godt, ros til familien
+7. actionItems: 2-3 konkrete anbefalinger for uka
+
+Svar på norsk. Vær direkte og handlingsrettet, ikke svulstig.`;
+
+  const response = await ai.models.generateContent({
+    model: GEMINI_FLASH,
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING },
+          coverage: { type: Type.STRING },
+          missingCategories: { type: Type.ARRAY, items: { type: Type.STRING } },
+          suggestedTasks: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                description: { type: Type.STRING },
+                suggestedAssignee: { type: Type.STRING },
+                priority: { type: Type.STRING },
+                reason: { type: Type.STRING },
+              },
+            },
+          },
+          balanceWarning: { type: Type.STRING },
+          celebration: { type: Type.STRING },
+          actionItems: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ['summary', 'suggestedTasks', 'actionItems'],
+      },
+    },
+  });
+  return JSON.parse(response.text || '{}');
+});
+
 export const getLocalCalendarEvents = async (location: string, year: number) => {
   try {
     return await safeGeminiJson(async () => {
