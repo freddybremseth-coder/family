@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Crown, Loader2, PackagePlus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Crown, Loader2, PackagePlus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import { ADMIN_MODULES, AdminUserProfile, deleteAdminUser, fetchAdminUsers, MARKETPLACE_MODULES, PLAN_DEFINITIONS, setUserModuleAccess } from '../services/adminService';
+import { fetchRecentAudit, AuditEntry } from '../services/auditLogService';
 import { supabase } from '../supabase';
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -28,6 +29,8 @@ export const SuperAdminDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AdminUserProfile | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -43,7 +46,15 @@ export const SuperAdminDashboard = () => {
     }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  const loadAudit = async () => {
+    setAuditLoading(true);
+    try {
+      const entries = await fetchRecentAudit(50);
+      setAuditEntries(entries);
+    } finally { setAuditLoading(false); }
+  };
+
+  useEffect(() => { loadUsers(); loadAudit(); }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -247,6 +258,66 @@ export const SuperAdminDashboard = () => {
               </tbody>
             </table>
           )}
+        </div>
+      </Card>
+
+      {/* AUDIT LOG */}
+      <Card>
+        <div className="border-b border-slate-200 p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"><Clock className="h-5 w-5" /></div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Audit-log</h2>
+              <p className="text-sm text-slate-500">Sensitive operasjoner de siste 50 hendelsene. Kjør SQL-migrasjon 20260706_audit_log.sql først.</p>
+            </div>
+          </div>
+          <button onClick={loadAudit} disabled={auditLoading} className="btn-secondary text-xs">
+            {auditLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Oppdater
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          {auditLoading ? (
+            <div className="flex items-center justify-center gap-3 p-8 text-slate-500 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Laster...</div>
+          ) : auditEntries.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-sm">Ingen aktivitet loggført. (Krever at audit_log-tabellen er opprettet — kjør 20260706_audit_log.sql).</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-3 text-left">Tidspunkt</th>
+                  <th className="px-5 py-3 text-left">Aktør</th>
+                  <th className="px-5 py-3 text-left">Handling</th>
+                  <th className="px-5 py-3 text-left">Mål</th>
+                  <th className="px-5 py-3 text-left">Detaljer</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {auditEntries.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50 align-top">
+                    <td className="px-5 py-3 whitespace-nowrap text-xs text-slate-500">{new Date(entry.createdAt).toLocaleString('nb-NO')}</td>
+                    <td className="px-5 py-3 text-xs">{entry.actorEmail || entry.actorUserId?.slice(0, 8)}</td>
+                    <td className="px-5 py-3"><span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700">{entry.action}</span></td>
+                    <td className="px-5 py-3 text-xs font-mono text-slate-600">{entry.targetType}{entry.targetId ? `: ${entry.targetId.slice(0, 16)}${entry.targetId.length > 16 ? '…' : ''}` : ''}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500 max-w-md truncate">{entry.details ? JSON.stringify(entry.details) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+
+      {/* 2FA / MFA hint */}
+      <Card>
+        <div className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-100 text-amber-700"><ShieldCheck className="h-5 w-5" /></div>
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-slate-900">To-faktor autentisering (2FA)</h3>
+              <p className="mt-1 text-sm text-slate-600">Supabase støtter TOTP-basert MFA. Aktiver på din bruker via Supabase Dashboard → Authentication → Users → klikk din bruker → «Enable MFA».</p>
+              <p className="mt-2 text-xs text-slate-500">Alternativt kan du bruke Supabase.auth.mfa.enroll() fra klient-koden for å legge til enrollment-flyt direkte i appen (kommer i egen fase).</p>
+            </div>
+          </div>
         </div>
       </Card>
     </div>

@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import { ALL_NAVIGATION } from '../constants';
 import { ModuleId } from '../config/productMode';
+import { logAction } from './auditLogService';
 
 const LIFETIME_ADMIN_EMAIL = 'freddy.bremseth@gmail.com';
 
@@ -115,6 +116,16 @@ export async function setUserModuleAccess(userId: string, moduleId: string, enab
     }, { onConflict: 'user_id,module_id' });
 
   if (error) throw error;
+
+  if (adminUserId) {
+    await logAction({
+      action: 'module.toggle',
+      actorUserId: adminUserId,
+      targetType: 'user_module_access',
+      targetId: `${userId}:${moduleId}`,
+      details: { userId, moduleId, enabled },
+    });
+  }
 }
 
 export function defaultUserModules() {
@@ -127,12 +138,29 @@ export async function deleteAdminUser(userId: string, email?: string) {
     throw new Error('Kan ikke slette livstid-admin (eier).');
   }
 
+  // Hent aktørens ID for audit-log
+  const { data: sessionData } = await supabase.auth.getSession();
+  const actorUserId = sessionData.session?.user?.id;
+  const actorEmail = sessionData.session?.user?.email;
+
   // 1. Fjern modul-tilganger
   await supabase.from('user_module_access').delete().eq('user_id', userId);
 
   // 2. Fjern bruker-profil
   const { error: profileError } = await supabase.from('user_profiles').delete().eq('id', userId);
   if (profileError) throw profileError;
+
+  // Audit
+  if (actorUserId) {
+    await logAction({
+      action: 'user.delete',
+      actorUserId,
+      actorEmail: actorEmail || undefined,
+      targetType: 'user',
+      targetId: userId,
+      details: { email: email || null },
+    });
+  }
 
   // 3. Forsøk å slette auth.user via admin-API (krever service_role / Edge Function)
   //    Hvis ikke tilgjengelig, beholdes auth-recorden — kan slettes manuelt fra Supabase-dashboard.
