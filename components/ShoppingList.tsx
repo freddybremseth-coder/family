@@ -20,6 +20,7 @@ import { isSupabaseConfigured } from '../supabase';
 import { translations } from '../translations';
 import { PantryHistorySuggestions } from './PantryHistorySuggestions';
 import { BarcodeScanner } from './BarcodeScanner';
+import { WeeklyMenuFromHistory } from './WeeklyMenuFromHistory';
 
 interface Props {
   cashBalance: number;
@@ -606,7 +607,7 @@ export const ShoppingList: React.FC<Props> = ({
                 </button>
               </div>
 
-              {/* Handleshistorikk-forslag + barcode-skanner */}
+              {/* Handleshistorikk-forslag + barcode-skanner + AI-ukemeny */}
               <div className="mb-4 flex flex-wrap gap-2">
                 <PantryHistorySuggestions userId={userId} onAddItem={(name) => addItem(name)} />
                 <button
@@ -615,6 +616,7 @@ export const ShoppingList: React.FC<Props> = ({
                 >
                   <Scan className="h-4 w-4" /> Skann strekkode
                 </button>
+                <WeeklyMenuFromHistory userId={userId} onAddIngredient={(name) => addItem(name)} />
               </div>
               <BarcodeScanner
                 open={barcodeOpen}
