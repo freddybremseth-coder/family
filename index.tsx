@@ -7,6 +7,7 @@ import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { GoalsManager } from './components/GoalsManager';
 import { CryptoManager } from './components/CryptoManager';
 import { OliveOilInventory } from './components/OliveOilInventory';
+import { GlobalSearch } from './components/GlobalSearch';
 import { Dashboard } from './components/Dashboard';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LiquidityForecastCard } from './components/LiquidityForecastCard';
@@ -50,6 +51,19 @@ const App = () => {
   const [persistentReady, setPersistentReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Cmd+K / Ctrl+K åpner globalt søk
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const [cashBalance, setCashBalance] = useState(4250);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);
@@ -231,7 +245,8 @@ const App = () => {
     {sidebarOpen && <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />}
     <nav className="bottom-nav md:hidden">{[{ id: 'dashboard', icon: <LayoutDashboard /> }, { id: 'shopping', icon: <ShoppingCart /> }, { id: 'familyplan', icon: <CalendarDays /> }, { id: 'transactions', icon: <CreditCard /> }].filter(item => isModuleVisibleForUser(item.id as any, userEmail)).map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`bottom-nav-item ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span>{labelFor(item.id)}</span></button>)}<button onClick={() => setSidebarOpen(true)} className={`bottom-nav-item ${!['dashboard','shopping','familyplan','transactions'].includes(activeTab) ? 'active' : ''}`}><MoreHorizontal /><span>{t.see_all}</span></button></nav>
     <aside className={`app-sidebar fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto`}><div className="p-5 border-b border-slate-100"><div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('dashboard')}><div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-slate-900"><Heart className="w-5 h-5 text-white" /></div><div><p className="font-extrabold text-slate-900 leading-none tracking-tight">FamilieHub</p><p className="text-[11px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">{userConfig.familyName}</p></div></div></div><nav className="flex-1 p-4 space-y-0.5 overflow-y-auto">{userConfig.role === UserRole.SUPER_ADMIN && <button onClick={() => navigate('superadmin')} className={`nav-item w-full text-left ${activeTab === 'superadmin' ? 'active' : ''}`}><ShieldCheck className="w-5 h-5 shrink-0" />Admin</button>}{visibleNavigation.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}>{item.icon}<span className="truncate">{labelFor(item.id, item.label)}</span></button>)}</nav><div className="p-4 border-t border-slate-100"><button onClick={handleLogout} className="nav-item w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-5 h-5 shrink-0" />{t.logout}</button></div></aside>
-    <div className="flex-1 flex flex-col min-w-0 md:ml-0"><header className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">{sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}</button><div><h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2><p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">{new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div></div></header><main className="flex-1 p-4 md:p-8 overflow-y-auto">{renderContent()}</main></div>
+    <div className="flex-1 flex flex-col min-w-0 md:ml-0"><header className="sticky top-0 z-30 px-4 md:px-8 h-16 flex items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">{sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}</button><div><h2 className="font-extrabold text-slate-900 text-lg leading-none tracking-tight">{pageTitle}</h2><p className="text-[11px] text-slate-500 mt-1 hidden sm:block font-medium">{new Date().toLocaleDateString(userConfig.language === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div></div><button onClick={() => setSearchOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50" title="Globalt søk">Søk <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd></button></header><main className="flex-1 p-4 md:p-8 overflow-y-auto">{renderContent()}</main></div>
+    <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={navigate} transactions={transactions} bankAccounts={bankAccounts} assets={assets} bills={bills} familyMembers={familyMembers} calendarEvents={calendarEvents} />
   </div>;
 };
 

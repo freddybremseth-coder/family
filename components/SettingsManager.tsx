@@ -4,6 +4,8 @@ import { translations } from '../translations';
 import { AlertCircle, CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2, Lock, Eye, EyeOff, Mail, Loader2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { HouseholdMembersPanel } from './HouseholdMembersPanel';
+import { exportUserData, downloadAsJson } from '../services/gdprExportService';
+import { Download, CalendarClock } from 'lucide-react';
 import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
 import { MARKETPLACE_MODULES, PLAN_DEFINITIONS } from '../services/adminService';
 import { supabase, isSupabaseConfigured } from '../supabase';
@@ -234,7 +236,58 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
       )}
 
       {activeTab === 'profile' && (
-        <HouseholdMembersPanel userId={userId} familyName={userConfig.familyName} currentUserEmail={accountEmail} />
+        <div className="space-y-6">
+          <HouseholdMembersPanel userId={userId} familyName={userConfig.familyName} currentUserEmail={accountEmail} />
+
+          {/* GDPR-eksport + iCal */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"><Download className="h-5 w-5" /></div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-slate-900">Eksport og portabilitet</h3>
+                <p className="text-sm text-slate-500">Last ned all din data (GDPR) eller kalenderen som iCal.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!userId) { alert('Ikke innlogget'); return; }
+                  const data = await exportUserData(userId);
+                  downloadAsJson(`familyhub-eksport-${new Date().toISOString().slice(0, 10)}.json`, data);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" /> Last ned alle mine data (JSON)
+              </button>
+              <a
+                href="#"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!userId) { alert('Ikke innlogget'); return; }
+                  const { generateIcal, downloadIcal } = await import('../services/icalService');
+                  const { supabase: sb } = await import('../supabase');
+                  const [{ data: events }, { data: tasks }, { data: holidays }] = await Promise.all([
+                    sb.from('calendar_events').select('*').eq('user_id', userId),
+                    sb.from('tasks').select('*').eq('user_id', userId),
+                    sb.from('family_holidays').select('*').limit(500),
+                  ]);
+                  const ical = generateIcal({
+                    familyName: userConfig.familyName || 'Familien',
+                    events: (events || []) as any,
+                    tasks: (tasks || []) as any,
+                    localEvents: (holidays || []).map((h: any) => ({ date: h.holiday_date, title: h.local_name || h.name, description: h.name, type: h.type })) as any,
+                  });
+                  downloadIcal(`familyhub-kalender-${new Date().toISOString().slice(0, 10)}.ics`, ical);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50"
+              >
+                <CalendarClock className="h-4 w-4" /> Last ned kalender (iCal .ics)
+              </a>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">iCal-filen kan importeres eller abonneres på i Apple Kalender, Google Kalender og Outlook.</p>
+          </div>
+        </div>
       )}
 
       {activeTab === 'security' && (
