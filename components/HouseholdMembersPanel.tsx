@@ -89,9 +89,19 @@ export const HouseholdMembersPanel: React.FC<Props> = ({ userId, familyName = 'F
       {error && <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       {household?.isLocalFallback && (
-        <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Denne kontoen bruker lokal fallback — invitasjoner krever at Supabase er koblet til.
-        </p>
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-bold">Denne kontoen bruker lokal fallback — invitasjoner krever at Supabase er koblet til.</p>
+          {household.fallbackReason && (
+            <p className="mt-2 font-mono text-xs whitespace-pre-wrap break-all">Feil fra Supabase: {household.fallbackReason}</p>
+          )}
+          <button
+            onClick={() => { setError(null); setMessage(null); try { localStorage.removeItem('familyhub_local_household'); } catch {} reload(); }}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+          >
+            Prøv å koble til på nytt
+          </button>
+          <p className="mt-2 text-xs text-amber-700">Sjekk også Browser Console (Cmd+Opt+I) for full stack-trace.</p>
+        </div>
       )}
 
       {/* Medlem-liste */}

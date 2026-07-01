@@ -6,6 +6,7 @@ export interface Household {
   ownerUserId: string;
   plan: 'free' | 'family' | 'family_pro' | 'business';
   isLocalFallback?: boolean;
+  fallbackReason?: string;
 }
 
 const LOCAL_HOUSEHOLD_KEY = 'familyhub_local_household';
@@ -19,7 +20,7 @@ function mapHousehold(row: any): Household {
   };
 }
 
-function localHousehold(userId: string, fallbackName = 'Familien'): Household {
+function localHousehold(userId: string, fallbackName = 'Familien', lastError?: string): Household {
   try {
     const existing = JSON.parse(localStorage.getItem(LOCAL_HOUSEHOLD_KEY) || 'null');
     if (existing?.id && existing?.ownerUserId === userId) return existing;
@@ -30,6 +31,7 @@ function localHousehold(userId: string, fallbackName = 'Familien'): Household {
     ownerUserId: userId || 'local-user',
     plan: 'family',
     isLocalFallback: true,
+    fallbackReason: lastError,
   };
   try { localStorage.setItem(LOCAL_HOUSEHOLD_KEY, JSON.stringify(household)); } catch {}
   return household;
@@ -172,20 +174,23 @@ export async function getOrCreateHousehold(userId: string, fallbackName = 'Famil
       .single();
 
     if (createError) {
+      const msg = `${createError.code || 'ERR'}: ${createError.message || 'ukjent'}${createError.hint ? ' — ' + createError.hint : ''}`;
       console.warn('[householdService] create household failed, using local fallback', createError);
-      return localHousehold(userId, fallbackName);
+      return localHousehold(userId, fallbackName, msg);
     }
 
-    await supabase.from('household_members').insert({
+    const { error: memberError } = await supabase.from('household_members').insert({
       household_id: created.id,
       user_id: userId,
       name: fallbackName || 'Familien',
       role: 'owner',
     });
+    if (memberError) console.warn('[householdService] first member insert failed', memberError);
 
     return mapHousehold(created);
-  } catch (err) {
+  } catch (err: any) {
+    const msg = err?.message || String(err);
     console.warn('[householdService] household lookup/create crashed, using local fallback', err);
-    return localHousehold(userId, fallbackName);
+    return localHousehold(userId, fallbackName, msg);
   }
 }
