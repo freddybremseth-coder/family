@@ -75,6 +75,20 @@ const App = () => {
     window.addEventListener('navigate-tab', navHandler);
     return () => window.removeEventListener('navigate-tab', navHandler);
   }, []);
+
+  // Generer forekomster av gjentakende oppgaver ved oppstart + når tasks endres
+  useEffect(() => {
+    if (!persistentReady) return;
+    const timer = setTimeout(async () => {
+      const { generateNextOccurrences } = await import('./services/recurringTasksService');
+      const newOccurrences = generateNextOccurrences(tasks);
+      if (newOccurrences.length > 0) {
+        setTasks(prev => [...prev, ...newOccurrences]);
+        console.log(`[App] Genererte ${newOccurrences.length} nye gjentakende oppgaver`);
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [persistentReady, tasks.length]);
   const [cashBalance, setCashBalance] = useState(4250);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);

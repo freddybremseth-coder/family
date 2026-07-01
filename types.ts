@@ -202,6 +202,11 @@ export interface Task {
   dueDate?: string;
   isDone: boolean;
   assignedTo?: string;
+  // Gjentakelses-metadata
+  recurrence?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+  recurrenceDay?: number;     // for weekly: 0=søn, 1=man, ... 6=lør. for monthly: dag i mnd
+  recurrenceParentId?: string; // hvis dette er en generert instans av gjentakelse
+  nextGenerationDate?: string; // brukes til å hindre duplisert generering
 }
 
 export interface Developer {

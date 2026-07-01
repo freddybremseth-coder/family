@@ -49,6 +49,7 @@ function normalize(name: string): string {
 
 /**
  * Lagre ekstraherte kvittering-linjer i receipt_items-tabellen.
+ * Beriker med Open Food Facts hvis barcode finnes.
  * Returnerer antall som ble lagret.
  */
 export async function persistReceiptItems(args: {
@@ -56,12 +57,32 @@ export async function persistReceiptItems(args: {
   vendor: string;
   date: string;
   currency: string;
-  items: Array<{ name: string; amount?: number; category?: string; quantity?: number; unit?: string; pricePerUnit?: number }>;
+  items: Array<{ name: string; amount?: number; category?: string; quantity?: number; unit?: string; pricePerUnit?: number; barcode?: string }>;
   receiptId?: string;
   transactionId?: string;
 }): Promise<number> {
   if (!args.userId || !isSupabaseConfigured() || args.items.length === 0) return 0;
-  const rows = args.items
+
+  // Berik med Open Food Facts hvis barcode finnes — parallelt, med tåleevne for feil
+  const enrichedItems = await Promise.all(args.items.map(async (item) => {
+    if (!item.barcode) return item;
+    try {
+      const { lookupByBarcode } = await import('./openFoodFactsService');
+      const product = await lookupByBarcode(item.barcode);
+      if (product) {
+        // Bruk OFF-navn hvis kvittering-navnet er kort/uklart
+        const usefulOffName = product.name && product.name !== 'Ukjent produkt' && product.name.length > item.name.length;
+        return {
+          ...item,
+          name: usefulOffName ? product.name : item.name,
+          category: item.category || (product.categories && product.categories[0]) || undefined,
+        };
+      }
+    } catch (e) { console.warn('[receipt] OFF enrichment skipped', e); }
+    return item;
+  }));
+
+  const rows = enrichedItems
     .filter(item => item.name && item.name.trim().length > 0)
     .map((item, idx) => ({
       id: `ri-${args.receiptId || args.transactionId || Date.now()}-${idx}`,

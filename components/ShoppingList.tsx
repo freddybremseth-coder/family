@@ -21,6 +21,7 @@ import { translations } from '../translations';
 import { PantryHistorySuggestions } from './PantryHistorySuggestions';
 import { BarcodeScanner } from './BarcodeScanner';
 import { WeeklyMenuFromHistory } from './WeeklyMenuFromHistory';
+import { PantryTracker } from './PantryTracker';
 
 interface Props {
   cashBalance: number;
@@ -617,6 +618,7 @@ export const ShoppingList: React.FC<Props> = ({
                   <Scan className="h-4 w-4" /> Skann strekkode
                 </button>
                 <WeeklyMenuFromHistory userId={userId} onAddIngredient={(name) => addItem(name)} />
+                <PantryTracker userId={userId} groceryItems={groceryItems} onAddItem={(name) => addItem(name)} />
               </div>
               <BarcodeScanner
                 open={barcodeOpen}
