@@ -237,3 +237,10 @@ const App = () => {
 
 const rootElement = document.getElementById('root');
 if (rootElement) createRoot(rootElement).render(<App />);
+
+// Registrer service worker for PWA-støtte (Add to Home Screen)
+if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('[SW] registration failed', err));
+  });
+}

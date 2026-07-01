@@ -252,4 +252,50 @@ thead tr {
   .stat-card {
     border-radius: 20px !important;
   }
+
+  /* Mobil: brede tabeller får horisontal scroll med visual hint */
+  main .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    position: relative;
+  }
+  main .overflow-x-auto table {
+    min-width: 100%;
+  }
+  main .overflow-x-auto table th,
+  main .overflow-x-auto table td {
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+    white-space: nowrap;
+  }
+
+  /* Tabell-scroll skygge (fade på sidene) */
+  main .overflow-x-auto::before,
+  main .overflow-x-auto::after {
+    content: '';
+    position: sticky;
+    top: 0;
+    height: 100%;
+    width: 12px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, rgba(15,23,42,0.08));
+    z-index: 1;
+  }
+  main .overflow-x-auto::before {
+    background: linear-gradient(to left, transparent, rgba(15,23,42,0.08));
+  }
+
+  /* Skjul mindre viktige kolonner på mobil */
+  .hide-on-mobile { display: none !important; }
+
+  /* Modal fills mer av skjermen */
+  .modal-card,
+  main [class*="max-w-2xl"] {
+    max-width: 100% !important;
+  }
+}
+
+/* Utility: skjul kun på mobil (opposite av hide-on-mobile) */
+@media (min-width: 768px) {
+  .show-only-mobile { display: none !important; }
 }
