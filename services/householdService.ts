@@ -136,6 +136,40 @@ export async function claimPendingInvites(userId: string, email: string): Promis
   }
 }
 
+/**
+ * Returnerer "effektiv" user_id for datalasting:
+ * - Hvis brukeren er eier av et household → egen user_id
+ * - Hvis brukeren er medlem (invitert) av et household → household-eierens user_id
+ * - Fallback: egen user_id
+ * Slik at Anna som er invitert til Freddys household ser Freddys data.
+ */
+export async function resolveEffectiveUserId(userId: string): Promise<string> {
+  if (!userId || !isSupabaseConfigured()) return userId;
+  try {
+    // 1. Sjekk om brukeren er eier av et household — bruker egen id da
+    const { data: owned } = await supabase
+      .from('households')
+      .select('owner_user_id')
+      .eq('owner_user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    if (owned?.owner_user_id) return owned.owner_user_id;
+
+    // 2. Ellers: sjekk om brukeren er medlem av et household → returner eierens id
+    const { data: membership } = await supabase
+      .from('household_members')
+      .select('household_id, households:household_id(owner_user_id)')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    const ownerId = (membership as any)?.households?.owner_user_id;
+    if (ownerId) return ownerId;
+  } catch (e) {
+    console.warn('[householdService] resolveEffectiveUserId failed', e);
+  }
+  return userId;
+}
+
 export async function getOrCreateHousehold(userId: string, fallbackName = 'Familien'): Promise<Household | null> {
   if (!userId) return null;
   if (!isSupabaseConfigured()) return localHousehold(userId, fallbackName);
