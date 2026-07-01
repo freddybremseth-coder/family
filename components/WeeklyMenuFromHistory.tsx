@@ -126,8 +126,29 @@ export const WeeklyMenuFromHistory: React.FC<Props> = ({ userId, onAddIngredient
             </div>
 
             {menu.length > 0 && (
-              <div className="border-t border-slate-200 p-3 text-xs text-slate-500 text-center">
-                💡 Klikk en ingrediens for å legge direkte i handlelista
+              <div className="border-t border-slate-200 p-3 flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs text-slate-500">💡 Klikk en ingrediens eller «Legg alt til liste» under</p>
+                <button
+                  onClick={() => {
+                    // Unike ingredienser fra alle dager
+                    const all = new Set<string>();
+                    for (const day of menu) {
+                      for (const ing of day.recipe?.fullIngredients || []) {
+                        if (ing.name) all.add(ing.name);
+                      }
+                    }
+                    let added = 0;
+                    for (const name of all) {
+                      onAddIngredient?.(name);
+                      added += 1;
+                    }
+                    alert(`✓ La til ${added} ingredienser i handlelista.`);
+                    setOpen(false);
+                  }}
+                  className="btn-primary text-xs"
+                >
+                  <Plus className="h-3 w-3" /> Legg alt til liste
+                </button>
               </div>
             )}
           </div>

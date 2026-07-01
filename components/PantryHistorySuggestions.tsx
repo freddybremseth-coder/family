@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Clock, History, Plus, Sparkles, X, Store, TrendingDown, Leaf } from 'lucide-react';
+import { AlertTriangle, Clock, Heart, History, Plus, Sparkles, X, Store, TrendingDown, Leaf } from 'lucide-react';
 import { suggestFromHistory, ProductSuggestion } from '../services/shoppingHistoryService';
 import { searchByName, ProductInfo, scoreColor } from '../services/openFoodFactsService';
+import { findHealthierAlternatives, HealthierAlternative } from '../services/healthierAlternativeService';
 
 interface Props {
   userId?: string;
@@ -25,6 +26,19 @@ export const PantryHistorySuggestions: React.FC<Props> = ({ userId, onAddItem })
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [nutriCache, setNutriCache] = useState<Record<string, ProductInfo | null>>({});
   const [nutriLoading, setNutriLoading] = useState<Set<string>>(new Set());
+  const [healthierFor, setHealthierFor] = useState<string | null>(null);
+  const [healthierData, setHealthierData] = useState<HealthierAlternative | null>(null);
+  const [healthierLoading, setHealthierLoading] = useState(false);
+
+  const showHealthier = async (name: string) => {
+    setHealthierFor(name);
+    setHealthierData(null);
+    setHealthierLoading(true);
+    try {
+      const result = await findHealthierAlternatives(name);
+      setHealthierData(result);
+    } finally { setHealthierLoading(false); }
+  };
 
   const lookupNutri = async (key: string, name: string) => {
     if (nutriCache[key] !== undefined) return;
@@ -153,6 +167,15 @@ export const PantryHistorySuggestions: React.FC<Props> = ({ userId, onAddItem })
                               </button>
                             )}
                             {loadingNutri && <div className="rounded-xl p-2 bg-slate-100"><div className="h-3.5 w-3.5 animate-spin border-2 border-slate-400 border-t-transparent rounded-full" /></div>}
+                            {nutri && ['c','d','e'].includes(nutri.nutriScore?.toLowerCase() || '') && (
+                              <button
+                                onClick={() => showHealthier(s.displayName)}
+                                className="rounded-xl p-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                title="Foreslå sunnere alternativ"
+                              >
+                                <Heart className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -165,6 +188,73 @@ export const PantryHistorySuggestions: React.FC<Props> = ({ userId, onAddItem })
             <div className="border-t border-slate-200 p-4 flex items-center justify-between text-xs text-slate-500">
               <span>Prissammenligning: <strong>Mercadona</strong> vs <strong>Carrefour</strong> vs <strong>Family Cash</strong> — basert på dine egne kvitteringer.</span>
               <button onClick={() => setOpen(false)} className="btn-secondary text-xs">Lukk</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sunnere alternativ-modal */}
+      {healthierFor && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60" onClick={() => setHealthierFor(null)} />
+          <div className="relative w-full max-w-2xl max-h-[80vh] rounded-3xl bg-white shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><Heart className="h-5 w-5" /></div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Sunnere alternativ</h2>
+                  <p className="text-xs text-slate-500">Til «{healthierFor}»</p>
+                </div>
+              </div>
+              <button onClick={() => setHealthierFor(null)} className="rounded-xl p-1.5 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {healthierLoading ? (
+                <p className="text-center text-slate-500 py-8">Søker etter sunnere varianter i Open Food Facts...</p>
+              ) : !healthierData ? (
+                <div className="text-center py-10">
+                  <Heart className="mx-auto h-12 w-12 text-slate-300" />
+                  <p className="mt-3 font-bold text-slate-700">Ingen bedre variant funnet</p>
+                  <p className="mt-1 text-sm text-slate-500">Enten er varen allerede sunn nok, eller så finnes den ikke i Open Food Facts.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3">
+                    <p className="text-[10px] uppercase font-black text-rose-700 mb-1">Nå kjøper du</p>
+                    <div className="flex items-center gap-3">
+                      {healthierData.original.imageUrl && <img src={healthierData.original.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" />}
+                      <div className="flex-1">
+                        <p className="font-bold text-slate-900">{healthierData.original.name}</p>
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase text-white mt-1" style={{ background: scoreColor(healthierData.original.nutriScore) }}>Nutri {healthierData.original.nutriScore.toUpperCase()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] uppercase font-black text-emerald-700 tracking-wide">Prøv i stedet</p>
+                  {healthierData.alternatives.map((alt, i) => (
+                    <div key={i} className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3">
+                      <div className="flex items-center gap-3">
+                        {alt.imageUrl && <img src={alt.imageUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-900 truncate">{alt.name}</p>
+                          {alt.brand && <p className="text-xs text-slate-500">{alt.brand}</p>}
+                          <div className="mt-1 flex gap-1">
+                            {alt.nutriScore && <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase text-white" style={{ background: scoreColor(alt.nutriScore) }}>Nutri {alt.nutriScore.toUpperCase()}</span>}
+                            {alt.ecoScore && <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase text-white" style={{ background: scoreColor(alt.ecoScore) }}>Eco {alt.ecoScore.toUpperCase()}</span>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { onAddItem(alt.name); setHealthierFor(null); }}
+                          className="rounded-xl bg-slate-900 text-white p-2 hover:bg-slate-700"
+                          title="Legg til handleliste"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
