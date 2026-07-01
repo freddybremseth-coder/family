@@ -128,6 +128,17 @@ export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransa
 
       {applied && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 flex gap-2"><CheckCircle2 className="h-4 w-4 shrink-0" />Kontoutskriften er bokført og eksisterende treff er markert som verifisert.</div>}
 
+      {result && !applied && (result.matchedCount > 0 || result.createdCount > 0) && (
+        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+          <p className="font-bold flex items-center gap-2 text-cyan-200"><Info className="h-4 w-4" /> Reconciliation-forhåndsvisning</p>
+          <ul className="mt-2 space-y-1 text-cyan-100">
+            <li>✓ <strong>{result.matchedCount}</strong> allerede eksisterende — markeres som verifisert (dupliseres ikke)</li>
+            <li>+ <strong>{result.createdCount}</strong> nye poster — legges til med kilde «bank_statement»</li>
+            {result.unmatchedCount > 0 && <li>⚠ <strong>{result.unmatchedCount}</strong> uklassifiserte — vises for manuell gjennomgang</li>}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2 md:flex-row">
         <button onClick={analyze} disabled={!file || loading} className="btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
