@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Download, FileText, Loader2, Plus, Search, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, Plus, Search, ShieldCheck, Sparkles, Trash2, Upload } from 'lucide-react';
 import { getOrCreateHousehold, Household } from '../services/householdService';
+import { analyzeFamilyDocument } from '../services/geminiService';
 import {
   createFamilyDocument,
   deleteFamilyDocument,
@@ -52,6 +53,8 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [newDoc, setNewDoc] = useState({ title: '', category: 'Annet' as DocumentCategory, owner: '', expiryDate: '', note: '', fileName: '' });
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrMessage, setOcrMessage] = useState<string | null>(null);
 
   const loadDocuments = async () => {
     if (!userId) return;
@@ -86,6 +89,57 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
     const days90 = 1000 * 60 * 60 * 24 * 90;
     return documents.filter((doc) => doc.expiryDate && new Date(doc.expiryDate).getTime() - now <= days90 && new Date(doc.expiryDate).getTime() >= now).length;
   }, [documents]);
+
+  const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // strip "data:mime;base64," prefix
+      resolve(result.split(',')[1] || result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const runOcr = async () => {
+    if (!selectedFile) { setOcrMessage('Velg fil først.'); return; }
+    // Kun bilder og PDF-er egnet for OCR
+    const type = selectedFile.type || '';
+    const isImage = type.startsWith('image/');
+    const isPdf = type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf');
+    if (!isImage && !isPdf) { setOcrMessage('OCR støtter kun bilder (JPG/PNG/WebP) og PDF.'); return; }
+    setOcrLoading(true);
+    setOcrMessage(null);
+    setError(null);
+    try {
+      const b64 = await fileToBase64(selectedFile);
+      const mimeType = type || (isPdf ? 'application/pdf' : 'image/jpeg');
+      const result = await analyzeFamilyDocument(b64, mimeType);
+      if (!result || typeof result !== 'object') throw new Error('Kunne ikke tolke svaret fra AI.');
+
+      // Auto-fyll felter — behold eksisterende hvis brukeren allerede har skrevet noe
+      setNewDoc(prev => ({
+        title: prev.title || result.title || prev.title,
+        category: (result.category as DocumentCategory) || prev.category,
+        owner: prev.owner || result.owner || prev.owner,
+        expiryDate: prev.expiryDate || result.expiryDate || prev.expiryDate,
+        note: prev.note || result.note || prev.note,
+        fileName: prev.fileName,
+      }));
+      const filled = [
+        result.title && 'tittel',
+        result.category && 'kategori',
+        result.owner && 'eier',
+        result.expiryDate && 'utløpsdato',
+        result.note && 'notat',
+      ].filter(Boolean).join(', ');
+      setOcrMessage(filled ? `AI leste dokumentet og fylte inn: ${filled}. Sjekk og juster før du lagrer.` : 'AI klarte ikke å hente ut felter. Fyll inn manuelt.');
+    } catch (err: any) {
+      setOcrMessage(err?.message?.includes('API') ? 'AI-nøkkel mangler eller er ugyldig. Sett den under Innstillinger → AI.' : (err?.message || 'OCR feilet.'));
+    } finally {
+      setOcrLoading(false);
+    }
+  };
 
   const addDocument = async () => {
     if (!newDoc.title.trim()) {
@@ -169,7 +223,24 @@ export const DocumentsManager: React.FC<Props> = ({ userId, familyName = 'Famili
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Utløpsdato, valgfritt</span><input type="date" value={newDoc.expiryDate} onChange={(e) => setNewDoc({ ...newDoc, expiryDate: e.target.value })} /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Filnavn / referanse</span><input value={newDoc.fileName} onChange={(e) => setNewDoc({ ...newDoc, fileName: e.target.value })} placeholder="Valgfritt hvis du ikke laster opp fil" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Last opp fil, valgfritt</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} /></label>
-          {selectedFile && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"><p className="font-semibold text-slate-800">{selectedFile.name}</p><p>{formatFileSize(selectedFile.size)} · {selectedFile.type || 'ukjent filtype'}</p></div>}
+          {selectedFile && (
+            <div className="space-y-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                <p className="font-semibold text-slate-800">{selectedFile.name}</p>
+                <p>{formatFileSize(selectedFile.size)} · {selectedFile.type || 'ukjent filtype'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={runOcr}
+                disabled={ocrLoading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+              >
+                {ocrLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Auto-fyll fra fil (AI)
+              </button>
+              {ocrMessage && <p className={`text-xs ${ocrMessage.includes('feilet') || ocrMessage.includes('mangler') ? 'text-rose-700' : 'text-indigo-700'}`}>{ocrMessage}</p>}
+            </div>
+          )}
           <label className="block space-y-2"><span className="text-sm font-medium text-slate-700">Notat</span><textarea value={newDoc.note} onChange={(e) => setNewDoc({ ...newDoc, note: e.target.value })} placeholder="Hvor ligger originalen, hva må huskes?" rows={3} /></label>
           <button onClick={addDocument} className="btn-primary w-full" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Legg til dokument</button>
           {!newDoc.title.trim() && <p className="text-[11px] text-slate-500 -mt-1">Tittel er påkrevd. Resten er valgfritt.</p>}
