@@ -19,6 +19,7 @@ import {
 import { isSupabaseConfigured } from '../supabase';
 import { translations } from '../translations';
 import { PantryHistorySuggestions } from './PantryHistorySuggestions';
+import { BarcodeScanner } from './BarcodeScanner';
 
 interface Props {
   cashBalance: number;
@@ -40,6 +41,7 @@ export const ShoppingList: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState('');
+  const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [userCravings, setUserCravings] = useState('');
   const [fridgeResults, setFridgeResults] = useState<{ identifiedItems: string[]; recipes: any[] } | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<any | null>(null);
@@ -604,10 +606,21 @@ export const ShoppingList: React.FC<Props> = ({
                 </button>
               </div>
 
-              {/* Handleshistorikk-forslag basert på skanning fra Mercadona/Carrefour/Family Cash */}
-              <div className="mb-4">
+              {/* Handleshistorikk-forslag + barcode-skanner */}
+              <div className="mb-4 flex flex-wrap gap-2">
                 <PantryHistorySuggestions userId={userId} onAddItem={(name) => addItem(name)} />
+                <button
+                  onClick={() => setBarcodeOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
+                >
+                  <Scan className="h-4 w-4" /> Skann strekkode
+                </button>
               </div>
+              <BarcodeScanner
+                open={barcodeOpen}
+                onClose={() => setBarcodeOpen(false)}
+                onProductFound={(p) => { addItem(p.name); setBarcodeOpen(false); }}
+              />
 
               {/* Frequent items quick-add */}
               {frequentItems.length > 0 && (
