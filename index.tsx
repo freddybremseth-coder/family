@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from './supabase';
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
+import { GoalsManager } from './components/GoalsManager';
 import { Dashboard } from './components/Dashboard';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LiquidityForecastCard } from './components/LiquidityForecastCard';
@@ -199,6 +200,7 @@ const App = () => {
       case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
       case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
       case 'trends': return <BillsManager bills={bills} setBills={setBills} transactions={transactions} />;
+      case 'goals': return <GoalsManager userId={session?.user?.id} />;
       default: return dashboardView;
     }
   };

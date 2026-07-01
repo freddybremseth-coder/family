@@ -7,6 +7,7 @@ export type ModuleId =
   | 'bank'
   | 'documents'
   | 'trends'
+  | 'goals'
   | 'receipts'
   | 'business'
   | 'members'
@@ -40,6 +41,7 @@ const SAAS_DEFAULT_MODULES = new Set<ModuleId>([
   'bank',
   'documents',
   'trends',
+  'goals',
   'receipts',
   'members',
   'settings',
