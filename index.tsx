@@ -239,7 +239,7 @@ const App = () => {
       case 'documents': return <DocumentsManager userId={effectiveUserId || session?.user?.id} familyName={userConfig.familyName} familyLocation={userConfig.location} familyAddress={userConfig.address || ''} />;
       case 'business': return <BusinessManager deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} farmOps={farmOps} setFarmOps={setFarmOps} developers={developers} setDevelopers={setDevelopers} afterSalePartners={[]} setAfterSalePartners={() => {}} transactions={transactions} setTransactions={setTransactions} bankAccounts={bankAccounts} userId={effectiveUserId || session?.user?.id} />;
       case 'transactions': return <TransactionManager transactions={transactions} setTransactions={setTransactions as any} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} deals={realEstateDeals} setDeals={setRealEstateDeals} afterSales={afterSales} setAfterSales={setAfterSales} cashBalance={cashBalance} setCashBalance={setCashBalance} receipts={scannedReceipts} />;
-      case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} />;
+      case 'receipts': return <ReceiptScanner receipts={scannedReceipts} onScan={handleNewScannedReceipt} userId={effectiveUserId || session?.user?.id} />;
       case 'trends': return <BillsManager bills={bills} setBills={setBills} transactions={transactions} />;
       case 'goals': return <GoalsManager userId={effectiveUserId || session?.user?.id} />;
       case 'crypto': return <CryptoManager userId={effectiveUserId || session?.user?.id} />;

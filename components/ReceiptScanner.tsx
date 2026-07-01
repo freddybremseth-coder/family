@@ -7,6 +7,7 @@ import { Currency, ScannedReceipt } from '../types';
 interface Props {
   receipts: ScannedReceipt[];
   onScan: (data: any, imageUrl: string) => void;
+  userId?: string;
 }
 
 const CATEGORIES = ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'];
@@ -75,7 +76,7 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
 }
 
-export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
+export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan, userId }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -118,7 +119,26 @@ export const ReceiptScanner: React.FC<Props> = ({ receipts, onScan }) => {
       }
       setLastResult(receipt);
       onScan(receipt, imageUrl || '');
-      setSuccess(`Transaksjon opprettet med ${receipt.providerUsed}: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)} · ${receipt.category}`);
+
+      // Lagre line-items til receipt_items for handelshistorikk-læring
+      if (userId && Array.isArray(receipt.items) && receipt.items.length > 0) {
+        try {
+          const { persistReceiptItems } = await import('../services/shoppingHistoryService');
+          const saved = await persistReceiptItems({
+            userId,
+            vendor: receipt.vendor,
+            date: receipt.date || new Date().toISOString().slice(0, 10),
+            currency: receipt.currency || 'EUR',
+            items: receipt.items,
+          });
+          setSuccess(`✓ Kvittering lagret. ${saved} vare${saved === 1 ? '' : 'r'} lært til handelshistorikken.`);
+        } catch (e) {
+          console.warn('[Receipt] persistReceiptItems failed', e);
+          setSuccess(`Transaksjon opprettet: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)}`);
+        }
+      } else {
+        setSuccess(`Transaksjon opprettet med ${receipt.providerUsed}: ${receipt.vendor} · ${formatCurrency(receipt.totalAmount, receipt.currency)} · ${receipt.category}`);
+      }
     } catch (err: any) {
       setError(err?.message || 'AI-analyse feilet. Legg inn Gemini, OpenAI eller Claude API-nøkkel under Innstillinger → AI, eller prøv et tydeligere bilde.');
     } finally {

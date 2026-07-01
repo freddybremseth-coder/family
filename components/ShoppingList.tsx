@@ -18,6 +18,7 @@ import {
 } from '../services/groceryListService';
 import { isSupabaseConfigured } from '../supabase';
 import { translations } from '../translations';
+import { PantryHistorySuggestions } from './PantryHistorySuggestions';
 
 interface Props {
   cashBalance: number;
@@ -601,6 +602,11 @@ export const ShoppingList: React.FC<Props> = ({
                 >
                   <Plus className="w-5 h-5" />
                 </button>
+              </div>
+
+              {/* Handleshistorikk-forslag basert på skanning fra Mercadona/Carrefour/Family Cash */}
+              <div className="mb-4">
+                <PantryHistorySuggestions userId={userId} onAddItem={(name) => addItem(name)} />
               </div>
 
               {/* Frequent items quick-add */}
