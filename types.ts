@@ -145,6 +145,14 @@ export interface FamilyMember {
   salaryDay?: number;
   salaryAccountId?: string;
   extraContributions?: FamilyMemberContribution[];
+  // ID-nummer (personnummer / nasjonalt ID)
+  norwegianFnr?: string;       // 11 siffer
+  spanishNie?: string;         // NIE — Número de Identidad de Extranjero (X-1234567-A eller Y-1234567-A)
+  spanishDni?: string;         // DNI — Documento Nacional de Identidad (8 siffer + bokstav)
+  passportNumber?: string;     // Passnummer
+  passportExpiry?: string;     // Passets utløpsdato (YYYY-MM-DD)
+  phone?: string;
+  email?: string;
 }
 
 export interface BankAccount {

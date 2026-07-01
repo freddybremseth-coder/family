@@ -158,6 +158,23 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
             <div className="flex-1 overflow-y-auto px-10 pb-10 space-y-6" style={{ WebkitOverflowScrolling: 'touch' }}>
               <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><User className="w-3 h-3 text-cyan-500" /> Fullt Navn</label><input value={editingMember.name} onChange={e => setEditingMember({ ...editingMember, name: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" placeholder="Navn" /></div>
               <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-cyan-500" /> Fødselsdato</label><input type="date" value={editingMember.birthDate} onChange={e => setEditingMember({ ...editingMember, birthDate: e.target.value })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none transition-all" /></div>
+
+              {/* KONTAKT + ID */}
+              <div className="border-t border-white/5 pt-4 space-y-3">
+                <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest">Kontakt og ID</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input value={editingMember.email || ''} onChange={e => setEditingMember({ ...editingMember, email: e.target.value })} type="email" placeholder="E-post" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <input value={editingMember.phone || ''} onChange={e => setEditingMember({ ...editingMember, phone: e.target.value })} placeholder="Telefon (+34 …)" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <input value={editingMember.norwegianFnr || ''} onChange={e => setEditingMember({ ...editingMember, norwegianFnr: e.target.value })} placeholder="Norsk fødselsnr (11 siffer)" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <input value={editingMember.spanishNie || ''} onChange={e => setEditingMember({ ...editingMember, spanishNie: e.target.value })} placeholder="NIE (X-1234567-A)" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <input value={editingMember.spanishDni || ''} onChange={e => setEditingMember({ ...editingMember, spanishDni: e.target.value })} placeholder="DNI (spanjoler)" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <input value={editingMember.passportNumber || ''} onChange={e => setEditingMember({ ...editingMember, passportNumber: e.target.value })} placeholder="Passnummer" className="bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  <div className="md:col-span-2 space-y-1">
+                    <span className="text-[8px] uppercase font-black text-slate-500">Passets utløpsdato</span>
+                    <input type="date" value={editingMember.passportExpiry || ''} onChange={e => setEditingMember({ ...editingMember, passportExpiry: e.target.value || undefined })} className="w-full bg-black border border-white/10 px-3 py-2 text-white text-xs" />
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Wallet className="w-3 h-3 text-emerald-400" /> Månedslønn (Netto)</label><input type="number" value={editingMember.monthlySalary} onChange={e => setEditingMember({ ...editingMember, monthlySalary: Number(e.target.value) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none transition-all" /></div>
                 <div className="space-y-2"><label className="text-[9px] uppercase font-black text-slate-500 tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-emerald-400" /> Lønnsdag</label><input type="number" min={1} max={31} value={editingMember.salaryDay || ''} onChange={e => setEditingMember({ ...editingMember, salaryDay: cleanSalaryDay(Number(e.target.value)) })} className="w-full bg-black border border-white/10 px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none transition-all" placeholder="25" /></div>
@@ -239,6 +256,18 @@ export const ResidentsManager: React.FC<Props> = ({ familyMembers, setFamilyMemb
                   <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase text-slate-600 tracking-widest">Totalbidrag / år</span><span className="text-xs font-black text-emerald-400 font-mono">{formatCurrency(totalAnnual, lang)}</span></div>
                   {oneOff > 0 && <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase text-slate-600 tracking-widest">Engangsbidrag totalt</span><span className="text-xs font-black text-yellow-400 font-mono">{formatCurrency(oneOff, lang)}</span></div>}
                 </div>
+
+                {/* ID + KONTAKT */}
+                {(member.email || member.phone || member.norwegianFnr || member.spanishNie || member.spanishDni || member.passportNumber) && (
+                  <div className="pt-3 mt-3 border-t border-white/5 space-y-1">
+                    {member.email && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">E-post</span><span className="text-cyan-300 font-mono truncate ml-2">{member.email}</span></div>}
+                    {member.phone && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">Telefon</span><span className="text-cyan-300 font-mono">{member.phone}</span></div>}
+                    {member.norwegianFnr && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">Fødselsnr</span><span className="text-slate-300 font-mono">{member.norwegianFnr}</span></div>}
+                    {member.spanishNie && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">NIE</span><span className="text-slate-300 font-mono">{member.spanishNie}</span></div>}
+                    {member.spanishDni && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">DNI</span><span className="text-slate-300 font-mono">{member.spanishDni}</span></div>}
+                    {member.passportNumber && <div className="flex justify-between text-[10px]"><span className="text-slate-500 uppercase font-black tracking-widest">Pass</span><span className="text-slate-300 font-mono">{member.passportNumber}{member.passportExpiry ? ` (utl. ${formatDateNo(member.passportExpiry)})` : ''}</span></div>}
+                  </div>
+                )}
 
                 {/* DOKUMENTER FOR DENNE PERSONEN */}
                 <div className="pt-4 mt-4 border-t border-white/5">
