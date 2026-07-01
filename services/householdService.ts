@@ -35,6 +35,105 @@ function localHousehold(userId: string, fallbackName = 'Familien'): Household {
   return household;
 }
 
+export interface HouseholdMember {
+  id: string;
+  householdId: string;
+  userId?: string;              // Fylles inn når personen har opprettet konto
+  invitedEmail?: string;        // Fylles ved invitasjon, blir null når claimet
+  name: string;
+  role: 'owner' | 'admin' | 'member' | 'child';
+  status: 'active' | 'pending';
+  invitedAt?: string;
+  joinedAt?: string;
+}
+
+function mapMember(row: any): HouseholdMember {
+  return {
+    id: row.id,
+    householdId: row.household_id,
+    userId: row.user_id || undefined,
+    invitedEmail: row.invited_email || undefined,
+    name: row.name || row.invited_email || 'Ukjent',
+    role: (row.role || 'member') as HouseholdMember['role'],
+    status: row.user_id ? 'active' : 'pending',
+    invitedAt: row.invited_at || undefined,
+    joinedAt: row.joined_at || undefined,
+  };
+}
+
+export async function listHouseholdMembers(householdId: string): Promise<HouseholdMember[]> {
+  if (!householdId || !isSupabaseConfigured()) return [];
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('*')
+    .eq('household_id', householdId)
+    .order('role', { ascending: true });
+  if (error || !data) { console.warn('[householdService] list members failed', error); return []; }
+  return data.map(mapMember);
+}
+
+export async function inviteHouseholdMember(householdId: string, email: string, name: string, role: HouseholdMember['role'] = 'member'): Promise<HouseholdMember | null> {
+  const cleanedEmail = String(email || '').trim().toLowerCase();
+  if (!householdId || !cleanedEmail) throw new Error('Household eller e-post mangler.');
+  if (!isSupabaseConfigured()) throw new Error('Supabase ikke konfigurert.');
+
+  // Sjekk om denne e-posten er invitert allerede
+  const { data: existing } = await supabase
+    .from('household_members')
+    .select('*')
+    .eq('household_id', householdId)
+    .eq('invited_email', cleanedEmail)
+    .maybeSingle();
+  if (existing) return mapMember(existing);
+
+  const { data, error } = await supabase
+    .from('household_members')
+    .insert({
+      household_id: householdId,
+      invited_email: cleanedEmail,
+      name: name.trim() || cleanedEmail,
+      role,
+      invited_at: new Date().toISOString(),
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapMember(data);
+}
+
+export async function removeHouseholdMember(memberId: string): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('household_members').delete().eq('id', memberId);
+  if (error) throw error;
+}
+
+// Kalles etter innlogging: hvis brukerens e-post finnes som invited_email i noen household,
+// kobles brukeren til hushodet.
+export async function claimPendingInvites(userId: string, email: string): Promise<{ joined: number }> {
+  if (!userId || !email || !isSupabaseConfigured()) return { joined: 0 };
+  const cleanedEmail = email.trim().toLowerCase();
+  try {
+    const { data: pending, error } = await supabase
+      .from('household_members')
+      .select('*')
+      .eq('invited_email', cleanedEmail)
+      .is('user_id', null);
+    if (error || !pending || pending.length === 0) return { joined: 0 };
+    let joined = 0;
+    for (const row of pending) {
+      const { error: updateError } = await supabase
+        .from('household_members')
+        .update({ user_id: userId, joined_at: new Date().toISOString(), invited_email: null })
+        .eq('id', row.id);
+      if (!updateError) joined += 1;
+    }
+    return { joined };
+  } catch (e) {
+    console.warn('[householdService] claim invites failed', e);
+    return { joined: 0 };
+  }
+}
+
 export async function getOrCreateHousehold(userId: string, fallbackName = 'Familien'): Promise<Household | null> {
   if (!userId) return null;
   if (!isSupabaseConfigured()) return localHousehold(userId, fallbackName);

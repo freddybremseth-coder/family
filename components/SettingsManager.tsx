@@ -3,6 +3,7 @@ import { UserConfig, Currency, Language } from '../types';
 import { translations } from '../translations';
 import { AlertCircle, CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2, Lock, Eye, EyeOff, Mail, Loader2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
+import { HouseholdMembersPanel } from './HouseholdMembersPanel';
 import { PRODUCT_MODE, PRODUCT_COPY } from '../config/productMode';
 import { MARKETPLACE_MODULES, PLAN_DEFINITIONS } from '../services/adminService';
 import { supabase, isSupabaseConfigured } from '../supabase';
@@ -11,6 +12,7 @@ interface Props {
   userConfig: UserConfig;
   setUserConfig: React.Dispatch<React.SetStateAction<UserConfig>>;
   onApiUpdate: () => void;
+  userId?: string;
 }
 
 type SettingsTab = 'profile' | 'security' | 'ai' | 'integrations' | 'saas';
@@ -44,7 +46,7 @@ function copyText(text: string) {
   navigator.clipboard?.writeText(text).catch(() => {});
 }
 
-export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, onApiUpdate }) => {
+export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, onApiUpdate, userId }) => {
   const [aiKeys, setAiKeys] = useState<Record<AiKeyName, string>>({
     user_gemini_api_key: localStorage.getItem('user_gemini_api_key') || '',
     user_openai_api_key: localStorage.getItem('user_openai_api_key') || '',
@@ -229,6 +231,10 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
             </label>
           </div>
         </Card>
+      )}
+
+      {activeTab === 'profile' && (
+        <HouseholdMembersPanel userId={userId} familyName={userConfig.familyName} currentUserEmail={accountEmail} />
       )}
 
       {activeTab === 'security' && (
