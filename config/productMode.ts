@@ -11,6 +11,7 @@ export type ModuleId =
   | 'crypto'
   | 'receipts'
   | 'business'
+  | 'olive'
   | 'members'
   | 'settings';
 
@@ -70,7 +71,7 @@ export function isModuleEnabled(moduleId: ModuleId): boolean {
 
 export function isModuleVisibleForUser(moduleId: ModuleId, email?: string | null): boolean {
   if (isAdminEmail(email)) return true;
-  if (moduleId === 'business') return canAccessBusiness(email) && isModuleEnabled(moduleId);
+  if (moduleId === 'business' || moduleId === 'olive') return canAccessBusiness(email) && isModuleEnabled(moduleId);
   return isModuleEnabled(moduleId);
 }
 

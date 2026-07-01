@@ -6,6 +6,7 @@ import { supabase, isSupabaseConfigured, SUPABASE_REFS, SUPABASE_STATUS } from '
 import { LandingPageClean as LandingPage } from './components/LandingPageClean';
 import { GoalsManager } from './components/GoalsManager';
 import { CryptoManager } from './components/CryptoManager';
+import { OliveOilInventory } from './components/OliveOilInventory';
 import { Dashboard } from './components/Dashboard';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LiquidityForecastCard } from './components/LiquidityForecastCard';
@@ -203,6 +204,7 @@ const App = () => {
       case 'trends': return <BillsManager bills={bills} setBills={setBills} transactions={transactions} />;
       case 'goals': return <GoalsManager userId={session?.user?.id} />;
       case 'crypto': return <CryptoManager userId={session?.user?.id} />;
+      case 'olive': return <OliveOilInventory userId={session?.user?.id} />;
       default: return dashboardView;
     }
   };
