@@ -289,9 +289,22 @@ const App = () => {
 const rootElement = document.getElementById('root');
 if (rootElement) createRoot(rootElement).render(<App />);
 
-// Registrer service worker for PWA-støtte (Add to Home Screen)
+// Service worker: registrer nyeste + tving cache-invalidering
 if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('[SW] registration failed', err));
+  window.addEventListener('load', async () => {
+    try {
+      // Avinstaller alle eksisterende SWs først for å garantert kaste gammel cache
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        try { await reg.unregister(); } catch {}
+      }
+      // Tøm alle cache-storage entries
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      // Registrer ny SW
+      await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+    } catch (err) { console.warn('[SW] setup failed', err); }
   });
 }

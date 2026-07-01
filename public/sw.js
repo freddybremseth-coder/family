@@ -1,25 +1,21 @@
-// Minimal service worker for PWA install-støtte + basisk offline-fallback
-// Ingen aggressiv caching (app-en trenger Supabase online).
+// Minimal service worker — versjonsbumpet til v2 for å tvinge cache-invalidering.
+// Vi cacher IKKE lenger app.html — bare gir en bare-bones offline-side.
 
-const CACHE = 'familyhub-v1';
-const OFFLINE_URLS = ['/app.html', '/'];
+const CACHE = 'familyhub-v3';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(OFFLINE_URLS)).catch(() => {}));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))));
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  // Kun fange requester for samme origin, og bare HTML-navigasjon
-  if (event.request.mode !== 'navigate') return;
-  if (url.origin !== self.location.origin) return;
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match('/app.html') || caches.match('/'))
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll())
+      .then((clients) => clients.forEach(c => c.navigate(c.url)))
+      .catch(() => {})
   );
 });
+
+// Ingen fetch-håndtering — la nettleseren gjøre alt selv.
+// Dette hindrer at gamle bundles cacher.
