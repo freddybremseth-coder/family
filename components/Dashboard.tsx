@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Transaction, TransactionType, BankAccount, Asset, Language, FamilyMember, Task, CalendarEvent, RealEstateDeal, AfterSaleCommission, FarmOperation, Bill } from '../types';
-import { Wallet, Calendar, ShoppingCart, CheckSquare, RefreshCw, Sparkles, Heart, ArrowUpRight, ArrowDownRight, Landmark, Home, BriefcaseBusiness, TrendingUp, Receipt, AlertTriangle, PiggyBank, Coins } from 'lucide-react';
+import { Wallet, Calendar, ShoppingCart, CheckSquare, RefreshCw, Sparkles, Heart, ArrowUpRight, ArrowDownRight, Landmark, Home, BriefcaseBusiness, TrendingUp, Receipt, AlertTriangle, PiggyBank, Coins, Printer } from 'lucide-react';
+import { printFinancialReport } from '../services/financialReportService';
 import { EXCHANGE_RATE_EUR_TO_NOK, MEMBER_COLORS } from '../constants';
 import { getFinancialStatusInsight } from '../services/geminiService';
 import { fetchFamilyEconomy, EconomySummary } from '../services/familyEconomyService';
@@ -151,8 +152,32 @@ export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], as
   const fetchAiTip = async () => { setAiLoading(true); try { const result = await getFinancialStatusInsight({ ...stats, businessStats }, assets); setAiTip(result?.message || null); } finally { setAiLoading(false); } };
   useEffect(() => { if (transactions.length > 0 || bankAccounts.length > 0 || assets.length > 0 || businessStats.count > 0) fetchAiTip(); }, [stats.bankBalance, stats.assetValue, transactions.length, businessStats.count, businessStats.total]);
 
+  const printReport = (period: 'month' | 'ytd' | 'year') => {
+    const now = new Date();
+    let from: Date;
+    let label: string;
+    if (period === 'month') {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      label = `${now.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' })}`;
+    } else if (period === 'ytd') {
+      from = new Date(now.getFullYear(), 0, 1);
+      label = `Hittil i ${now.getFullYear()}`;
+    } else {
+      from = new Date(now.getFullYear() - 1, 0, 1);
+      const to = new Date(now.getFullYear() - 1, 11, 31);
+      const familyNameCap = String((familyMembers[0]?.name || 'FAMILIEN').toUpperCase());
+      printFinancialReport({ transactions, bankAccounts, assets, bills, familyMembers, period: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10), label: `Hele ${now.getFullYear() - 1}` }, familyName: familyNameCap });
+      return;
+    }
+    printFinancialReport({
+      transactions, bankAccounts, assets, bills, familyMembers,
+      period: { from: from.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10), label },
+      familyName: (familyMembers[0]?.name || 'FAMILIEN').toUpperCase(),
+    });
+  };
+
   return <div className="space-y-6 animate-fade-in">
-    <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><div className="mb-2 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><Heart className="h-5 w-5" /></div><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">FamilieHub</span></div><h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">{getGreeting(lang)}</h1><p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">Her er dagens oversikt basert på transaksjoner, kontoer, eiendeler, Business, kalender og oppgaver.</p></div><div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{now.toLocaleDateString(lang === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></section>
+    <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><div className="mb-2 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><Heart className="h-5 w-5" /></div><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">FamilieHub</span></div><h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">{getGreeting(lang)}</h1><p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">Her er dagens oversikt basert på transaksjoner, kontoer, eiendeler, Business, kalender og oppgaver.</p></div><div className="flex flex-col gap-2 items-end"><div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{now.toLocaleDateString(lang === 'no' ? 'no-NO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div><div className="flex gap-2 flex-wrap justify-end"><button onClick={() => printReport('month')} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><Printer className="h-3 w-3" /> Måned</button><button onClick={() => printReport('ytd')} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><Printer className="h-3 w-3" /> Hittil i år</button><button onClick={() => printReport('year')} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><Printer className="h-3 w-3" /> I fjor</button></div></div></section>
     <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       <MetricCard title="Banksaldo" value={formatMoney(stats.bankBalance)} hint={`${bankAccounts.length} kontoer`} symbol={<Landmark className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('bank') : undefined} />
       <MetricCard title="Eiendeler" value={formatMoney(stats.assetValue)} hint={`Registrert + Mondeo${stats.expectedCommission > 0 ? ' + provisjon' : ''}`} symbol={<Home className="h-5 w-5" />} onClick={onNavigate ? () => onNavigate('bank') : undefined} />
