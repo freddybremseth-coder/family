@@ -287,6 +287,7 @@ const App = () => {
 };
 
 const rootElement = document.getElementById('root');
+console.log('[FamilyHub] Build 2026-07-02-a — deploy-marker for cache-debugging');
 if (rootElement) createRoot(rootElement).render(<App />);
 
 // Service worker: registrer nyeste + tving cache-invalidering
