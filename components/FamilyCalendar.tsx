@@ -15,6 +15,7 @@ interface Props {
   userConfig: UserConfig;
   localEvents: LocalEvent[];
   setLocalEvents: React.Dispatch<React.SetStateAction<LocalEvent[]>>;
+  effectiveUserId?: string;   // household-eiers id hvis medlem
 }
 
 const WEEKDAYS_NO = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
@@ -41,7 +42,7 @@ function emptyTask(date: string, memberId = ''): any {
   return { id: '', date, description: '', priority: 'Medium', assignedToId: memberId, assignedToIds: memberId ? [memberId] : [], isComplete: false };
 }
 
-export const FamilyCalendar: React.FC<Props> = ({ familyMembers, calendarEvents, setCalendarEvents, tasks, setTasks, userConfig, localEvents, setLocalEvents }) => {
+export const FamilyCalendar: React.FC<Props> = ({ familyMembers, calendarEvents, setCalendarEvents, tasks, setTasks, userConfig, localEvents, setLocalEvents, effectiveUserId }) => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -57,7 +58,9 @@ export const FamilyCalendar: React.FC<Props> = ({ familyMembers, calendarEvents,
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(async ({ data }) => {
-      const userId = data.session?.user?.id;
+      const sessionUserId = data.session?.user?.id;
+      // Bruk effectiveUserId (household-eier) hvis vi er medlem — så vi ser samme data som eieren
+      const userId = effectiveUserId || sessionUserId;
       if (!userId || cancelled) { setCalendarLoaded(true); return; }
       setCalendarUserId(userId);
       const loaded = await loadCalendarPersistentData(userId);
@@ -70,7 +73,8 @@ export const FamilyCalendar: React.FC<Props> = ({ familyMembers, calendarEvents,
       setCalendarLoaded(true);
     }).catch(() => setCalendarLoaded(true));
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveUserId]);
 
   useEffect(() => {
     if (!calendarUserId || !calendarLoaded) return;

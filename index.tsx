@@ -180,6 +180,20 @@ const App = () => {
     return () => { clearTimeout(timer); setSalaryAutomationBusy(false); };
   }, [familyMembers, bankAccounts, persistentReady]);
 
+  // Last AI-nøkler fra Supabase ved innlogging så de overlever cache-clear
+  const loadAiKeysFromSupabase = useCallback(async (userId?: string) => {
+    if (!userId) return;
+    try {
+      const { loadSyncedAiSettings } = await import('./services/aiSettingsService');
+      const settings = await loadSyncedAiSettings();
+      const filled = Object.values(settings).filter(v => v).length;
+      if (filled > 0) {
+        console.log(`[App] Hentet ${filled} AI-nøkler fra Supabase`);
+        setAiConfigured(true);
+      }
+    } catch (e) { console.warn('[App] loadAiKeysFromSupabase failed', e); }
+  }, []);
+
   // Claim eventuelle ventende household-invitasjoner ved innlogging
   const claimInvitesForUser = useCallback(async (user: any) => {
     if (!user?.id || !user?.email) return;
@@ -227,12 +241,12 @@ const App = () => {
           handleRoleAssignment(session.user);
           fetchAllData(session.user.id).catch((err) => console.warn('[App] startup data load failed', err));
           checkSubscription(session.user).catch((err) => console.warn('[App] subscription check failed', err));
-          claimInvitesForUser(session.user);
+          claimInvitesForUser(session.user); loadAiKeysFromSupabase(session.user.id);
         } else setPersistentReady(false);
       }).catch((err) => { console.warn('[App] getSession failed', err); if (!cancelled) { setPersistentReady(false); setLoading(false); } });
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setSession(session);
-        if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err)); checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err)); claimInvitesForUser(session.user); }
+        if (session?.user) { handleRoleAssignment(session.user); fetchAllData(session.user.id).catch((err) => console.warn('[App] auth data load failed', err)); checkSubscription(session.user).catch((err) => console.warn('[App] auth subscription check failed', err)); claimInvitesForUser(session.user); loadAiKeysFromSupabase(session.user.id); }
         else { setPersistentReady(false); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); setBills([]); }
       });
       return () => { cancelled = true; clearTimeout(safetyTimer); subscription?.unsubscribe(); };
@@ -258,7 +272,7 @@ const App = () => {
       case 'superadmin': return <SuperAdminDashboard />;
       case 'dashboard': return dashboardView;
       case 'shopping': return <ShoppingList cashBalance={cashBalance} groceryItems={groceryItems} setGroceryItems={setGroceryItems} weeklyMenu={weeklyMenu} setWeeklyMenu={setWeeklyMenu} lang={userConfig.language} userId={effectiveUserId || session?.user?.id} />;
-      case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} />;
+      case 'familyplan': return <FamilyCalendar familyMembers={familyMembers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} tasks={tasks} setTasks={setTasks} userConfig={userConfig} localEvents={localEvents} setLocalEvents={setLocalEvents} effectiveUserId={effectiveUserId || session?.user?.id} />;
       case 'members': return <ResidentsManager familyMembers={familyMembers} setFamilyMembers={setFamilyMembers} lang={userConfig.language} bankAccounts={bankAccounts} userId={effectiveUserId || session?.user?.id} familyName={userConfig.familyName} />;
       case 'settings': return <SettingsManager userConfig={userConfig} setUserConfig={setUserConfig} onApiUpdate={() => setAiConfigured(isAiAvailable())} userId={effectiveUserId || session?.user?.id} />;
       case 'bank': return <div className="space-y-8"><NetWorthOverview bankAccounts={bankAccounts} assets={assets} realEstateDeals={realEstateDeals} userId={effectiveUserId || session?.user?.id} /><BankManager userId={effectiveUserId || session?.user?.id} bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} transactions={transactions} setTransactions={setTransactions} /><AssetManager assets={assets} setAssets={setAssets} /></div>;
