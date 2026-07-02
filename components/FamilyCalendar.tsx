@@ -4,7 +4,7 @@ import { MEMBER_COLORS } from '../constants';
 import { CheckCircle, ChevronLeft, ChevronRight, Circle, Clock, Edit3, Filter, Plus, Save, Trash2, User, Users, X } from 'lucide-react';
 import { deleteCalendarEventFromSupabase, deleteTaskFromSupabase, ensureOfficialHolidays, loadCalendarPersistentData, syncCalendarEvents, syncTasks } from '../services/calendarPersistenceService';
 import { supabase } from '../supabase';
-import { AITaskChief } from './AITaskChief';
+// import { AITaskChief } from './AITaskChief';
 
 interface Props {
   familyMembers: FamilyMember[];

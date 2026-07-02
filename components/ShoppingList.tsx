@@ -18,10 +18,10 @@ import {
 } from '../services/groceryListService';
 import { isSupabaseConfigured } from '../supabase';
 import { translations } from '../translations';
-import { PantryHistorySuggestions } from './PantryHistorySuggestions';
-import { BarcodeScanner } from './BarcodeScanner';
-import { WeeklyMenuFromHistory } from './WeeklyMenuFromHistory';
-import { PantryTracker } from './PantryTracker';
+// import { PantryHistorySuggestions } from './PantryHistorySuggestions';
+// import { BarcodeScanner } from './BarcodeScanner';
+// import { WeeklyMenuFromHistory } from './WeeklyMenuFromHistory';
+// import { PantryTracker } from './PantryTracker';
 
 interface Props {
   cashBalance: number;
@@ -610,23 +610,7 @@ export const ShoppingList: React.FC<Props> = ({
                 </button>
               </div>
 
-              {/* Handleshistorikk-forslag + barcode-skanner + AI-ukemeny */}
-              <div className="mb-4 flex flex-wrap gap-2">
-                <PantryHistorySuggestions userId={userId} onAddItem={(name) => addItem(name)} />
-                <button
-                  onClick={() => setBarcodeOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
-                >
-                  <Scan className="h-4 w-4" /> Skann strekkode
-                </button>
-                <WeeklyMenuFromHistory userId={userId} onAddIngredient={(name) => addItem(name)} />
-                <PantryTracker userId={userId} groceryItems={groceryItems} onAddItem={(name) => addItem(name)} />
-              </div>
-              <BarcodeScanner
-                open={barcodeOpen}
-                onClose={() => setBarcodeOpen(false)}
-                onProductFound={(p) => { addItem(p.name); setBarcodeOpen(false); }}
-              />
+              {/* Widgets midlertidig fjernet for å debugge white-screen */}
 
               {/* Frequent items quick-add */}
               {frequentItems.length > 0 && (
