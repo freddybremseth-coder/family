@@ -292,6 +292,22 @@ const rootElement = document.getElementById('root');
 console.log('[FamilyHub] Build 2026-07-02-a — deploy-marker for cache-debugging');
 if (rootElement) createRoot(rootElement).render(<App />);
 
+// eruda: mobil-Console. Aktiveres med ?debug=1 i URL eller localStorage
+// Kan brukes uten kabel — bare skru på og se logger direkte på telefonen
+(function loadEruda() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const debug = params.get('debug') === '1' || localStorage.getItem('familyhub_debug') === '1';
+    if (params.get('debug') === '1') localStorage.setItem('familyhub_debug', '1');
+    if (params.get('debug') === '0') { localStorage.removeItem('familyhub_debug'); return; }
+    if (!debug) return;
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+    script.onload = () => (window as any).eruda?.init();
+    document.head.appendChild(script);
+  } catch {}
+})();
+
 // Service worker: registrer nyeste + tving cache-invalidering
 if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
   window.addEventListener('load', async () => {
