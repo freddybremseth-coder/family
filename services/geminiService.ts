@@ -218,11 +218,7 @@ export const getSmartShoppingSuggestions = async (history: string[]) => safeGemi
   return JSON.parse(response.text || '[]');
 });
 
-export const analyzeFridge = async (b64: string) => safeGeminiJson(async () => {
-  const ai = getAi();
-  // Bruker Gemini Pro (bedre bildeforståelse) + strammere prompt for grundigere skann.
-  // Kall kan ta 30-60 sekunder — verdt det for full ingrediens-liste.
-  const prompt = `Du er en ekspert på matvare-identifikasjon. Analyser dette kjøleskap-/spiskammer-bildet SVÆRT GRUNDIG.
+const FRIDGE_PROMPT = `Du er en ekspert på matvare-identifikasjon. Analyser dette kjøleskap-/spiskammer-bildet SVÆRT GRUNDIG.
 
 INSTRUKS:
 1. Skanne HVER hylle, HVER dørhylle, HVER krok. Ikke hopp over noe.
@@ -235,41 +231,52 @@ INSTRUKS:
    - Brød, wraps
    - Drikke: juice, brus, vann, øl, vin
    - Rester i beholdere (identifiser hvis mulig)
-   - Frysvarer hvis synlig
-4. Skille mellom lignende varer: "H-melk" vs "økologisk melk" vs "havremelk" hvis etikett viser
-5. Angi omtrentlig mengde/tilstand hvis mulig (halvfull, nesten tom, uåpnet)
-6. Bruk spanske produktnavn hvis emballasjen er spansk (leche, aceite, jamón, etc.)
+4. Bruk spanske produktnavn hvis emballasjen er spansk (leche, aceite, jamón, etc.)
 
-Returner MINIMUM 15 varer hvis kjøleskapet er normalt fullt. Hvis du er usikker på en vare, ta den med og prefixe med «(usikker) ».
+Returner minst 10 varer hvis kjøleskapet er normalt fullt. Hvis du er usikker på en vare, ta den med og prefikser med «(usikker) ».
+Foreslå deretter 3-4 realistiske retter familien kan lage NÅ.`;
 
-Foreslå deretter 3-4 realistiske retter familien kan lage NÅ med disse ingrediensene, og eventuelt hva som mangler.`;
-  const response = await ai.models.generateContent({
-    model: GEMINI_PRO,
-    contents: [{ inlineData: { mimeType: 'image/jpeg', data: b64 } }, { text: prompt }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
+const FRIDGE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    identifiedItems: { type: Type.ARRAY, items: { type: Type.STRING } },
+    recipes: {
+      type: Type.ARRAY,
+      items: {
         type: Type.OBJECT,
         properties: {
-          identifiedItems: { type: Type.ARRAY, items: { type: Type.STRING } },
-          recipes: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                description: { type: Type.STRING },
-                missingIngredients: { type: Type.ARRAY, items: { type: Type.STRING } },
-                fullIngredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } } },
-                instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              },
-            },
-          },
+          name: { type: Type.STRING },
+          description: { type: Type.STRING },
+          missingIngredients: { type: Type.ARRAY, items: { type: Type.STRING } },
+          fullIngredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.STRING } } } },
+          instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
       },
     },
+  },
+};
+
+async function analyzeFridgeInternal(b64: string, model: string) {
+  const ai = getAi();
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ inlineData: { mimeType: 'image/jpeg', data: b64 } }, { text: FRIDGE_PROMPT }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: FRIDGE_SCHEMA,
+    },
   });
   return JSON.parse(response.text || '{"identifiedItems": [], "recipes": []}');
+}
+
+// Prøv Pro først (bedre), fall tilbake til Flash hvis Pro feiler
+export const analyzeFridge = async (b64: string) => safeGeminiJson(async () => {
+  try {
+    return await analyzeFridgeInternal(b64, GEMINI_PRO);
+  } catch (err: any) {
+    console.warn('[analyzeFridge] Pro feilet, prøver Flash:', err?.message);
+    return await analyzeFridgeInternal(b64, GEMINI_FLASH);
+  }
 });
 
 export const generateSmartMenu = async (inv: string[], cra: string) => safeGeminiJson(async () => {

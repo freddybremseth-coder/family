@@ -311,12 +311,27 @@ export const ShoppingList: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     try {
-      // Grundig scan bruker Gemini Pro — kan ta 30-60 sek
-      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout etter 90s')), 90000));
+      // Grundig scan bruker Gemini Pro (faller tilbake til Flash) — kan ta 30-60 sek
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('AI-timeout etter 90 sekunder')), 90000));
       const result = await Promise.race([analyzeFridge(base64), timeoutPromise]);
+      if (!result || (!result.identifiedItems?.length && !result.recipes?.length)) {
+        throw new Error('AI klarte ikke å identifisere noen varer i bildet. Prøv et klarere bilde med bedre lys.');
+      }
       setFridgeResults(result);
     } catch (err: any) {
-      setError(err?.message?.includes('Timeout') ? 'AI tok for lang tid (>90s). Prøv med et klarere bilde eller sjekk API-nøkkelen.' : 'Fridge analysis failed. Try a new picture.');
+      const msg = err?.message || String(err);
+      console.error('[fridge scan] failed:', err);
+      if (msg.includes('timeout') || msg.includes('Timeout')) {
+        setError('AI tok for lang tid (>90s). Prøv med et klarere/mindre bilde.');
+      } else if (msg.includes('API') || msg.includes('key') || msg.includes('nøkkel') || msg.includes('403') || msg.includes('401')) {
+        setError('AI-nøkkel-problem. Sjekk Gemini API-nøkkel i Innstillinger → AI.');
+      } else if (msg.includes('quota') || msg.includes('rate')) {
+        setError('AI-kvote overskredet. Prøv igjen om en stund.');
+      } else if (msg.includes('identifiser')) {
+        setError(msg);
+      } else {
+        setError(`Kjøleskap-analyse feilet: ${msg.slice(0, 200)}`);
+      }
     } finally {
       setLoading(false);
     }
