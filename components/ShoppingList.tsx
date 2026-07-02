@@ -8,6 +8,7 @@ import {
   Sparkles, Zap, History, Cake, Save, Pencil,
 } from 'lucide-react';
 import { analyzeFridge, generateSmartMenu, isAiAvailable } from '../services/geminiService';
+import { runFridgeFallback } from '../services/aiProviderService';
 import {
   buildSuggestions, recordPurchase, hydrateHistoryFromSupabase, loadHistory, getFrequentItems,
 } from '../services/smartCartService';
@@ -311,12 +312,16 @@ export const ShoppingList: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     try {
-      // Grundig scan bruker Gemini Pro (faller tilbake til Flash) — kan ta 30-60 sek
-      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('AI-timeout etter 90 sekunder')), 90000));
-      const result = await Promise.race([analyzeFridge(base64), timeoutPromise]);
+      // Full fallback: Gemini Pro/Flash → Claude → OpenAI
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('AI-timeout etter 120 sekunder')), 120000));
+      const { result, provider } = await Promise.race([
+        runFridgeFallback(base64, 'image/jpeg', () => analyzeFridge(base64)),
+        timeoutPromise,
+      ]);
       if (!result || (!result.identifiedItems?.length && !result.recipes?.length)) {
         throw new Error('AI klarte ikke å identifisere noen varer i bildet. Prøv et klarere bilde med bedre lys.');
       }
+      console.log(`[fridge] Suksess via ${provider}`);
       setFridgeResults(result);
     } catch (err: any) {
       const msg = err?.message || String(err);

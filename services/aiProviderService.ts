@@ -181,6 +181,69 @@ export async function analyzeBankStatementWithOpenAI(b64: string, mimeType = 'im
   return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
 }
 
+// FRIDGE-SCAN: Vision-fallback via OpenAI og Claude
+const FRIDGE_INSTRUCTIONS = `Analyser dette kjøleskap-/spiskammer-bildet SVÆRT GRUNDIG. Identifiser HVER synlig matvare, drikke, krydder, saus, rester. Bruk spanske navn (leche, aceite, jamón, queso) hvis emballasjen er spansk. Foreslå 3-4 realistiske retter familien kan lage nå.
+
+Returner JSON med formatet:
+{
+  "identifiedItems": ["Melk", "Eggs", "Ost", ...],
+  "recipes": [
+    {
+      "name": "Rettens navn",
+      "description": "Kort beskrivelse",
+      "missingIngredients": [],
+      "fullIngredients": [{"name": "...", "amount": "..."}],
+      "instructions": ["Steg 1", "Steg 2"]
+    }
+  ]
+}`;
+
+export async function analyzeFridgeWithOpenAI(b64: string, mimeType = 'image/jpeg') {
+  const key = getOpenAIKey();
+  if (!key) throw new Error('OpenAI API-nøkkel mangler.');
+  const dataUrl = `data:${mimeType};base64,${b64}`;
+  const data = await postJson('https://api.openai.com/v1/chat/completions', { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, { model: cleanEnv(env().VITE_OPENAI_VISION_MODEL) || 'gpt-4o', temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: FRIDGE_INSTRUCTIONS }, { type: 'image_url', image_url: { url: dataUrl } }] }] }, 'OpenAI kjøleskap', 60000);
+  return parseJsonText(data?.choices?.[0]?.message?.content || '{}');
+}
+
+export async function analyzeFridgeWithClaude(b64: string, mimeType = 'image/jpeg') {
+  const key = getClaudeKey();
+  if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
+  const data = await postClaudeWithModelRetry(key, (model) => ({ model, max_tokens: 3000, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: FRIDGE_INSTRUCTIONS }, { type: 'image', source: { type: 'base64', media_type: mimeType, data: b64 } }] }] }), 60000);
+  const text = Array.isArray(data?.content) ? data.content.map((part: any) => part.text || '').join('\n') : '';
+  return parseJsonText(text || '{}');
+}
+
+export async function runFridgeFallback(b64: string, mimeType: string, geminiFn: () => Promise<any>) {
+  const errors: string[] = [];
+  const providers = [
+    { name: 'gemini' as const, fn: () => withTimeout(geminiFn(), 'Gemini kjøleskap', 60000), available: !geminiBlacklistReason() },
+    { name: 'claude' as const, fn: () => analyzeFridgeWithClaude(b64, mimeType), available: hasClaude() },
+    { name: 'openai' as const, fn: () => analyzeFridgeWithOpenAI(b64, mimeType), available: hasOpenAI() },
+  ];
+  const anyAvailable = providers.some(p => p.available);
+  if (!anyAvailable) throw new Error('Ingen AI-nøkkel er konfigurert. Legg inn Gemini, Claude eller OpenAI i Innstillinger → AI.');
+
+  for (const p of providers) {
+    if (!p.available) continue;
+    try {
+      console.log(`[fridge] Prøver ${p.name}...`);
+      const result = await p.fn();
+      if (result && (result.identifiedItems?.length > 0 || result.recipes?.length > 0)) {
+        console.log(`[fridge] ${p.name} suksess`);
+        return { provider: p.name, result };
+      }
+      errors.push(`${p.name}: tom respons`);
+    } catch (err: any) {
+      const msg = friendlyProviderError(err);
+      errors.push(`${p.name}: ${msg}`);
+      console.warn(`[fridge] ${p.name} feilet:`, msg);
+      if (p.name === 'gemini' && isPermissionError(err)) blacklistGemini(msg);
+    }
+  }
+  throw new Error(`Alle AI-providere feilet på kjøleskap-scan: ${errors.join(' | ')}`);
+}
+
 export async function analyzeBankStatementWithClaude(b64: string, mimeType = 'image/jpeg') {
   const key = getClaudeKey();
   if (!key) throw new Error('Claude/Anthropic API-nøkkel mangler.');
