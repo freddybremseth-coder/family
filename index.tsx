@@ -76,19 +76,6 @@ const App = () => {
     return () => window.removeEventListener('navigate-tab', navHandler);
   }, []);
 
-  // Generer forekomster av gjentakende oppgaver ved oppstart + når tasks endres
-  useEffect(() => {
-    if (!persistentReady) return;
-    const timer = setTimeout(async () => {
-      const { generateNextOccurrences } = await import('./services/recurringTasksService');
-      const newOccurrences = generateNextOccurrences(tasks);
-      if (newOccurrences.length > 0) {
-        setTasks(prev => [...prev, ...newOccurrences]);
-        console.log(`[App] Genererte ${newOccurrences.length} nye gjentakende oppgaver`);
-      }
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [persistentReady, tasks.length]);
   const [cashBalance, setCashBalance] = useState(4250);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('trial');
   const [trialDaysLeft, setTrialDaysLeft] = useState<number>(TRIAL_DAYS);
@@ -111,6 +98,21 @@ const App = () => {
   const [farmOps, setFarmOps] = useState<FarmOperation[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [userConfig, setUserConfig] = useState<UserConfig>(loadUserConfig);
+
+  // Generer forekomster av gjentakende oppgaver ved oppstart + når tasks endres
+  // NB: Må stå ETTER useState<Task[]>() over — bruker tasks-state
+  useEffect(() => {
+    if (!persistentReady) return;
+    const timer = setTimeout(async () => {
+      const { generateNextOccurrences } = await import('./services/recurringTasksService');
+      const newOccurrences = generateNextOccurrences(tasks);
+      if (newOccurrences.length > 0) {
+        setTasks(prev => [...prev, ...newOccurrences]);
+        console.log(`[App] Genererte ${newOccurrences.length} nye gjentakende oppgaver`);
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [persistentReady, tasks.length]);
 
   useEffect(() => { localStorage.setItem(USER_CONFIG_KEY, JSON.stringify({ familyName: userConfig.familyName, location: userConfig.location, address: userConfig.address || '', timezone: userConfig.timezone, preferredCurrency: userConfig.preferredCurrency, language: userConfig.language })); }, [userConfig.familyName, userConfig.location, userConfig.address, userConfig.timezone, userConfig.preferredCurrency, userConfig.language]);
 
