@@ -74,6 +74,7 @@ export function friendlyAiError(err: any) {
   if (raw.includes('PERMISSION_DENIED') || raw.includes('denied access') || raw.includes('403')) return 'AI-prosjektet/nøkkelen har ikke tilgang akkurat nå. Bytt Gemini API-nøkkel under Innstillinger → AI, eller bruk en ny Google AI Studio API-nøkkel med tilgang til Gemini.';
   if (raw.includes('API key not valid') || raw.includes('invalid api key') || raw.includes('INVALID_ARGUMENT')) return 'AI-nøkkelen er ugyldig. Legg inn en ny Gemini API-nøkkel under Innstillinger → AI.';
   if (raw.includes('quota') || raw.includes('RESOURCE_EXHAUSTED')) return 'AI-kvoten er brukt opp eller begrenset. Prøv igjen senere eller bruk en annen Gemini API-nøkkel.';
+  if (raw.includes('503') || raw.toLowerCase().includes('unavailable') || raw.toLowerCase().includes('overload') || raw.toLowerCase().includes('spikes in demand')) return 'Gemini AI er overbelastet akkurat nå (503). Vent 30-60 sekunder og prøv igjen — Google jobber med det.';
   return err?.message || 'AI-analyse feilet. Sjekk Gemini API-nøkkel under Innstillinger → AI.';
 }
 
@@ -269,14 +270,35 @@ async function analyzeFridgeInternal(b64: string, model: string) {
   return JSON.parse(response.text || '{"identifiedItems": [], "recipes": []}');
 }
 
-// Prøv Pro først (bedre), fall tilbake til Flash hvis Pro feiler
+// Prøv Pro → Flash → Pro-retry → Flash-retry med backoff
+// Håndterer 503 (overload) som transient
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+function isOverloadError(err: any): boolean {
+  const raw = String(err?.message || err || '').toLowerCase();
+  return raw.includes('503') || raw.includes('unavailable') || raw.includes('overload') || raw.includes('spikes in demand') || raw.includes('busy');
+}
+
 export const analyzeFridge = async (b64: string) => safeGeminiJson(async () => {
-  try {
-    return await analyzeFridgeInternal(b64, GEMINI_PRO);
-  } catch (err: any) {
-    console.warn('[analyzeFridge] Pro feilet, prøver Flash:', err?.message);
-    return await analyzeFridgeInternal(b64, GEMINI_FLASH);
+  const attempts = [
+    { model: GEMINI_PRO, delay: 0, label: 'Pro' },
+    { model: GEMINI_FLASH, delay: 0, label: 'Flash' },
+    { model: GEMINI_FLASH, delay: 3000, label: 'Flash (retry etter 3s)' },
+    { model: GEMINI_PRO, delay: 5000, label: 'Pro (retry etter 5s)' },
+  ];
+  let lastErr: any;
+  for (const { model, delay, label } of attempts) {
+    try {
+      if (delay > 0) await sleep(delay);
+      console.log(`[analyzeFridge] Prøver ${label}...`);
+      return await analyzeFridgeInternal(b64, model);
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[analyzeFridge] ${label} feilet:`, err?.message);
+      if (!isOverloadError(err)) throw err; // Andre feil bør ikke retryes
+    }
   }
+  throw lastErr || new Error('Alle Gemini-forsøk feilet.');
 });
 
 export const generateSmartMenu = async (inv: string[], cra: string) => safeGeminiJson(async () => {
