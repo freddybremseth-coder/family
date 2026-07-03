@@ -197,69 +197,123 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     });
   };
 
-  // MÅNEDLIG AVREGNER:
-  // - For hver måned fra renteoppstart til i dag:
-  //   1. KPI-justering 1. januar (hvis satt)
-  //   2. Påløpt rente = balance × månedlig rente
-  //   3. Tillegg (strøm/kommunalt) som ble registrert i måneden
-  //   4. Betalinger i måneden (sum)
-  //   5. principalChange = paid - interestDue - charges
-  //      Positiv = avdrag, negativ = hovedstol vokser
+  // DAGLIG RENTE-AVREGNER:
+  // - Rente beregnes DAGLIG: balance × (annualRate/365) per dag
+  // - Ved betaling: allokerer først til påløpt rente, deretter avdrag
+  //   → tidlig betaling = mindre rente, sen betaling = mer rente
+  // - Ved månedsslutt kapitaliseres ubetalt rente til hovedstol
+  // - Én ledger-rad per hendelse (betaling, tillegg, KPI, månedsslutt)
+  const dailyRate = annualRate / 100 / 365;
   const ledger: MondeoLedgerRow[] = useMemo(() => {
     let balance = Number(settings.initialPrincipal || 0);
+    let accruedInterest = 0;
     const interestStart = settings.interestStartDate || settings.startDate;
     const rows: MondeoLedgerRow[] = [];
     if (!interestStart) return rows;
 
-    const start = new Date(interestStart);
+    // Bygg kronologisk liste av alle hendelser
+    interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end'; payload?: any; }
+    const events: Event[] = [];
+    for (const p of payments) if (p.date) events.push({ date: p.date, kind: 'payment', payload: p });
+    for (const c of charges) if (c.date) events.push({ date: c.date, kind: 'charge', payload: c });
+    for (const k of kpiAdjustments) if (k.kpiPct) events.push({ date: `${k.year}-01-01`, kind: 'kpi', payload: k });
+
+    // Legg til månedsslutt-hendelser fra interestStart til i dag
     const now = new Date();
-    let nr = 0;
-
-    const kpiByYear = new Map<number, MondeoKpiAdjustment>();
-    for (const k of kpiAdjustments.filter((k) => k.kpiPct)) kpiByYear.set(k.year, k);
-
-    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const cursor = new Date(interestStart);
     while (cursor <= now) {
-      const year = cursor.getFullYear();
-      const month = cursor.getMonth();
-      const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-      const periodStart = new Date(year, month, 1).toISOString().slice(0, 10);
-      const periodEnd = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-
-      // KPI 1. januar
-      if (month === 0 && kpiByYear.has(year)) {
-        const k = kpiByYear.get(year)!;
-        const factor = 1 + Number(k.kpiPct || 0) / 100;
-        const newBalance = balance * factor;
-        const adjustment = newBalance - balance;
-        nr += 1;
-        rows.push({ id: `kpi-${k.id}`, nr, fromDate: periodStart, date: `${year}-01-01`, openingBalance: balance, interestDue: 0, paid: 0, charges: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
-        balance = newBalance;
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      if (monthEnd <= now) {
+        events.push({ date: monthEnd.toISOString().slice(0, 10), kind: 'month-end' });
       }
-
-      const interestDue = balance * monthlyRate;
-      const monthPayments = payments.filter((p) => p.date && p.date.slice(0, 7) === monthKey);
-      const paid = monthPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
-      const monthCharges = charges.filter((c) => c.date && c.date.slice(0, 7) === monthKey);
-      const chargeSum = monthCharges.reduce((s, c) => s + Number(c.amount || 0), 0);
-
-      const principalChange = paid - interestDue - chargeSum;
-      const newBalance = balance - principalChange;
-      nr += 1;
-
-      let status: MondeoLedgerRow['status'];
-      if (chargeSum > 0 && paid < interestDue + chargeSum) status = 'Tillegg påløpt';
-      else if (paid < interestDue) status = 'Rente kapitaliseres';
-      else status = 'Avdrag';
-
-      rows.push({ id: `month-${monthKey}`, nr, fromDate: periodStart, date: periodEnd, openingBalance: balance, interestDue, paid, charges: chargeSum, principalChange, closingBalance: newBalance, status });
-      balance = newBalance;
-
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
+    events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.kind === 'kpi' ? -1 : a.kind === 'month-end' ? 1 : 0)));
+
+    let lastDate = interestStart;
+    let nr = 0;
+    for (const ev of events) {
+      // Akkumuler daglig rente fra lastDate til ev.date
+      const days = Math.max(0, Math.floor((new Date(ev.date).getTime() - new Date(lastDate).getTime()) / 86400000));
+      const dailyInterest = balance * dailyRate * days;
+      accruedInterest += dailyInterest;
+
+      if (ev.kind === 'kpi') {
+        const factor = 1 + Number(ev.payload.kpiPct || 0) / 100;
+        const newBalance = balance * factor;
+        const adjustment = newBalance - balance;
+        nr += 1;
+        rows.push({ id: `kpi-${ev.payload.id}`, nr, fromDate: lastDate, date: ev.date, openingBalance: balance, interestDue: 0, paid: 0, charges: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
+        balance = newBalance;
+      } else if (ev.kind === 'payment') {
+        const paid = Number(ev.payload.amount || 0);
+        const interestPortion = Math.min(paid, accruedInterest);
+        const principalReduction = paid - interestPortion;
+        accruedInterest -= interestPortion;
+        balance -= principalReduction;
+        nr += 1;
+        rows.push({
+          id: ev.payload.id, nr,
+          fromDate: lastDate, date: ev.date,
+          openingBalance: balance + principalReduction,
+          interestDue: dailyInterest,
+          paid,
+          charges: 0,
+          principalChange: principalReduction,
+          closingBalance: balance,
+          status: 'Avdrag',
+        });
+      } else if (ev.kind === 'charge') {
+        const chargeAmt = Number(ev.payload.amount || 0);
+        const newBalance = balance + chargeAmt;
+        nr += 1;
+        rows.push({
+          id: `charge-${ev.payload.id}`, nr,
+          fromDate: lastDate, date: ev.date,
+          openingBalance: balance,
+          interestDue: dailyInterest,
+          paid: 0,
+          charges: chargeAmt,
+          principalChange: -chargeAmt,
+          closingBalance: newBalance,
+          status: 'Tillegg påløpt',
+        });
+        balance = newBalance;
+      } else if (ev.kind === 'month-end') {
+        // Kapitaliser ubetalt rente ved månedsslutt
+        if (accruedInterest > 0.01) {
+          const capitalized = accruedInterest;
+          balance += capitalized;
+          accruedInterest = 0;
+          nr += 1;
+          rows.push({
+            id: `me-${ev.date}`, nr,
+            fromDate: lastDate, date: ev.date,
+            openingBalance: balance - capitalized,
+            interestDue: capitalized,
+            paid: 0,
+            charges: 0,
+            principalChange: -capitalized,
+            closingBalance: balance,
+            status: 'Rente kapitaliseres',
+          });
+        }
+      }
+
+      lastDate = ev.date;
+    }
+
+    // Legg til aktuell rente-akkumulering hittil (ikke kapitalisert enda)
+    if (lastDate < now.toISOString().slice(0, 10)) {
+      const days = Math.max(0, Math.floor((now.getTime() - new Date(lastDate).getTime()) / 86400000));
+      if (days > 0) {
+        accruedInterest += balance * dailyRate * days;
+      }
+    }
+
     return rows;
-  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate]);
+  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, dailyRate]);
 
   const currentBalance = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
   const totalPaid = ledger.reduce((s, r) => s + r.paid, 0);
@@ -466,7 +520,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Nåværende saldo" value={formatNOK(currentBalance)} symbol="kr" hint={`Kjøper: ${settings.buyerName}`} />
         <MetricCard title="Minimum termin" value={formatNOK(minMonthly)} symbol="1" hint="Absolutt minimum per måned" />
-        <MetricCard title="Estimert månedsrente" value={formatNOK(estimatedMonthlyInterest)} symbol="%" hint={`${formatPercent(annualRate)} årlig${settings.useFixedRate ? ' (fast)' : ''}`} />
+        <MetricCard title="Estimert månedsrente" value={formatNOK(estimatedMonthlyInterest)} symbol="%" hint={`${formatPercent(annualRate)} årlig · ${formatNOK(currentBalance * dailyRate)}/dag ved dagens saldo · Rente beregnes DAGLIG fra siste betaling`} />
         <MetricCard title="Ved minimum" value={monthlyDifferenceAtMinimum >= 0 ? `${formatNOK(monthlyDifferenceAtMinimum)} avdrag` : `${formatNOK(Math.abs(monthlyDifferenceAtMinimum))} økning`} symbol="±" hint={monthlyDifferenceAtMinimum < 0 ? `${formatNOK(annualNegativeAmortizationAtMinimum)} økning/år` : 'Positiv amortisering'} tone={monthlyDifferenceAtMinimum < 0 ? 'warning' : 'success'} />
       </section>
 
@@ -820,7 +874,38 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           </table>
         </>)}
 
-        <h2>Avregningshistorikk</h2>
+        {payments.length > 0 && (<>
+          <h2>Innbetalinger fra {settings.buyerName}</h2>
+          <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 8px' }}>
+            Registrerte innbetalinger i tidsrekkefølge. Rente beregnes daglig — tidlig betaling reduserer påløpt rente, sen betaling øker den.
+          </p>
+          <table>
+            <thead><tr><th>Dato</th><th className="num">Beløp</th><th>Notat</th></tr></thead>
+            <tbody>
+              {[...payments].sort((a, b) => (a.date < b.date ? -1 : 1)).map((p) => (
+                <tr key={p.id}>
+                  <td>{formatDate(p.date)}</td>
+                  <td className="num" style={{ color: '#047857', fontWeight: 700 }}>{formatNOK(p.amount)}</td>
+                  <td>{p.note || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 'bold', borderTop: '2px solid #0f172a' }}>
+                <td>Sum innbetalinger ({payments.length})</td>
+                <td className="num" style={{ color: '#047857' }}>{formatNOK(totalPaid)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </>)}
+
+        <h2>Avregningshistorikk (daglig rente)</h2>
+        <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 8px' }}>
+          Rente akkumuleres daglig ({formatPercent(annualRate)} årlig / 365 dager = {formatNOK(currentBalance * dailyRate)} pr dag ved dagens saldo).
+          Ved betaling allokeres beløpet først til påløpt rente, resten reduserer hovedstolen.
+          Ubetalt rente ved månedsslutt kapitaliseres (legges til hovedstolen).
+        </p>
         <table>
           <thead><tr><th>#</th><th>Periode</th><th className="num">Startsaldo</th><th className="num">Rente</th><th className="num">Betalt</th><th className="num">Tillegg</th><th className="num">Avdrag/økning</th><th className="num">Ny saldo</th><th>Status / spesifikasjon</th></tr></thead>
           <tbody>
