@@ -140,14 +140,19 @@ export const BankStatementImporter: React.FC<Props> = ({ transactions, setTransa
       )}
 
       <div className="flex flex-col gap-2 md:flex-row">
-        <button onClick={analyze} disabled={!file || loading} className="btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+        <button onClick={analyze} disabled={!file || loading} title={!file ? 'Velg en kontoutskrift-fil først' : loading ? 'Analyserer …' : 'Les kontoutskrift og match mot dine transaksjoner'} className="btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-          Les og match kontoutskrift
+          {!file ? '1. Velg fil først' : loading ? 'Analyserer …' : '2. Les og match kontoutskrift'}
         </button>
-        <button onClick={apply} disabled={!result || applied} className="btn-secondary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-          <ShieldCheck className="h-4 w-4" /> Bokfør / merk verifisert
+        <button onClick={apply} disabled={!result || applied} title={!result ? 'Kjør «Les og match kontoutskrift» først — da får du en forhåndsvisning før du bokfører' : applied ? 'Allerede bokført' : 'Bokfør matchene og marker som verifisert'} className="btn-secondary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+          <ShieldCheck className="h-4 w-4" /> {!result ? '3. Bokfør (krever analyse først)' : applied ? 'Bokført ✓' : 'Bokfør / merk verifisert'}
         </button>
       </div>
+      {!result && !applied && (
+        <p className="text-[11px] text-slate-500 italic px-1">
+          💡 For å bruke denne: velg en kontoutskrift-fil (CSV/TXT/PDF) → klikk «Les og match kontoutskrift» → deretter blir «Bokfør» klikkbar. Vil du merke enkelt-transaksjoner manuelt, klikk statusen «Ikke verifisert» i tabellen under, eller bruk «Bokfør alle uverifiserte» øverst.
+        </p>
+      )}
 
       {result && (
         <div className="space-y-3">

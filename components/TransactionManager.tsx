@@ -181,6 +181,39 @@ export const TransactionManager: React.FC<Props> = ({
     if (userId) { deleteTransactionFromSupabase(userId, id).catch((err) => console.error('[TransactionManager] delete failed', err)); }
   };
 
+  const toggleVerified = (id: string) => {
+    let updated: Transaction | null = null;
+    setTransactions(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      const wasVerified = !!t.isVerified;
+      const next: Transaction = wasVerified
+        ? { ...t, isVerified: false, verifiedAt: undefined, verificationSource: undefined }
+        : { ...t, isVerified: true, verifiedAt: new Date().toISOString(), verificationSource: t.verificationSource || 'manual' as any };
+      updated = next;
+      return next;
+    }));
+    if (userId && updated) { saveTransactionToSupabase(userId, updated).catch((err) => console.error('[TransactionManager] verify failed', err)); }
+  };
+
+  const markAllUnverifiedAsVerified = () => {
+    const unverified = transactions.filter(t => !t.isVerified);
+    if (unverified.length === 0) return;
+    if (!confirm(`Merk ${unverified.length} uverifiserte poster som verifisert manuelt?`)) return;
+    const now = new Date().toISOString();
+    const patched: Transaction[] = [];
+    setTransactions(prev => prev.map(t => {
+      if (t.isVerified) return t;
+      const next: Transaction = { ...t, isVerified: true, verifiedAt: now, verificationSource: (t.verificationSource || 'manual') as any };
+      patched.push(next);
+      return next;
+    }));
+    if (userId) {
+      for (const tx of patched) {
+        saveTransactionToSupabase(userId, tx).catch((err) => console.error('[TransactionManager] bulk verify failed', err));
+      }
+    }
+  };
+
   const renderCategoryEditor = (value: string | undefined, onChange: (category: string) => void) => (
     <div className="space-y-2">
       <select value={value || 'Diverse'} onChange={e => onChange(e.target.value)} className="w-full bg-black border border-white/10 p-2 text-white text-xs font-bold outline-none">
@@ -242,7 +275,7 @@ export const TransactionManager: React.FC<Props> = ({
           </div>
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" /><input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Søk i beskrivelse eller kategori..." className="w-full bg-black/40 border border-white/10 pl-10 pr-4 py-2.5 text-sm text-white outline-none focus:border-cyan-500/50" /></div>
         </div>
-        <div className="glass-panel p-6 border-l-4 border-l-magenta-500 bg-magenta-500/5 flex flex-col justify-center"><p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Verifiserte poster</p><p className="text-2xl font-black text-white font-mono">{verifiedCount} / {transactions.length}</p><div className="flex items-center gap-1 mt-2 text-emerald-400"><ShieldCheck className="w-3 h-3" /><span className="text-[8px] uppercase font-bold tracking-widest italic">Mot kvittering/kontoutskrift</span></div></div>
+        <div className="glass-panel p-6 border-l-4 border-l-magenta-500 bg-magenta-500/5 flex flex-col justify-center gap-2"><p className="text-[10px] uppercase text-slate-500 font-black mb-1 tracking-widest">Verifiserte poster</p><p className="text-2xl font-black text-white font-mono">{verifiedCount} / {transactions.length}</p><div className="flex items-center gap-1 text-emerald-400"><ShieldCheck className="w-3 h-3" /><span className="text-[8px] uppercase font-bold tracking-widest italic">Mot kvittering/kontoutskrift</span></div>{transactions.length - verifiedCount > 0 && (<button type="button" onClick={markAllUnverifiedAsVerified} className="mt-1 w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-emerald-300 hover:bg-emerald-500/20 flex items-center justify-center gap-1.5"><ShieldCheck className="w-3 h-3" /> Bokfør alle uverifiserte ({transactions.length - verifiedCount})</button>)}</div>
       </div>
 
       <BankStatementImporter transactions={transactions} setTransactions={setTransactions} receipts={receipts} />
@@ -266,7 +299,7 @@ export const TransactionManager: React.FC<Props> = ({
                   <td className="px-6 py-5 font-mono text-slate-400 text-xs">{t.date}</td>
                   <td className="px-6 py-5"><div className="text-white font-medium">{t.description}</div><div className="text-[8px] uppercase text-slate-500 mt-1 font-black tracking-widest flex items-center gap-1"><Tags className="w-3 h-3" />{t.category}</div></td>
                   <td className="px-6 py-5"><span className={`px-2 py-0.5 text-[8px] font-black uppercase border ${t.paymentMethod === 'Kontant' ? 'border-magenta-500 text-magenta-500 bg-magenta-500/5' : 'border-cyan-500 text-cyan-500 bg-cyan-500/5'}`}>{t.paymentMethod}</span></td>
-                  <td className="px-6 py-5">{t.isVerified ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase text-emerald-300"><ShieldCheck className="h-3 w-3" /> Verifisert</span> : <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[8px] font-black uppercase text-amber-300">Ikke verifisert</span>}</td>
+                  <td className="px-6 py-5">{t.isVerified ? <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleVerified(t.id); }} title="Klikk for å fjerne verifiseringen" className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase text-emerald-300 hover:bg-emerald-500/20 cursor-pointer"><ShieldCheck className="h-3 w-3" /> Verifisert</button> : <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleVerified(t.id); }} title="Klikk for å merke som verifisert" className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[8px] font-black uppercase text-amber-300 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/40 cursor-pointer">Ikke verifisert · Merk ✓</button>}</td>
                   <td className={`px-6 py-5 text-right font-mono font-bold ${t.type === TransactionType.EXPENSE ? 'text-rose-400' : t.type === TransactionType.INCOME ? 'text-emerald-400' : 'text-cyan-400'}`}>{t.type === TransactionType.EXPENSE ? '-' : t.type === TransactionType.INCOME ? '+' : '↔'}{formatCurrency(t.amount, t.currency)}</td>
                   <td className="px-6 py-5 text-center"><div className="flex justify-center gap-2 opacity-100 transition-all"><button type="button" aria-label="Rediger transaksjon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditTransaction(t); }} className="p-2 rounded-lg text-cyan-400 hover:bg-cyan-500/10 focus:bg-cyan-500/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"><Edit3 className="w-4 h-4" /></button><button type="button" aria-label="Slett transaksjon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeletingTransactionId(t.id); }} className="p-2 rounded-lg text-rose-500 hover:bg-rose-500/10 focus:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-rose-500/50"><Trash2 className="w-4 h-4" /></button></div></td>
                 </tr>
