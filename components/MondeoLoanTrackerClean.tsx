@@ -253,7 +253,13 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
-    events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.kind === 'kpi' ? -1 : a.kind === 'month-end' ? 1 : 0)));
+    // Sortering ved samme dato: kpi → payment → charge → month-end
+    // Slik at betaling reduserer saldo før tillegg/kapitalisering
+    const kindOrder = { kpi: 0, payment: 1, charge: 2, 'month-end': 3 };
+    events.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return kindOrder[a.kind] - kindOrder[b.kind];
+    });
 
     let lastDate = interestStart;
     let nr = 0;
@@ -805,7 +811,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       {/* SKJULT UTSKRIFTSOMRÅDE */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
         <h1>Mondeo Eiendom AS · Salgskontrakt — Regnskap</h1>
-        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany})</p>
+        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v3 (daglig rente, én rad pr hendelse)</p>
 
         {/* SAMMENDRAG ØVERST */}
         <div className="summary-section">
