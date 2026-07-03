@@ -5,6 +5,7 @@ import { Plus, Search, Trash2, Save, X, ArrowRightLeft, ShieldCheck, Edit3, Tags
 import { CyberButton } from './CyberButton';
 import { BankStatementImporter } from './BankStatementImporter';
 import { FAMILY_CATEGORIES, normalizeFamilyCategory, rememberTransactionCategory } from '../services/categoryService';
+import { deleteTransactionFromSupabase, saveTransactionToSupabase } from '../services/familyPersistenceService';
 
 interface Props {
   transactions: Transaction[];
@@ -18,6 +19,7 @@ interface Props {
   cashBalance: number;
   setCashBalance: React.Dispatch<React.SetStateAction<number>>;
   receipts?: ScannedReceipt[];
+  userId?: string;
 }
 
 const CUSTOM_CATEGORIES_KEY = 'familyhub_custom_transaction_categories';
@@ -69,7 +71,8 @@ export const TransactionManager: React.FC<Props> = ({
   transactions, setTransactions,
   bankAccounts, setBankAccounts,
   cashBalance, setCashBalance,
-  receipts = []
+  receipts = [],
+  userId,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -168,12 +171,14 @@ export const TransactionManager: React.FC<Props> = ({
     if (!normalized.description || normalized.amount <= 0) return;
     rememberTransactionCategory({ description: normalized.description, category: normalized.category });
     setTransactions(prev => prev.map(t => t.id === normalized.id ? { ...t, ...normalized } : t));
+    if (userId) { saveTransactionToSupabase(userId, normalized as Transaction).catch((err) => console.error('[TransactionManager] save edit failed', err)); }
     setEditingTransaction(null);
   };
 
   const deleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
     setDeletingTransactionId(null);
+    if (userId) { deleteTransactionFromSupabase(userId, id).catch((err) => console.error('[TransactionManager] delete failed', err)); }
   };
 
   const renderCategoryEditor = (value: string | undefined, onChange: (category: string) => void) => (

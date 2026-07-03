@@ -285,22 +285,17 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
     };
     newPayment.postedTransactionId = interestTx.id;
 
-    setPayments((prev) => [...prev, newPayment]);
-    setTransactions((prev) => [interestTx, ...prev]);
-    setPaymentAmount('');
-    setPaymentNote('');
-
     if (userId && isSupabaseConfigured()) {
-      await supabase.from('mondeo_loan_payments').insert({
+      const { error: payErr } = await supabase.from('mondeo_loan_payments').insert({
         id: newPayment.id, user_id: userId, date: newPayment.date,
         amount: newPayment.amount, note: newPayment.note ?? null, method: paymentMethod,
         posted_transaction_id: interestTx.id,
       });
-      await supabase.from('transactions').insert({
-        id: interestTx.id, user_id: userId, date: interestTx.date, amount: interestTx.amount,
-        currency: interestTx.currency, description: interestTx.description, category: interestTx.category,
-        type: interestTx.type, payment_method: interestTx.paymentMethod, is_accrual: false,
-      });
+      if (payErr) {
+        console.error('[Mondeo] mondeo_loan_payments insert failed', payErr);
+        alert('Klarte ikke lagre innbetaling: ' + (payErr.message || payErr.details || 'ukjent DB-feil') + '\n\nBeløpet er IKKE lagret. Prøv igjen eller sjekk konsollet.');
+        return;
+      }
       supabasePublic.from('business_financial_events').insert({
         brand_id: 'family', source_type: 'manual', source_id: `mondeo:${newPayment.id}`,
         stream: 'manual_adjustment', direction: 'income', status: 'recognized',
@@ -308,6 +303,11 @@ export const MondeoLoanTracker: React.FC<Props> = ({ userId, transactions, setTr
         description: interestTx.description, metadata: { source: 'family.mondeo', payment_id: newPayment.id },
       }).then(({ error }) => { if (error) console.warn('[Mondeo] mirror', error); });
     }
+
+    setPayments((prev) => [...prev, newPayment]);
+    setTransactions((prev) => [interestTx, ...prev]);
+    setPaymentAmount('');
+    setPaymentNote('');
   };
 
   const deletePayment = async (payment: MondeoLoanPayment) => {

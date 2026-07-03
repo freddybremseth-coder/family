@@ -381,16 +381,21 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       category: 'Renteinntekt', type: TransactionType.INCOME, paymentMethod: paymentMethod as any, isAccrual: false,
     };
     newPayment.postedTransactionId = interestTx.id;
+
+    if (userId && isSupabaseConfigured()) {
+      const { error: payErr } = await supabase.from('mondeo_loan_payments').insert({ id: newPayment.id, user_id: userId, date: newPayment.date, amount: newPayment.amount, note: newPayment.note ?? null, posted_transaction_id: interestTx.id });
+      if (payErr) {
+        console.error('[MondeoClean] mondeo_loan_payments insert failed', payErr);
+        alert('Klarte ikke lagre innbetaling: ' + (payErr.message || payErr.details || 'ukjent DB-feil') + '\n\nBeløpet er IKKE lagret. Prøv igjen eller sjekk konsollet.');
+        return;
+      }
+      await supabasePublic.from('business_financial_events').insert({ brand_id: 'mondeo', source_type: 'seller_credit', source_id: `mondeo:${newPayment.id}`, stream: 'mondeo_interest', direction: 'income', status: 'recognized', amount: interestTx.amount, currency: 'NOK', event_date: interestTx.date, description: interestTx.description, metadata: { source: 'family.mondeo', payment_id: newPayment.id, buyer: settings.buyerName, seller: settings.sellerEntity, min: minMonthly, annual_rate_pct: annualRate, principal_before: balanceBeforePayment } });
+    }
+
     setPayments((prev) => [...prev, newPayment]);
     setTransactions?.((prev) => [interestTx, ...prev]);
     setPaymentAmount(String(minMonthly));
     setPaymentNote('Minimum terminbeløp iht. avtale');
-
-    if (userId && isSupabaseConfigured()) {
-      await supabase.from('mondeo_loan_payments').insert({ id: newPayment.id, user_id: userId, date: newPayment.date, amount: newPayment.amount, note: newPayment.note ?? null, posted_transaction_id: interestTx.id });
-      await supabase.from('transactions').insert({ id: interestTx.id, user_id: userId, date: interestTx.date, amount: interestTx.amount, currency: interestTx.currency, description: interestTx.description, category: interestTx.category, type: interestTx.type, payment_method: interestTx.paymentMethod, is_accrual: false });
-      await supabasePublic.from('business_financial_events').insert({ brand_id: 'mondeo', source_type: 'seller_credit', source_id: `mondeo:${newPayment.id}`, stream: 'mondeo_interest', direction: 'income', status: 'recognized', amount: interestTx.amount, currency: 'NOK', event_date: interestTx.date, description: interestTx.description, metadata: { source: 'family.mondeo', payment_id: newPayment.id, buyer: settings.buyerName, seller: settings.sellerEntity, min: minMonthly, annual_rate_pct: annualRate, principal_before: balanceBeforePayment } });
-    }
   };
 
   const deletePayment = async (payment: MondeoLoanPayment) => {
