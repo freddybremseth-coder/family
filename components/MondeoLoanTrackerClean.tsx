@@ -197,19 +197,43 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     });
   };
 
-  // DAGLIG RENTE-AVREGNER:
-  // - Rente beregnes DAGLIG: balance × (annualRate/365) per dag
+  // DAGLIG RENTE-AVREGNER (månedskorrekt):
+  // - Månedsrente = balance × monthlyRate (0.75% ved 9 % årlig)
+  //   → 36 000 kr/mnd ved 4.8M saldo, uansett antall dager i måneden
+  // - Fordeles proporsjonalt over dagene i den aktuelle måneden:
+  //   dailyRate = monthlyRate / daysInMonth
+  //   juni (30d): 1 200/dag, juli (31d): 1 161/dag → begge totalt 36 000
   // - Ved betaling: allokerer først til påløpt rente, deretter avdrag
-  //   → tidlig betaling = mindre rente, sen betaling = mer rente
+  //   → tidlig i mnd = mindre rente akkumulert, sent = mer
   // - Ved månedsslutt kapitaliseres ubetalt rente til hovedstol
-  // - Én ledger-rad per hendelse (betaling, tillegg, KPI, månedsslutt)
-  const dailyRate = annualRate / 100 / 365;
   const ledger: MondeoLedgerRow[] = useMemo(() => {
     let balance = Number(settings.initialPrincipal || 0);
     let accruedInterest = 0;
     const interestStart = settings.interestStartDate || settings.startDate;
     const rows: MondeoLedgerRow[] = [];
     if (!interestStart) return rows;
+
+    // Beregn rente akkumulert mellom to datoer, splittet på månedsgrenser
+    // for å bruke riktig daglig-rate per måned.
+    const accrueBetween = (fromStr: string, toStr: string, currentBalance: number): number => {
+      const from = new Date(fromStr);
+      const to = new Date(toStr);
+      if (to <= from) return 0;
+      let total = 0;
+      let cursor = new Date(from);
+      while (cursor < to) {
+        const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+        const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); // 1. i neste mnd
+        const segmentEnd = to < monthEnd ? to : monthEnd;
+        const segmentDays = Math.max(0, Math.round((segmentEnd.getTime() - cursor.getTime()) / 86400000));
+        if (segmentDays > 0) {
+          const monthlyInterestFull = currentBalance * monthlyRate; // fullt månedsbeløp
+          total += monthlyInterestFull * (segmentDays / daysInMonth);
+        }
+        cursor = segmentEnd;
+      }
+      return total;
+    };
 
     // Bygg kronologisk liste av alle hendelser
     interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end'; payload?: any; }
@@ -234,9 +258,8 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     let lastDate = interestStart;
     let nr = 0;
     for (const ev of events) {
-      // Akkumuler daglig rente fra lastDate til ev.date
-      const days = Math.max(0, Math.floor((new Date(ev.date).getTime() - new Date(lastDate).getTime()) / 86400000));
-      const dailyInterest = balance * dailyRate * days;
+      // Akkumuler rente korrekt fra lastDate til ev.date (respekterer månedsgrenser)
+      const dailyInterest = accrueBetween(lastDate, ev.date, balance);
       accruedInterest += dailyInterest;
 
       if (ev.kind === 'kpi') {
@@ -305,15 +328,13 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     }
 
     // Legg til aktuell rente-akkumulering hittil (ikke kapitalisert enda)
-    if (lastDate < now.toISOString().slice(0, 10)) {
-      const days = Math.max(0, Math.floor((now.getTime() - new Date(lastDate).getTime()) / 86400000));
-      if (days > 0) {
-        accruedInterest += balance * dailyRate * days;
-      }
+    const nowStr = now.toISOString().slice(0, 10);
+    if (lastDate < nowStr) {
+      accruedInterest += accrueBetween(lastDate, nowStr, balance);
     }
 
     return rows;
-  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, dailyRate]);
+  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate]);
 
   const currentBalance = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
   const totalPaid = ledger.reduce((s, r) => s + r.paid, 0);
@@ -520,7 +541,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Nåværende saldo" value={formatNOK(currentBalance)} symbol="kr" hint={`Kjøper: ${settings.buyerName}`} />
         <MetricCard title="Minimum termin" value={formatNOK(minMonthly)} symbol="1" hint="Absolutt minimum per måned" />
-        <MetricCard title="Estimert månedsrente" value={formatNOK(estimatedMonthlyInterest)} symbol="%" hint={`${formatPercent(annualRate)} årlig · ${formatNOK(currentBalance * dailyRate)}/dag ved dagens saldo · Rente beregnes DAGLIG fra siste betaling`} />
+        <MetricCard title="Månedsrente" value={formatNOK(estimatedMonthlyInterest)} symbol="%" hint={`${formatPercent(annualRate)} årlig ÷ 12 = fast pr måned. Fordeles daglig — tidlig betaling reduserer akkumulert rente.`} />
         <MetricCard title="Ved minimum" value={monthlyDifferenceAtMinimum >= 0 ? `${formatNOK(monthlyDifferenceAtMinimum)} avdrag` : `${formatNOK(Math.abs(monthlyDifferenceAtMinimum))} økning`} symbol="±" hint={monthlyDifferenceAtMinimum < 0 ? `${formatNOK(annualNegativeAmortizationAtMinimum)} økning/år` : 'Positiv amortisering'} tone={monthlyDifferenceAtMinimum < 0 ? 'warning' : 'success'} />
       </section>
 
@@ -902,7 +923,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
 
         <h2>Avregningshistorikk (daglig rente)</h2>
         <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 8px' }}>
-          Rente akkumuleres daglig ({formatPercent(annualRate)} årlig / 365 dager = {formatNOK(currentBalance * dailyRate)} pr dag ved dagens saldo).
+          Månedsrente = {formatPercent(annualRate)} årlig ÷ 12 = <strong>{formatNOK(estimatedMonthlyInterest)} pr måned</strong> ved dagens saldo — fordeles daglig innenfor måneden ({formatNOK(estimatedMonthlyInterest / 30)}/dag i juni, {formatNOK(estimatedMonthlyInterest / 31)}/dag i juli).
           Ved betaling allokeres beløpet først til påløpt rente, resten reduserer hovedstolen.
           Ubetalt rente ved månedsslutt kapitaliseres (legges til hovedstolen).
         </p>
