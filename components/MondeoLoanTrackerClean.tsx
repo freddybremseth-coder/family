@@ -412,22 +412,24 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         rows.push({ id: `kpi-${ev.payload.id}`, nr, fromDate: lastDate, date: ev.date, openingBalance: balance, interestDue: 0, paid: 0, charges: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
         balance = newBalance;
       } else if (ev.kind === 'payment') {
+        // Innbetalinger fra Odin er RENTER — reduserer aldri hovedstol.
+        // Overbetaling regnes som ekstra rente-inntekt (registrert som Transaction),
+        // men påvirker ikke hovedstolen. Kun charges + late-fee + KPI endrer hovedstol.
         const paid = Number(ev.payload.amount || 0);
-        const interestPortion = Math.min(paid, accruedInterest);
-        const principalReduction = paid - interestPortion;
-        accruedInterest -= interestPortion;
-        balance -= principalReduction;
+        const interestCovered = Math.min(paid, accruedInterest);
+        accruedInterest = Math.max(0, accruedInterest - interestCovered);
+        const overpay = paid - interestCovered;
         nr += 1;
         rows.push({
           id: ev.payload.id, nr,
           fromDate: lastDate, date: ev.date,
-          openingBalance: balance + principalReduction,
+          openingBalance: balance,
           interestDue: dailyInterest,
           paid,
           charges: 0,
-          principalChange: principalReduction,
+          principalChange: 0,
           closingBalance: balance,
-          status: 'Avdrag',
+          status: overpay > 0.5 ? `Renteinnbetaling (+${Math.round(overpay)} kr ekstra)` : 'Renteinnbetaling',
         });
       } else if (ev.kind === 'charge') {
         const chargeAmt = Number(ev.payload.amount || 0);
@@ -526,11 +528,11 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     const requested = Number(paymentAmount || 0);
     if (!paymentDate || requested <= 0) return;
     const balanceBeforePayment = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
-    const interestPortion = Math.min(requested, balanceBeforePayment * monthlyRate);
     const newPayment: MondeoLoanPayment = { id: createId(), date: paymentDate, amount: requested, note: paymentNote || undefined };
+    // Hele innbetalingen registreres som renteinntekt (ingen avdrag på hovedstol).
     const interestTx: Transaction = {
-      id: `tx-mondeo-${newPayment.id}`, date: paymentDate, amount: Math.round(interestPortion), currency: 'NOK',
-      description: `Renteinntekt Mondeo Eiendom AS${paymentNote ? ` – ${paymentNote}` : ''}`,
+      id: `tx-mondeo-${newPayment.id}`, date: paymentDate, amount: Math.round(requested), currency: 'NOK',
+      description: `Renteinntekt Mondeo Eiendom AS${paymentNote ? ` – ${paymentNote}` : ''} (inn på ${mondeoAccount.bankName} ${mondeoAccount.accountNumber})`,
       category: 'Renteinntekt', type: TransactionType.INCOME, paymentMethod: paymentMethod as any, isAccrual: false,
     };
     newPayment.postedTransactionId = interestTx.id;
