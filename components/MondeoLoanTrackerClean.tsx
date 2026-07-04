@@ -425,8 +425,8 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         rows.push({ id: `kpi-${ev.payload.id}`, nr, fromDate: lastDate, date: ev.date, openingBalance: balance, interestDue: 0, paid: 0, charges: 0, principalChange: -adjustment, closingBalance: newBalance, status: 'KPI-justering' });
         balance = newBalance;
       } else if (ev.kind === 'payment') {
-        // Innbetalinger fra Odin er RENTER — reduserer aldri hovedstol.
-        // Ingen daglig rente-akkumulering mellom hendelser (rente beregnes kun ved månedsslutt).
+        // Innbetalinger vises som informativ rad — den faktiske avregningen
+        // (rente/avdrag/kapitalisering) skjer ved månedsslutt iht. kontrakten.
         const paid = Number(ev.payload.amount || 0);
         nr += 1;
         rows.push({
@@ -438,7 +438,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           charges: 0,
           principalChange: 0,
           closingBalance: balance,
-          status: 'Renteinnbetaling',
+          status: 'Innbetaling mottatt (avregnes månedsslutt)',
         });
       } else if (ev.kind === 'charge') {
         const chargeAmt = Number(ev.payload.amount || 0);
@@ -457,41 +457,42 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         });
         balance = newBalance;
       } else if (ev.kind === 'month-end') {
-        // Månedens rente = balance × 9%/12 (uansett antall betalinger i måneden)
+        // Kontraktens avregning (Vedlegg A, punkt 4):
+        //  1. Månedens rente = restgjeld × 9%/12
+        //  2. Terminbeløp (33 000) trekkes fra rente. Overskudd av terminbeløp reduserer restgjeld.
+        //  3. Restrente kapitaliseres til restgjeld (negativ amortisering).
+        //  4. Ekstrainnbetaling (over terminbeløp) reduserer restgjeld ytterligere.
         const monthEndDate = new Date(ev.date);
         const monthKey = ev.date.slice(0, 7);
         const monthInterest = monthInterestFor(monthEndDate, balance);
-        // Trekk fra innbetalinger den måneden (de dekker rente)
         const paidThisMonth = payments
           .filter((p) => p.date && p.date.slice(0, 7) === monthKey)
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const unpaid = Math.max(0, monthInterest - paidThisMonth);
-        if (unpaid > 0.01) {
-          balance += unpaid;
+        const minMonthly = settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY;
+        const termAmount = Math.min(paidThisMonth, minMonthly);
+        const extraPayment = Math.max(0, paidThisMonth - minMonthly);
+        const restInterest = Math.max(0, monthInterest - termAmount);
+        const termPrincipalReduction = Math.max(0, termAmount - monthInterest);
+        const netChange = restInterest - termPrincipalReduction - extraPayment;
+        if (Math.abs(netChange) > 0.01 || monthInterest > 0.01) {
+          const openingBalance = balance;
+          balance += netChange;
           nr += 1;
+          let status: string;
+          if (paidThisMonth === 0) status = `Rente kapitaliseres (mnd.rente ${Math.round(monthInterest)}, ingen betaling)`;
+          else if (netChange > 0) status = `Restrente ${Math.round(restInterest)} kapitaliseres (betalt ${Math.round(paidThisMonth)}, rente ${Math.round(monthInterest)})`;
+          else if (netChange < 0) status = `Avdrag (betalt ${Math.round(paidThisMonth)}, rente ${Math.round(monthInterest)}, avdrag ${Math.round(Math.abs(netChange))})`;
+          else status = `Rente ${Math.round(monthInterest)} dekket av innbetaling`;
           rows.push({
             id: `me-${ev.date}`, nr,
             fromDate: lastDate, date: ev.date,
-            openingBalance: balance - unpaid,
-            interestDue: unpaid,
-            paid: 0,
-            charges: 0,
-            principalChange: -unpaid,
-            closingBalance: balance,
-            status: paidThisMonth > 0 ? `Restrente kapitaliseres (mnd.rente ${Math.round(monthInterest)} − betalt ${Math.round(paidThisMonth)})` : 'Rente kapitaliseres',
-          });
-        } else if (monthInterest > 0.01) {
-          nr += 1;
-          rows.push({
-            id: `me-${ev.date}`, nr,
-            fromDate: lastDate, date: ev.date,
-            openingBalance: balance,
+            openingBalance,
             interestDue: monthInterest,
             paid: paidThisMonth,
             charges: 0,
-            principalChange: 0,
+            principalChange: -netChange,
             closingBalance: balance,
-            status: `Rente dekket av innbetaling (${Math.round(paidThisMonth)} kr)`,
+            status,
           });
         }
       } else if (ev.kind === 'late-fee') {
@@ -1078,7 +1079,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       {/* SKJULT UTSKRIFTSOMRÅDE */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
         <h1>Mondeo Eiendom AS · Salgskontrakt — Regnskap</h1>
-        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v4 (forfall {latePaymentDueDay}. · forsinkelsesrente {annualRate}%/365)</p>
+        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v5 (kontrakt-avregning: terminbeløp {formatNOK(settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY)}, forfall {latePaymentDueDay}., forsinkelsesrente {annualRate}%/365)</p>
         <p className="meta">Innbetalinger til: {mondeoAccount.bankName} · {mondeoAccount.accountName} · {mondeoAccount.accountNumber} · {mondeoAccount.iban} · {mondeoAccount.currency}</p>
 
         {/* SAMMENDRAG ØVERST */}
