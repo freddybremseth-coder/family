@@ -16,6 +16,7 @@ import { AppErrorBoundary } from './AppErrorBoundary';
 
 interface Props {
   transactions: Transaction[];
+  setTransactions?: React.Dispatch<React.SetStateAction<Transaction[]>>;
   bankAccounts?: BankAccount[];
   assets?: Asset[];
   familyMembers?: FamilyMember[];
@@ -48,7 +49,7 @@ function MetricCard({ title, value, hint, symbol, onClick }: { title: string; va
 }
 function EmptyState({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">{text}</p>; }
 
-export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], assets = [], familyMembers = [], tasks = [], calendarEvents = [], groceryCount = 0, lang, userId, realEstateDeals = [], afterSales = [], farmOps = [], bills = [], onNavigate }) => {
+export const Dashboard: React.FC<Props> = ({ transactions, setTransactions, bankAccounts = [], assets = [], familyMembers = [], tasks = [], calendarEvents = [], groceryCount = 0, lang, userId, realEstateDeals = [], afterSales = [], farmOps = [], bills = [], onNavigate }) => {
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [economy, setEconomy] = useState<EconomySummary | null>(null);
@@ -356,7 +357,7 @@ export const Dashboard: React.FC<Props> = ({ transactions, bankAccounts = [], as
     {businessStats.count > 0 && <section className="card p-5 md:p-6"><div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Business i Oversikt</h2><p className="mt-1 text-sm text-slate-500">Tall fra Business-modulen vises når det finnes avtaler, aftersales eller gårdsoperasjoner.</p></div><p className="text-2xl font-bold text-slate-900">{formatMoney(businessStats.total)}</p></div><div className="grid grid-cols-1 gap-3 md:grid-cols-4"><MetricCard title="Provisjon pipeline" value={formatMoney(businessStats.dealPipeline)} hint={`${realEstateDeals.length} avtaler`} symbol={<BriefcaseBusiness className="h-5 w-5" />} /><MetricCard title="Ventende provisjon" value={formatMoney(businessStats.pendingDealCommissions)} symbol={<TrendingUp className="h-5 w-5" />} /><MetricCard title="AfterSale" value={formatMoney(businessStats.afterSaleRevenue)} hint={`${afterSales.length} poster`} symbol={<ArrowUpRight className="h-5 w-5" />} /><MetricCard title="Dona Anna netto" value={formatMoney(businessStats.farmNet)} hint={`${farmOps.length} føringer`} symbol={<Home className="h-5 w-5" />} /></div></section>}
     {economy && economy.rows.length > 0 && <section className="card p-5 md:p-6"><div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Konsolidert familieøkonomi</h2><p className="mt-1 text-sm text-slate-500">Hittil i år fra delt økonomiview hvis tilgjengelig.</p></div><p className="text-2xl font-bold text-slate-900">{formatMoney(economy.ytd.totalNet)}</p></div><div className="grid grid-cols-1 gap-3 md:grid-cols-3"><MetricCard title="Dona Anna" value={formatMoney(economy.ytd.oliviaNet)} symbol="D" /><MetricCard title="RealtyFlow" value={formatMoney(economy.ytd.realtyflowNet)} symbol="R" /><MetricCard title="Mondeo rente" value={formatMoney(economy.ytd.mondeoInterest)} symbol="M" /></div></section>}
     {(aiTip || aiLoading) && <section className="card p-4"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"><Sparkles className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold text-slate-900">AI-innsikt</p><p className="mt-1 text-sm text-slate-600">{aiLoading ? 'Henter AI-innsikt...' : aiTip}</p></div><button onClick={fetchAiTip} disabled={aiLoading} className="btn-secondary shrink-0"><RefreshCw className={`h-4 w-4 ${aiLoading ? 'animate-spin' : ''}`} /></button></div></section>}
-    {userId && transactions.length > 5 && <AppErrorBoundary label="Auto-budsjett"><AutoBudgetSuggestion userId={userId} transactions={transactions} /></AppErrorBoundary>}
+    {userId && transactions.length > 5 && <AppErrorBoundary label="Auto-budsjett"><AutoBudgetSuggestion userId={userId} transactions={transactions} setTransactions={setTransactions} /></AppErrorBoundary>}
     {userId && <AppErrorBoundary label="Sparepotensial"><SavingsWidget userId={userId} /></AppErrorBoundary>}
     {userId && transactions.length > 3 && <AppErrorBoundary label="Kvittering-dekning"><ReceiptMatchWidget userId={userId} transactions={transactions} onNavigate={onNavigate} /></AppErrorBoundary>}
 

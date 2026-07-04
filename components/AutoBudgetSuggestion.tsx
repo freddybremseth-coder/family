@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, TrendingUp, TrendingDown, Minus, Loader2, Store, Pencil, Check, X } from 'lucide-react';
+import { Sparkles, TrendingUp, TrendingDown, Minus, Loader2, Store, Pencil, Check, X, ArrowRightLeft } from 'lucide-react';
 import { Transaction } from '../types';
 import { suggestBudget, CategoryBudgetSuggestion } from '../services/spendingBudgetService';
+import { FAMILY_CATEGORIES, rememberTransactionCategory } from '../services/categoryService';
 
 interface Props {
   userId?: string;
   transactions: Transaction[];
+  setTransactions?: React.Dispatch<React.SetStateAction<Transaction[]>>;
 }
 
 const formatEUR = (v: number) => new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
@@ -33,12 +35,20 @@ function loadNotes(): Record<string, string> {
   return { ...DEFAULT_NOTES };
 }
 
-export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) => {
+const KNOWN_VENDOR_RULES: Array<{ match: RegExp; category: string; label: string }> = [
+  { match: /daniel\s*gallardo/i, category: 'Dona Anna', label: 'Daniel Gallardo → Dona Anna' },
+  { match: /maria\s*safrina\s*bialon/i, category: 'Husleie', label: 'Maria Safrina Bialon → Husleie' },
+  { match: /agrodisa/i, category: 'Dona Anna', label: 'AGRODISA → Dona Anna' },
+];
+
+export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions, setTransactions }) => {
   const [suggestions, setSuggestions] = useState<CategoryBudgetSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState<Record<string, string>>(loadNotes);
   const [editingCat, setEditingCat] = useState<string | null>(null);
   const [draftNote, setDraftNote] = useState('');
+  const [reclassifyingVendor, setReclassifyingVendor] = useState<string | null>(null);
+  const [applyingRules, setApplyingRules] = useState(false);
 
   const saveNote = (cat: string, text: string) => {
     const next = { ...notes };
@@ -48,6 +58,43 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) 
     setNotes(next);
     try { localStorage.setItem(NOTES_KEY, JSON.stringify(next)); } catch {}
     setEditingCat(null);
+  };
+
+  const reclassifyVendor = (vendorSubstring: string, newCategory: string) => {
+    if (!setTransactions) return;
+    const needle = vendorSubstring.toLowerCase();
+    let count = 0;
+    setTransactions((prev) => prev.map((t) => {
+      const hay = (t.description || '').toLowerCase();
+      if (hay.includes(needle)) {
+        count++;
+        return { ...t, category: newCategory };
+      }
+      return t;
+    }));
+    rememberTransactionCategory({ description: vendorSubstring, vendor: vendorSubstring, category: newCategory });
+    setReclassifyingVendor(null);
+    if (count > 0) setTimeout(() => alert(`${count} transaksjoner reklassifisert til "${newCategory}"`), 100);
+  };
+
+  const applyKnownRules = () => {
+    if (!setTransactions) return;
+    setApplyingRules(true);
+    let total = 0;
+    setTransactions((prev) => prev.map((t) => {
+      const desc = (t.description || '');
+      for (const rule of KNOWN_VENDOR_RULES) {
+        if (rule.match.test(desc)) {
+          if (t.category !== rule.category) {
+            total++;
+            return { ...t, category: rule.category };
+          }
+        }
+      }
+      return t;
+    }));
+    KNOWN_VENDOR_RULES.forEach((r) => rememberTransactionCategory({ description: r.match.source, vendor: r.match.source, category: r.category }));
+    setTimeout(() => { setApplyingRules(false); alert(`${total} transaksjoner reklassifisert etter forhåndsdefinerte regler.`); }, 100);
   };
 
   useEffect(() => {
@@ -79,6 +126,23 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) 
         </div>
       </div>
 
+      {setTransactions && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div className="text-xs text-indigo-900">
+            <p className="font-bold flex items-center gap-1.5"><ArrowRightLeft className="h-3.5 w-3.5" /> Reklassifiser kjente feil-kategoriserte leverandører</p>
+            <p className="mt-0.5 text-[11px] text-indigo-700 italic">{KNOWN_VENDOR_RULES.map(r => r.label).join(' · ')}</p>
+          </div>
+          <button
+            type="button"
+            onClick={applyKnownRules}
+            disabled={applyingRules}
+            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-black uppercase tracking-wide disabled:opacity-50"
+          >
+            {applyingRules ? 'Reklassifiserer…' : 'Kjør reglene nå'}
+          </button>
+        </div>
+      )}
+
       <div className="space-y-2">
         {suggestions.slice(0, 8).map(s => {
           const meta = VAR_META[s.variability];
@@ -101,11 +165,42 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) 
                   </p>
                   {s.topVendors.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
-                      {s.topVendors.map(v => (
-                        <span key={v.vendor} className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-medium">
-                          <Store className="h-2.5 w-2.5" /> {v.vendor.slice(0, 20)}: {formatEUR(v.total)}
-                        </span>
-                      ))}
+                      {s.topVendors.map(v => {
+                        const key = `${s.category}::${v.vendor}`;
+                        return (
+                          <span key={v.vendor} className="relative inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-medium">
+                            <Store className="h-2.5 w-2.5" /> {v.vendor.slice(0, 20)}: {formatEUR(v.total)}
+                            {setTransactions && (
+                              <button
+                                type="button"
+                                onClick={() => setReclassifyingVendor(reclassifyingVendor === key ? null : key)}
+                                className="ml-1 text-slate-400 hover:text-indigo-600"
+                                title="Reklassifiser denne leverandøren"
+                              >
+                                <ArrowRightLeft className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                            {reclassifyingVendor === key && (
+                              <div className="absolute z-20 top-full left-0 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-lg p-2">
+                                <p className="text-[10px] text-slate-500 uppercase font-bold px-1 mb-1">Flytt til kategori:</p>
+                                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                                  {FAMILY_CATEGORIES.filter(c => c !== s.category).map(cat => (
+                                    <button
+                                      key={cat}
+                                      type="button"
+                                      onClick={() => reclassifyVendor(v.vendor, cat)}
+                                      className="w-full text-left rounded px-2 py-1 text-[11px] text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                                    >
+                                      {cat}
+                                    </button>
+                                  ))}
+                                </div>
+                                <button type="button" onClick={() => setReclassifyingVendor(null)} className="w-full mt-1 rounded px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-100">Avbryt</button>
+                              </div>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
