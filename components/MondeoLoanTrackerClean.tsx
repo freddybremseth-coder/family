@@ -345,44 +345,66 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
-    // Forsinkelsesrente: for hver måned der utestående månedsrente ikke er dekket innen forfallsdag → 9%/365 × utestående × antall dager
+    // Forsinkelsesrente: minstebeløp × 9%/365 pr dag fra 1. i måneden (eller renteoppstart)
+    // frem til kumulative innbetalinger (FIFO til eldste ubetalte måned) når 33 000 for den måneden.
     const dailyLateRate = annualRate / 100 / 365;
-    const balanceStartMonth = Number(settings.initialPrincipal || 0);
-    const monthlyInterestApprox = balanceStartMonth * monthlyRate;
-    const lateCursor = new Date(interestStart);
-    while (lateCursor <= now) {
-      const y = lateCursor.getFullYear();
-      const m = lateCursor.getMonth();
-      const key = `${y}-${String(m + 1).padStart(2, '0')}`;
-      // Forfall dag X i samme måned (kontrakt: 1.). Betaling for foregående mnd renter forfaller.
-      const dueDate = new Date(y, m, latePaymentDueDay);
-      if (dueDate <= now) {
-        // Betalinger som dekker forfall for måned M må komme senest på dueDate.
-        // Vi bruker sum av innbetalinger fram til (og med) dueDate — men bare renter for FORRIGE måned regnes som forfalt.
-        // For enkelhet: renter i måned M-1 (som kapitaliseres 30.M-1) skal betales innen dag X i måned M.
-        const prevMonthKey = new Date(y, m - 1, 1).toISOString().slice(0, 7);
-        const paidByDue = payments
-          .filter((p) => p.date && new Date(p.date) <= dueDate)
-          .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const paidByPrevDue = payments
-          .filter((p) => p.date && new Date(p.date) <= new Date(y, m - 1, latePaymentDueDay))
-          .reduce((s, p) => s + Number(p.amount || 0), 0);
-        // Renter for forrige måned = det som burde vært dekket denne forfallssyklusen
-        const expectedThisCycle = monthlyInterestApprox; // approx
-        const shortfall = Math.max(0, expectedThisCycle - Math.max(0, paidByDue - paidByPrevDue));
-        if (shortfall > 0.01) {
-          const daysLate = Math.max(0, Math.round((now.getTime() - dueDate.getTime()) / 86400000));
-          if (daysLate > 0) {
-            const fee = shortfall * dailyLateRate * daysLate;
-            events.push({
-              date: nowStrForLate,
-              kind: 'late-fee',
-              payload: { month: prevMonthKey || key, shortfall, daysLate, fee, dueDate: dueDate.toISOString().slice(0, 10) },
-            });
-          }
+    const minMonthlyForFee = settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY;
+    interface Cycle { month: string; accrualStart: Date; paid: number; paidReachDate: Date | null; }
+    const cycles: Cycle[] = [];
+    const iter = new Date(interestStart);
+    while (iter <= now) {
+      const y = iter.getFullYear();
+      const m = iter.getMonth();
+      const monthStart = new Date(y, m, 1);
+      const accrualStart = new Date(interestStart) > monthStart ? new Date(interestStart) : monthStart;
+      if (accrualStart <= now) {
+        cycles.push({
+          month: `${y}-${String(m + 1).padStart(2, '0')}`,
+          accrualStart,
+          paid: 0,
+          paidReachDate: null,
+        });
+      }
+      iter.setMonth(iter.getMonth() + 1);
+    }
+
+    // FIFO-anvend innbetalinger på eldste ubetalte måned
+    const sortedPayments = [...payments].filter((p) => p.date).sort((a, b) => (a.date < b.date ? -1 : 1));
+    for (const p of sortedPayments) {
+      let remaining = Number(p.amount || 0);
+      const paidDate = new Date(p.date);
+      for (const cycle of cycles) {
+        if (remaining <= 0) break;
+        if (cycle.paidReachDate) continue;
+        const needed = minMonthlyForFee - cycle.paid;
+        const apply = Math.min(remaining, needed);
+        cycle.paid += apply;
+        remaining -= apply;
+        if (cycle.paid >= minMonthlyForFee - 0.01) {
+          cycle.paidReachDate = paidDate;
         }
       }
-      lateCursor.setMonth(lateCursor.getMonth() + 1);
+    }
+
+    // Generer late-fee events
+    for (const cycle of cycles) {
+      const endDate = cycle.paidReachDate ?? now;
+      const daysLate = Math.max(0, Math.round((endDate.getTime() - cycle.accrualStart.getTime()) / 86400000));
+      if (daysLate > 0) {
+        const fee = minMonthlyForFee * dailyLateRate * daysLate;
+        events.push({
+          date: endDate.toISOString().slice(0, 10),
+          kind: 'late-fee',
+          payload: {
+            month: cycle.month,
+            shortfall: minMonthlyForFee,
+            daysLate,
+            fee,
+            dueDate: cycle.accrualStart.toISOString().slice(0, 10),
+            paidAt: cycle.paidReachDate ? cycle.paidReachDate.toISOString().slice(0, 10) : null,
+          },
+        });
+      }
     }
 
     // Sortering ved samme dato: kpi → payment → charge → month-end → late-fee
