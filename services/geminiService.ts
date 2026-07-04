@@ -309,9 +309,7 @@ export const generateSmartMenu = async (inv: string[], cra: string) => safeGemin
 
 // Kvittering-analyse ber nå AI om å hente barcode + quantity/unit/pricePerUnit
 // pr linje der det er synlig — brukes senere til Open Food Facts-berikelse.
-export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => safeGeminiJson(async () => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: `Analyser denne kvitteringen for FamilieHub. Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori. Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet. Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU. Ikke avvis bildet som uklart før du har forsøkt beste tolkning av synlige tall.
+const RECEIPT_PROMPT = `Analyser denne kvitteringen for FamilieHub. Returner butikk, dato, totalbeløp, valuta, betalingsmåte hvis synlig, linjer og riktig utgiftskategori. Kategori må være én av: Dagligvarer, Restaurant, Transport, Bolig, Bil, Barn, Helse, Klær, Reise, Business, Annet. Bruk totalbeløp inklusive MVA. Hvis valuta er ukjent, bruk NOK i Norge og EUR i Spania/EU. Ikke avvis bildet som uklart før du har forsøkt beste tolkning av synlige tall.
 
 Pr varelinje, hent så mye du kan lese:
 - name: produktnavn eksakt som skrevet
@@ -320,9 +318,35 @@ Pr varelinje, hent så mye du kan lese:
 - unit: enhet hvis synlig (kg, L, ml, ud, stk)
 - pricePerUnit: pris pr enhet hvis synlig
 - barcode: EAN/UPC-strekkode hvis synlig (13 eller 12 siffer)
-- category: undertype (Meieri, Frukt, Kjøtt, Bakeri, Frys, Rengjøring, Dyremat, etc.)` }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { vendor: { type: Type.STRING }, date: { type: Type.STRING }, totalAmount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] }, paymentMethod: { type: Type.STRING }, confidence: { type: Type.NUMBER }, note: { type: Type.STRING }, items: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.NUMBER }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, pricePerUnit: { type: Type.NUMBER }, barcode: { type: Type.STRING }, category: { type: Type.STRING } } } } }, required: ['vendor', 'date', 'totalAmount', 'currency', 'category'] } } });
-  return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
-});
+- category: undertype (Meieri, Frukt, Kjøtt, Bakeri, Frys, Rengjøring, Dyremat, etc.)
+
+Svar KUN med gyldig JSON på formatet: {vendor, date, totalAmount, currency, category, paymentMethod?, confidence?, note?, items: [{name, amount, quantity?, unit?, pricePerUnit?, barcode?, category?}]}`;
+
+export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
+  // SaaS-modus: rutet gjennom sentral AI-proxy hvis feature-flag er på
+  const { isBuiltinAiEnabled, callAiProxy } = await import('./aiProxyService');
+  if (isBuiltinAiEnabled()) {
+    try {
+      const res = await callAiProxy({
+        provider: 'gemini', task: 'analyzeReceipt', model: GEMINI_FLASH,
+        prompt: RECEIPT_PROMPT, image: b64, mimeType,
+      });
+      // Trekk ut JSON fra teksten (kan være wrapped i markdown)
+      const jsonMatch = res.text.match(/\{[\s\S]*\}/);
+      const raw = jsonMatch ? jsonMatch[0] : res.text;
+      return JSON.parse(raw);
+    } catch (err: any) {
+      if (err?.name === 'AiProxyQuotaError') throw err;
+      console.warn('[analyzeReceipt] proxy feilet, faller tilbake til direkte:', err?.message);
+    }
+  }
+
+  return safeGeminiJson(async () => {
+    const ai = getAi();
+    const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: RECEIPT_PROMPT }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { vendor: { type: Type.STRING }, date: { type: Type.STRING }, totalAmount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] }, paymentMethod: { type: Type.STRING }, confidence: { type: Type.NUMBER }, note: { type: Type.STRING }, items: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.NUMBER }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, pricePerUnit: { type: Type.NUMBER }, barcode: { type: Type.STRING }, category: { type: Type.STRING } } } } }, required: ['vendor', 'date', 'totalAmount', 'currency', 'category'] } } });
+    return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
+  });
+};
 
 export const getBillsSmartAdvice = async (bills: Bill[]) => safeGeminiJson(async () => {
   const ai = getAi();

@@ -3,6 +3,7 @@ import { UserConfig, Currency, Language } from '../types';
 import { translations } from '../translations';
 import { AlertCircle, CheckCircle2, Copy, Database, Home, Globe, MapPin, Key, Save, ShieldCheck, Sparkles, Settings2, PlugZap, Trash2, Lock, Eye, EyeOff, Mail, Loader2 } from 'lucide-react';
 import { IntegrationsSettings } from './IntegrationsSettings';
+import { BuiltinAiToggle } from './BuiltinAiToggle';
 import { HouseholdMembersPanel } from './HouseholdMembersPanel';
 import { exportUserData, downloadAsJson } from '../services/gdprExportService';
 import { Download, CalendarClock } from 'lucide-react';
@@ -450,6 +451,7 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
                 <div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Key className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" /><input type="password" value={aiKeys[field.key]} onChange={e => updateAiKey(field.key, e.target.value)} className="pl-12" placeholder={field.placeholder} autoComplete="off" /></div><button type="button" onClick={() => clearAiKey(field.key)} className="btn-secondary justify-center text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Fjern</button></div>
               </div>
             ))}
+            <BuiltinAiToggle />
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-bold text-amber-900">SaaS-notat</p><p className="mt-1 text-sm text-amber-800">Nye SaaS-brukere skal ikke bruke Freddy sine AI-nøkler. De må legge inn egne nøkler, eller du må tilby en betalt managed AI-pakke med kryptert lagring per household.</p></div>
           </div>
         </Card>
