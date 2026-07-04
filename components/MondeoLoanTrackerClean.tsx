@@ -96,6 +96,19 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
+  // Forfallsdag (dag i påfølgende måned) — persisteres i localStorage
+  const [latePaymentDueDay, setLatePaymentDueDayState] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('mondeo_late_due_day');
+      const n = stored ? Number(stored) : 5;
+      return Number.isFinite(n) && n >= 1 && n <= 28 ? n : 5;
+    } catch { return 5; }
+  });
+  const setLatePaymentDueDay = (day: number) => {
+    setLatePaymentDueDayState(day);
+    try { localStorage.setItem('mondeo_late_due_day', String(day)); } catch {}
+  };
+
   const annualRate = useMemo(() => {
     if (settings.useFixedRate) return Number(settings.fixedAnnualRatePct ?? DEFAULT_FIXED_RATE);
     return Number(settings.norgesBankRatePct || 0) + Number(settings.marginPct || 0);
@@ -236,7 +249,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     };
 
     // Bygg kronologisk liste av alle hendelser
-    interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end'; payload?: any; }
+    interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end' | 'late-fee'; payload?: any; }
     const events: Event[] = [];
     for (const p of payments) if (p.date) events.push({ date: p.date, kind: 'payment', payload: p });
     for (const c of charges) if (c.date) events.push({ date: c.date, kind: 'charge', payload: c });
@@ -244,6 +257,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
 
     // Legg til månedsslutt-hendelser fra interestStart til i dag
     const now = new Date();
+    const nowStrForLate = now.toISOString().slice(0, 10);
     const cursor = new Date(interestStart);
     while (cursor <= now) {
       const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
@@ -253,9 +267,38 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
-    // Sortering ved samme dato: kpi → payment → charge → month-end
-    // Slik at betaling reduserer saldo før tillegg/kapitalisering
-    const kindOrder = { kpi: 0, payment: 1, charge: 2, 'month-end': 3 };
+    // Forsinkelsesrente: for hver måned der utestående månedsrente ikke er dekket innen forfallsdag → 9%/365 × utestående × antall dager
+    const dailyLateRate = annualRate / 100 / 365;
+    const balanceStartMonth = Number(settings.initialPrincipal || 0);
+    const monthlyInterestApprox = balanceStartMonth * monthlyRate;
+    const lateCursor = new Date(interestStart);
+    while (lateCursor <= now) {
+      const y = lateCursor.getFullYear();
+      const m = lateCursor.getMonth();
+      const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+      const dueDate = new Date(y, m + 1, latePaymentDueDay); // dag X i påfølgende måned
+      if (dueDate <= now) {
+        const paidInMonth = payments
+          .filter((p) => p.date && p.date.slice(0, 7) === key)
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        const shortfall = Math.max(0, monthlyInterestApprox - paidInMonth);
+        if (shortfall > 0.01) {
+          const daysLate = Math.max(0, Math.round((now.getTime() - dueDate.getTime()) / 86400000));
+          if (daysLate > 0) {
+            const fee = shortfall * dailyLateRate * daysLate;
+            events.push({
+              date: nowStrForLate,
+              kind: 'late-fee',
+              payload: { month: key, shortfall, daysLate, fee, dueDate: dueDate.toISOString().slice(0, 10) },
+            });
+          }
+        }
+      }
+      lateCursor.setMonth(lateCursor.getMonth() + 1);
+    }
+
+    // Sortering ved samme dato: kpi → payment → charge → month-end → late-fee
+    const kindOrder = { kpi: 0, payment: 1, charge: 2, 'month-end': 3, 'late-fee': 4 };
     events.sort((a, b) => {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return kindOrder[a.kind] - kindOrder[b.kind];
@@ -328,6 +371,23 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             status: 'Rente kapitaliseres',
           });
         }
+      } else if (ev.kind === 'late-fee') {
+        const fee = Number(ev.payload.fee || 0);
+        if (fee > 0.01) {
+          balance += fee;
+          nr += 1;
+          rows.push({
+            id: `late-${ev.payload.month}`, nr,
+            fromDate: ev.payload.dueDate, date: ev.date,
+            openingBalance: balance - fee,
+            interestDue: fee,
+            paid: 0,
+            charges: 0,
+            principalChange: -fee,
+            closingBalance: balance,
+            status: `Forsinkelsesrente ${ev.payload.month} (${ev.payload.daysLate} d)`,
+          });
+        }
       }
 
       lastDate = ev.date;
@@ -340,7 +400,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     }
 
     return rows;
-  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate]);
+  }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate, annualRate, latePaymentDueDay]);
 
   const currentBalance = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
   const totalPaid = ledger.reduce((s, r) => s + r.paid, 0);
@@ -605,6 +665,9 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             <div className="grid grid-cols-2 gap-3">
               <Field label="Renteoppstart" type="date" value={settings.interestStartDate || DEFAULT_INTEREST_START} onChange={(v) => persistSettings({ ...settings, interestStartDate: v })} />
               <Field label="Min mnd. (NOK)" type="number" value={settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY} onChange={(v) => persistSettings({ ...settings, minMonthlyPayment: Number(v) })} />
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <Field label={`Forfallsdag (dag i påfølgende måned) — ${annualRate}% rente på utestående / 365 pr dag forsinket`} type="number" value={latePaymentDueDay} onChange={(v) => { const n = Math.max(1, Math.min(28, Number(v) || 5)); setLatePaymentDueDay(n); }} />
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
