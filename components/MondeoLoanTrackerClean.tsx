@@ -96,17 +96,38 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
-  // Forfallsdag (dag i påfølgende måned) — persisteres i localStorage
+  // Forfallsdag (dag i måneden) — 1. iht. kontrakt. Persisteres i localStorage.
   const [latePaymentDueDay, setLatePaymentDueDayState] = useState<number>(() => {
     try {
       const stored = localStorage.getItem('mondeo_late_due_day');
-      const n = stored ? Number(stored) : 5;
-      return Number.isFinite(n) && n >= 1 && n <= 28 ? n : 5;
-    } catch { return 5; }
+      const n = stored ? Number(stored) : 1;
+      return Number.isFinite(n) && n >= 1 && n <= 28 ? n : 1;
+    } catch { return 1; }
   });
   const setLatePaymentDueDay = (day: number) => {
     setLatePaymentDueDayState(day);
     try { localStorage.setItem('mondeo_late_due_day', String(day)); } catch {}
+  };
+
+  // Mondeo-inntektskonto (DNB) — persisteres i localStorage
+  interface MondeoBankInfo { bankName: string; accountName: string; accountNumber: string; iban: string; currency: string; }
+  const DEFAULT_MONDEO_ACCOUNT: MondeoBankInfo = {
+    bankName: 'DNB',
+    accountName: 'Mondeo Eiendom AS',
+    accountNumber: '1503 58 84251',
+    iban: 'NO4015035884251',
+    currency: 'NOK',
+  };
+  const [mondeoAccount, setMondeoAccountState] = useState<MondeoBankInfo>(() => {
+    try {
+      const stored = localStorage.getItem('mondeo_income_account');
+      if (stored) return { ...DEFAULT_MONDEO_ACCOUNT, ...JSON.parse(stored) };
+    } catch {}
+    return DEFAULT_MONDEO_ACCOUNT;
+  });
+  const setMondeoAccount = (next: MondeoBankInfo) => {
+    setMondeoAccountState(next);
+    try { localStorage.setItem('mondeo_income_account', JSON.stringify(next)); } catch {}
   };
 
   const annualRate = useMemo(() => {
@@ -276,12 +297,22 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       const y = lateCursor.getFullYear();
       const m = lateCursor.getMonth();
       const key = `${y}-${String(m + 1).padStart(2, '0')}`;
-      const dueDate = new Date(y, m + 1, latePaymentDueDay); // dag X i påfølgende måned
+      // Forfall dag X i samme måned (kontrakt: 1.). Betaling for foregående mnd renter forfaller.
+      const dueDate = new Date(y, m, latePaymentDueDay);
       if (dueDate <= now) {
-        const paidInMonth = payments
-          .filter((p) => p.date && p.date.slice(0, 7) === key)
+        // Betalinger som dekker forfall for måned M må komme senest på dueDate.
+        // Vi bruker sum av innbetalinger fram til (og med) dueDate — men bare renter for FORRIGE måned regnes som forfalt.
+        // For enkelhet: renter i måned M-1 (som kapitaliseres 30.M-1) skal betales innen dag X i måned M.
+        const prevMonthKey = new Date(y, m - 1, 1).toISOString().slice(0, 7);
+        const paidByDue = payments
+          .filter((p) => p.date && new Date(p.date) <= dueDate)
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const shortfall = Math.max(0, monthlyInterestApprox - paidInMonth);
+        const paidByPrevDue = payments
+          .filter((p) => p.date && new Date(p.date) <= new Date(y, m - 1, latePaymentDueDay))
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        // Renter for forrige måned = det som burde vært dekket denne forfallssyklusen
+        const expectedThisCycle = monthlyInterestApprox; // approx
+        const shortfall = Math.max(0, expectedThisCycle - Math.max(0, paidByDue - paidByPrevDue));
         if (shortfall > 0.01) {
           const daysLate = Math.max(0, Math.round((now.getTime() - dueDate.getTime()) / 86400000));
           if (daysLate > 0) {
@@ -289,7 +320,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             events.push({
               date: nowStrForLate,
               kind: 'late-fee',
-              payload: { month: key, shortfall, daysLate, fee, dueDate: dueDate.toISOString().slice(0, 10) },
+              payload: { month: prevMonthKey || key, shortfall, daysLate, fee, dueDate: dueDate.toISOString().slice(0, 10) },
             });
           }
         }
@@ -667,7 +698,19 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
               <Field label="Min mnd. (NOK)" type="number" value={settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY} onChange={(v) => persistSettings({ ...settings, minMonthlyPayment: Number(v) })} />
             </div>
             <div className="grid grid-cols-1 gap-3">
-              <Field label={`Forfallsdag (dag i påfølgende måned) — ${annualRate}% rente på utestående / 365 pr dag forsinket`} type="number" value={latePaymentDueDay} onChange={(v) => { const n = Math.max(1, Math.min(28, Number(v) || 5)); setLatePaymentDueDay(n); }} />
+              <Field label={`Forfallsdag (dag i mnd) — ${annualRate}% rente på utestående / 365 pr dag forsinket`} type="number" value={latePaymentDueDay} onChange={(v) => { const n = Math.max(1, Math.min(28, Number(v) || 1)); setLatePaymentDueDay(n); }} />
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">Bankkonto for renteinntekt (Mondeo Eiendom AS)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Bank" value={mondeoAccount.bankName} onChange={(v) => setMondeoAccount({ ...mondeoAccount, bankName: String(v) })} />
+                <Field label="Kontohaver" value={mondeoAccount.accountName} onChange={(v) => setMondeoAccount({ ...mondeoAccount, accountName: String(v) })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Kontonummer" value={mondeoAccount.accountNumber} onChange={(v) => setMondeoAccount({ ...mondeoAccount, accountNumber: String(v) })} />
+                <Field label="IBAN" value={mondeoAccount.iban} onChange={(v) => setMondeoAccount({ ...mondeoAccount, iban: String(v) })} />
+              </div>
+              <p className="text-[11px] text-slate-500 italic">Denne kontoen brukes til å motta månedlige renteinntekter fra Odin Jacobsen / Nordic Invest AS. Lån fra Frank trekkes fra samme konto.</p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
@@ -882,7 +925,8 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       {/* SKJULT UTSKRIFTSOMRÅDE */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
         <h1>Mondeo Eiendom AS · Salgskontrakt — Regnskap</h1>
-        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v3 (daglig rente, én rad pr hendelse)</p>
+        <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v4 (forfall {latePaymentDueDay}. · forsinkelsesrente {annualRate}%/365)</p>
+        <p className="meta">Innbetalinger til: {mondeoAccount.bankName} · {mondeoAccount.accountName} · {mondeoAccount.accountNumber} · {mondeoAccount.iban} · {mondeoAccount.currency}</p>
 
         {/* SAMMENDRAG ØVERST */}
         <div className="summary-section">
