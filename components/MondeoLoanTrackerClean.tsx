@@ -304,31 +304,26 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   // - Ved månedsslutt kapitaliseres ubetalt rente til hovedstol
   const ledger: MondeoLedgerRow[] = useMemo(() => {
     let balance = Number(settings.initialPrincipal || 0);
-    let accruedInterest = 0;
     const interestStart = settings.interestStartDate || settings.startDate;
     const rows: MondeoLedgerRow[] = [];
     if (!interestStart) return rows;
 
-    // Beregn rente akkumulert mellom to datoer, splittet på månedsgrenser
-    // for å bruke riktig daglig-rate per måned.
-    const accrueBetween = (fromStr: string, toStr: string, currentBalance: number): number => {
-      const from = new Date(fromStr);
-      const to = new Date(toStr);
-      if (to <= from) return 0;
-      let total = 0;
-      let cursor = new Date(from);
-      while (cursor < to) {
-        const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
-        const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); // 1. i neste mnd
-        const segmentEnd = to < monthEnd ? to : monthEnd;
-        const segmentDays = Math.max(0, Math.round((segmentEnd.getTime() - cursor.getTime()) / 86400000));
-        if (segmentDays > 0) {
-          const monthlyInterestFull = currentBalance * monthlyRate; // fullt månedsbeløp
-          total += monthlyInterestFull * (segmentDays / daysInMonth);
-        }
-        cursor = segmentEnd;
+    // Månedens rente = balance × 9%/12 (konstant per måned, ikke pro-ratert daglig).
+    // Hvis renteoppstart er midt i måneden, pro-rater bare den første måneden.
+    const monthInterestFor = (monthEndDate: Date, currentBalance: number): number => {
+      const y = monthEndDate.getFullYear();
+      const m = monthEndDate.getMonth();
+      const monthStart = new Date(y, m, 1);
+      const startInt = new Date(interestStart);
+      // Ingen rente hvis renteperioden ikke har startet ennå
+      if (startInt > monthEndDate) return 0;
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      // Første måned: pro-rater fra startInt til månedsslutt
+      if (startInt > monthStart) {
+        const activeDays = daysInMonth - startInt.getDate() + 1;
+        return currentBalance * monthlyRate * (activeDays / daysInMonth);
       }
-      return total;
+      return currentBalance * monthlyRate;
     };
 
     // Bygg kronologisk liste av alle hendelser
@@ -400,10 +395,6 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     let lastDate = interestStart;
     let nr = 0;
     for (const ev of events) {
-      // Akkumuler rente korrekt fra lastDate til ev.date (respekterer månedsgrenser)
-      const dailyInterest = accrueBetween(lastDate, ev.date, balance);
-      accruedInterest += dailyInterest;
-
       if (ev.kind === 'kpi') {
         const factor = 1 + Number(ev.payload.kpiPct || 0) / 100;
         const newBalance = balance * factor;
@@ -413,23 +404,19 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         balance = newBalance;
       } else if (ev.kind === 'payment') {
         // Innbetalinger fra Odin er RENTER — reduserer aldri hovedstol.
-        // Overbetaling regnes som ekstra rente-inntekt (registrert som Transaction),
-        // men påvirker ikke hovedstolen. Kun charges + late-fee + KPI endrer hovedstol.
+        // Ingen daglig rente-akkumulering mellom hendelser (rente beregnes kun ved månedsslutt).
         const paid = Number(ev.payload.amount || 0);
-        const interestCovered = Math.min(paid, accruedInterest);
-        accruedInterest = Math.max(0, accruedInterest - interestCovered);
-        const overpay = paid - interestCovered;
         nr += 1;
         rows.push({
           id: ev.payload.id, nr,
           fromDate: lastDate, date: ev.date,
           openingBalance: balance,
-          interestDue: dailyInterest,
+          interestDue: 0,
           paid,
           charges: 0,
           principalChange: 0,
           closingBalance: balance,
-          status: overpay > 0.5 ? `Renteinnbetaling (+${Math.round(overpay)} kr ekstra)` : 'Renteinnbetaling',
+          status: 'Renteinnbetaling',
         });
       } else if (ev.kind === 'charge') {
         const chargeAmt = Number(ev.payload.amount || 0);
@@ -439,7 +426,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           id: `charge-${ev.payload.id}`, nr,
           fromDate: lastDate, date: ev.date,
           openingBalance: balance,
-          interestDue: dailyInterest,
+          interestDue: 0,
           paid: 0,
           charges: chargeAmt,
           principalChange: -chargeAmt,
@@ -448,22 +435,41 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         });
         balance = newBalance;
       } else if (ev.kind === 'month-end') {
-        // Kapitaliser ubetalt rente ved månedsslutt
-        if (accruedInterest > 0.01) {
-          const capitalized = accruedInterest;
-          balance += capitalized;
-          accruedInterest = 0;
+        // Månedens rente = balance × 9%/12 (uansett antall betalinger i måneden)
+        const monthEndDate = new Date(ev.date);
+        const monthKey = ev.date.slice(0, 7);
+        const monthInterest = monthInterestFor(monthEndDate, balance);
+        // Trekk fra innbetalinger den måneden (de dekker rente)
+        const paidThisMonth = payments
+          .filter((p) => p.date && p.date.slice(0, 7) === monthKey)
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        const unpaid = Math.max(0, monthInterest - paidThisMonth);
+        if (unpaid > 0.01) {
+          balance += unpaid;
           nr += 1;
           rows.push({
             id: `me-${ev.date}`, nr,
             fromDate: lastDate, date: ev.date,
-            openingBalance: balance - capitalized,
-            interestDue: capitalized,
+            openingBalance: balance - unpaid,
+            interestDue: unpaid,
             paid: 0,
             charges: 0,
-            principalChange: -capitalized,
+            principalChange: -unpaid,
             closingBalance: balance,
-            status: 'Rente kapitaliseres',
+            status: paidThisMonth > 0 ? `Restrente kapitaliseres (mnd.rente ${Math.round(monthInterest)} − betalt ${Math.round(paidThisMonth)})` : 'Rente kapitaliseres',
+          });
+        } else if (monthInterest > 0.01) {
+          nr += 1;
+          rows.push({
+            id: `me-${ev.date}`, nr,
+            fromDate: lastDate, date: ev.date,
+            openingBalance: balance,
+            interestDue: monthInterest,
+            paid: paidThisMonth,
+            charges: 0,
+            principalChange: 0,
+            closingBalance: balance,
+            status: `Rente dekket av innbetaling (${Math.round(paidThisMonth)} kr)`,
           });
         }
       } else if (ev.kind === 'late-fee') {
@@ -486,12 +492,6 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       }
 
       lastDate = ev.date;
-    }
-
-    // Legg til aktuell rente-akkumulering hittil (ikke kapitalisert enda)
-    const nowStr = now.toISOString().slice(0, 10);
-    if (lastDate < nowStr) {
-      accruedInterest += accrueBetween(lastDate, nowStr, balance);
     }
 
     return rows;
