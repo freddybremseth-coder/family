@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Droplet, MapPin, Plus, Trash2, Package, TrendingUp } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
+import { getCachedEurNokRate } from '../services/fxService';
 
 interface Props { userId?: string; }
 
 const formatNOK = (v: number) => new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(Number(v || 0));
 const formatEUR = (v: number) => new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(v || 0));
-const EUR_TO_NOK = 11.55;
 
 const LOCATION_META = {
   Spain:   { label: 'Spania',  color: 'amber',   flag: '🇪🇸' },
@@ -173,7 +173,7 @@ export const OliveOilInventory: React.FC<Props> = ({ userId }) => {
             </div>
             <div className="card p-4">
               <p className="text-xs text-slate-500 uppercase font-black tracking-wide">Salgsverdi (NOK)</p>
-              <p className="mt-1 text-2xl font-black text-emerald-700">{formatNOK(summary.totalValueEUR * EUR_TO_NOK)}</p>
+              <p className="mt-1 text-2xl font-black text-emerald-700">{formatNOK(summary.totalValueEUR * getCachedEurNokRate())}</p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-slate-500 uppercase font-black tracking-wide">Batcher</p>
@@ -191,7 +191,7 @@ export const OliveOilInventory: React.FC<Props> = ({ userId }) => {
                     <p className="text-xs uppercase font-black tracking-wide">{meta.flag} {meta.label}</p>
                   </div>
                   <p className="text-xl font-black text-slate-900">{agg.qty.toLocaleString('nb-NO')} <span className="text-sm font-normal text-slate-500">{UNIT_META[agg.unit as keyof typeof UNIT_META]?.short}</span></p>
-                  <p className="text-xs text-slate-500 mt-1">Verdi: {formatEUR(agg.valueEUR)} · {formatNOK(agg.valueEUR * EUR_TO_NOK)}</p>
+                  <p className="text-xs text-slate-500 mt-1">Verdi: {formatEUR(agg.valueEUR)} · {formatNOK(agg.valueEUR * getCachedEurNokRate())}</p>
                 </div>
               );
             })}
@@ -228,7 +228,7 @@ export const OliveOilInventory: React.FC<Props> = ({ userId }) => {
                       <td className="px-4 py-3"><span className={`inline-flex items-center gap-1 rounded-full bg-${locMeta.color}-100 text-${locMeta.color}-800 px-2 py-0.5 text-xs font-bold`}>{locMeta.flag} {locMeta.label}</span></td>
                       <td className="px-4 py-3 text-right font-mono">{i.pricePerUnitEUR ? formatEUR(i.pricePerUnitEUR) : '—'}</td>
                       <td className="px-4 py-3 text-right font-mono">{formatEUR(val)}</td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">{formatNOK(val * EUR_TO_NOK)}</td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">{formatNOK(val * getCachedEurNokRate())}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{new Date(i.lastUpdated).toLocaleDateString('nb-NO')}</td>
                       <td className="px-4 py-3 text-right"><button onClick={() => remove(i.id)} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></td>
                     </tr>

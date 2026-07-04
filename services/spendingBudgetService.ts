@@ -18,7 +18,7 @@ export interface CategoryBudgetSuggestion {
   suggestedBudget: number;                  // i EUR — rundet opp fra median
 }
 
-const EUR_TO_NOK = 11.55;
+import { getCachedEurNokRate } from './fxService';
 
 function median(nums: number[]): number {
   if (nums.length === 0) return 0;
@@ -53,7 +53,7 @@ export async function suggestBudget(userId: string, transactions: Transaction[])
     if (!tx.date || new Date(tx.date) < cutoff) continue;
     const month = tx.date.slice(0, 7);
     const category = tx.category || 'Annet';
-    const amountEUR = tx.currency === 'EUR' ? tx.amount : tx.amount / EUR_TO_NOK;
+    const amountEUR = tx.currency === 'EUR' ? tx.amount : tx.amount / getCachedEurNokRate();
     if (!monthCatTotal[month]) monthCatTotal[month] = {};
     monthCatTotal[month][category] = (monthCatTotal[month][category] || 0) + amountEUR;
     if (!vendorTotals[category]) vendorTotals[category] = {};
@@ -74,7 +74,7 @@ export async function suggestBudget(userId: string, transactions: Transaction[])
       if (data) {
         for (const r of data as any[]) {
           const category = r.category || 'Dagligvarer';
-          const amountEUR = r.currency === 'EUR' ? Number(r.total_price) : Number(r.total_price) / EUR_TO_NOK;
+          const amountEUR = r.currency === 'EUR' ? Number(r.total_price) : Number(r.total_price) / getCachedEurNokRate();
           if (!vendorTotals[category]) vendorTotals[category] = {};
           vendorTotals[category][r.vendor] = (vendorTotals[category][r.vendor] || 0) + amountEUR;
         }
@@ -110,7 +110,7 @@ export async function suggestBudget(userId: string, transactions: Transaction[])
     suggestions.push({
       category,
       averageMonthlyEUR: avg,
-      averageMonthlyNOK: avg * EUR_TO_NOK,
+      averageMonthlyNOK: avg * getCachedEurNokRate(),
       medianMonthlyEUR: med,
       monthsUsed: monthlyValues.length,
       transactionsCount: monthlyValues.filter(v => v > 0).length,

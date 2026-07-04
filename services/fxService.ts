@@ -2,6 +2,30 @@ const FALLBACK_EUR_NOK = 11.55;
 const CACHE_KEY = 'familyhub_fx_eur_nok';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 
+/**
+ * Synkron kurs. Bruker cachet verdi hvis frisk, ellers fallback (11.55).
+ * Ring `getEurToNokRate()` én gang ved app-boot for å oppdatere cachen.
+ */
+export function getCachedEurNokRate(): number {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return FALLBACK_EUR_NOK;
+    const parsed = JSON.parse(raw) as { rate: number; fetchedAt: number };
+    if (!parsed?.rate || Date.now() - parsed.fetchedAt > CACHE_TTL_MS) return FALLBACK_EUR_NOK;
+    return Number(parsed.rate) || FALLBACK_EUR_NOK;
+  } catch { return FALLBACK_EUR_NOK; }
+}
+
+export const eurToNok = (amount: number, currency?: string): number => {
+  const rate = getCachedEurNokRate();
+  return currency === 'EUR' ? Number(amount || 0) * rate : Number(amount || 0);
+};
+
+export const nokToEur = (amount: number, currency?: string): number => {
+  const rate = getCachedEurNokRate();
+  return currency === 'NOK' ? Number(amount || 0) / rate : Number(amount || 0);
+};
+
 type CachedFx = {
   rate: number;
   source: string;

@@ -147,7 +147,8 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions, se
         {suggestions.slice(0, 8).map(s => {
           const meta = VAR_META[s.variability];
           const Icon = meta.icon;
-          const overSpent = s.averageMonthlyEUR > s.suggestedBudget * 1.1;
+          // Bruk median (ikke snitt), siden forslaget er basert på median. Ellers blir enkelt-utgifter feilaktig som "overtrukket".
+          const overSpent = s.medianMonthlyEUR > s.suggestedBudget * 1.1;
           return (
             <div key={s.category} className={`rounded-2xl border p-3 ${overSpent ? 'border-rose-200 bg-rose-50/40' : 'border-slate-200 bg-white'}`}>
               <div className="flex items-start justify-between gap-3">

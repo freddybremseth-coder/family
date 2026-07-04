@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Banknote, Building2, Car, Home, Landmark, MinusCircle, Plus, Wallet } from 'lucide-react';
 import { Asset, BankAccount, RealEstateDeal } from '../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
+import { eurToNok as toNok } from '../services/fxService';
 
 interface Props {
   bankAccounts: BankAccount[];
@@ -14,10 +15,6 @@ type Debt = { id: string; name: string; amount: number; note?: string };
 
 const formatNOK = (value: number) =>
   new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(Number(value || 0));
-
-const eurToNok = 11.55;
-
-const toNok = (amount: number, currency?: string) => currency === 'EUR' ? Number(amount || 0) * eurToNok : Number(amount || 0);
 
 const assetIcon = (type?: string) => {
   if (type === 'Vehicle') return <Car className="h-5 w-5" />;

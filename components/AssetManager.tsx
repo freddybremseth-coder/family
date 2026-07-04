@@ -6,6 +6,7 @@ import { Home, Plus, Trash2, Sparkles, MapPin, Landmark, RefreshCw, AlertTriangl
 import { estimateAssetGrowth } from '../services/geminiService';
 import { fetchRealtyflowCommissions } from '../services/realtyflowService';
 import { deleteAssetFromSupabase, syncAssets } from '../services/familyPersistenceService';
+import { getCachedEurNokRate } from '../services/fxService';
 
 interface Props {
   assets: Asset[];
@@ -78,7 +79,7 @@ export const AssetManager: React.FC<Props> = ({ assets, setAssets, userId }) => 
   };
 
   useEffect(() => { syncExpectedPropertyCommissions(); }, []);
-  const totalAssetValueNok = useMemo(() => assets.reduce((sum: number, asset: any) => sum + (asset.currency === 'EUR' ? assetValue(asset) * 11.55 : assetValue(asset)), 0), [assets]);
+  const totalAssetValueNok = useMemo(() => assets.reduce((sum: number, asset: any) => sum + (asset.currency === 'EUR' ? assetValue(asset) * getCachedEurNokRate() : assetValue(asset)), 0), [assets]);
 
   const handleAddAsset = async () => {
     if (!newAsset.name || !(newAsset.currentValue ?? newAsset.value)) return;

@@ -4,6 +4,7 @@ import { Banknote, Plus, Wallet, TrendingUp, Trash2, X, AlertCircle, CheckCircle
 import { deleteBankAccountFromSupabase, syncBankAccounts } from '../services/familyPersistenceService';
 import { supabaseFamilyData, isSupabaseConfigured } from '../supabase';
 import { extractClosingBalance, PdfBalanceResult } from '../services/bankBalanceFromPdf';
+import { getCachedEurNokRate } from '../services/fxService';
 
 interface Props {
   bankAccounts: BankAccount[];
@@ -209,7 +210,7 @@ export const BankManager: React.FC<Props> = ({ bankAccounts, setBankAccounts, us
   };
 
   const totalNok = bankAccounts.reduce(
-    (s, a) => s + (a.currency === 'NOK' ? Number(a.balance || 0) : Number(a.balance || 0) * 11.55),
+    (s, a) => s + (a.currency === 'NOK' ? Number(a.balance || 0) : Number(a.balance || 0) * getCachedEurNokRate()),
     0,
   );
 

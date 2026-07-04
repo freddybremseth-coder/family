@@ -125,6 +125,9 @@ const App = () => {
 
   useEffect(() => { if (session?.user && !isModuleVisibleForUser(activeTab as any, userEmail)) setActiveTab('dashboard'); }, [activeTab, session, userEmail]);
 
+  // Frisk opp EUR/NOK-kurs ved app-boot (cachet i localStorage 6 timer)
+  useEffect(() => { import('./services/fxService').then(m => m.getEurToNokRate().catch(() => {})); }, []);
+
   const fetchAllData = useCallback(async (userId: string) => {
     if (!isSupabaseConfigured()) { setPersistentReady(true); return; }
     setPersistentReady(false);
