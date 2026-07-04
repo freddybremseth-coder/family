@@ -19,7 +19,7 @@ import {
   Trophy, ArrowRightLeft, Thermometer
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
-import { MondeoLoanTracker } from './MondeoLoanTracker';
+import { MondeoLoanTrackerClean as MondeoLoanTracker } from './MondeoLoanTrackerClean';
 import {
   getFarmStrategicAdvice,
   getFarmYieldForecast,
