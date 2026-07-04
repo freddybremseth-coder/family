@@ -8,7 +8,7 @@ import {
   Transaction, TransactionType,
 } from '../types';
 import { fetchNorgesBankPolicyRate } from '../services/norgesBankService';
-import { isSupabaseConfigured, supabase, supabasePublic } from '../supabase';
+import { isSupabaseConfigured, supabase, supabaseFamilyData, supabasePublic } from '../supabase';
 
 interface Props {
   userId?: string;
@@ -148,7 +148,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       // Tillegg (strøm, kommunalt) — fra Supabase med localStorage-fallback
       let loadedFromDb = false;
       try {
-        const { data: chargeRows, error } = await supabase.from('mondeo_additional_charges').select('*').eq('user_id', userId).order('date', { ascending: true });
+        const { data: chargeRows, error } = await supabaseFamilyData.from('mondeo_additional_charges').select('*').eq('user_id', userId).order('date', { ascending: true });
         if (!error && chargeRows && chargeRows.length > 0) {
           setCharges(chargeRows.map((r: any) => ({ id: r.id, date: r.date, amount: Number(r.amount), type: r.type, note: r.note ?? undefined })));
           loadedFromDb = true;
@@ -411,15 +411,14 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   const persistCharges = async (next: MondeoAdditionalCharge[]) => {
     setCharges(next);
     if (!userId) return;
+    try { localStorage.setItem(`mondeo_charges_${userId}`, JSON.stringify(next)); } catch {}
     if (isSupabaseConfigured()) {
-      try {
-        // Best-effort: synk hver rad. Tabell må eksistere (mondeo_additional_charges).
-        await supabase.from('mondeo_additional_charges').upsert(next.map(c => ({ id: c.id, user_id: userId, date: c.date, amount: c.amount, type: c.type, note: c.note ?? null })));
-      } catch {
-        try { localStorage.setItem(`mondeo_charges_${userId}`, JSON.stringify(next)); } catch {}
+      const { error } = await supabaseFamilyData.from('mondeo_additional_charges').upsert(next.map(c => ({ id: c.id, user_id: userId, date: c.date, amount: c.amount, type: c.type, note: c.note ?? null })));
+      if (error) {
+        console.error('[Mondeo] tillegg-lagring feilet:', error);
+        alert('Kunne ikke lagre tillegg til Supabase: ' + (error.message || 'ukjent feil') + '\n\nTillegget er lagret lokalt, men vil ikke synke mellom enheter før tabellen mondeo_additional_charges finnes i public-schema.');
       }
     }
-    try { localStorage.setItem(`mondeo_charges_${userId}`, JSON.stringify(next)); } catch {}
   };
 
   const addCharge = async () => {
@@ -432,7 +431,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
 
   const deleteCharge = async (id: string) => {
     if (userId && isSupabaseConfigured()) {
-      try { await supabase.from('mondeo_additional_charges').delete().eq('id', id); } catch {}
+      try { await supabaseFamilyData.from('mondeo_additional_charges').delete().eq('id', id); } catch {}
     }
     await persistCharges(charges.filter(c => c.id !== id));
   };
