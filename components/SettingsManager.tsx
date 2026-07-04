@@ -54,8 +54,40 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
     user_openai_api_key: localStorage.getItem('user_openai_api_key') || '',
     user_claude_api_key: localStorage.getItem('user_claude_api_key') || '',
   });
+  const [aiSyncStatus, setAiSyncStatus] = useState<'idle' | 'loading' | 'synced' | 'error'>('idle');
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+
+  // Re-les AI-nøkler fra localStorage når andre komponenter (loadAiKeysFromSupabase) har oppdatert dem
+  useEffect(() => {
+    const refreshFromLocal = () => {
+      setAiKeys({
+        user_gemini_api_key: localStorage.getItem('user_gemini_api_key') || '',
+        user_openai_api_key: localStorage.getItem('user_openai_api_key') || '',
+        user_claude_api_key: localStorage.getItem('user_claude_api_key') || '',
+      });
+    };
+    window.addEventListener('familyhub-ai-settings-updated', refreshFromLocal);
+    return () => window.removeEventListener('familyhub-ai-settings-updated', refreshFromLocal);
+  }, []);
+
+  // Proaktivt: last inn AI-nøkler fra Supabase når AI-fanen åpnes, så de er ferske
+  useEffect(() => {
+    if (activeTab !== 'ai' || !userId) return;
+    setAiSyncStatus('loading');
+    (async () => {
+      try {
+        const { loadSyncedAiSettings } = await import('../services/aiSettingsService');
+        const synced = await loadSyncedAiSettings();
+        setAiKeys(synced);
+        const filled = Object.values(synced).filter((v) => v).length;
+        setAiSyncStatus(filled > 0 ? 'synced' : 'idle');
+      } catch (e) {
+        console.warn('[SettingsManager] AI-key sync failed', e);
+        setAiSyncStatus('error');
+      }
+    })();
+  }, [activeTab, userId]);
   const t = translations[userConfig.language];
 
   const tabs = useMemo(() => [
@@ -396,7 +428,17 @@ export const SettingsManager: React.FC<Props> = ({ userConfig, setUserConfig, on
 
       {activeTab === 'ai' && (
         <Card className="p-5 md:p-6">
-          <div className="mb-6"><h2 className="text-xl font-bold text-slate-900">AI-nøkler</h2><p className="mt-1 text-sm text-slate-500">Hver bruker/familie må bruke egne nøkler. Kvitteringsscan og kontoutskrift bruker fallback: Gemini → OpenAI → Claude.</p></div>
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-900">AI-nøkler</h2>
+            <p className="mt-1 text-sm text-slate-500">Hver bruker/familie må bruke egne nøkler. Kvitteringsscan og kontoutskrift bruker fallback: Gemini → OpenAI → Claude.</p>
+            <div className="mt-3 flex items-center gap-2 text-xs">
+              {aiSyncStatus === 'loading' && <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 font-semibold">⏳ Laster fra Supabase…</span>}
+              {aiSyncStatus === 'synced' && <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 font-semibold">✓ Synket fra Supabase (overlever cache-clear og nye deploys)</span>}
+              {aiSyncStatus === 'error' && <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-1 font-semibold">⚠ Kunne ikke laste fra Supabase — bruker lokal kopi</span>}
+              {aiSyncStatus === 'idle' && Object.values(aiKeys).filter(v => v).length === 0 && <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 font-semibold">Ingen nøkler lagret ennå</span>}
+              {aiSyncStatus === 'idle' && Object.values(aiKeys).filter(v => v).length > 0 && <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 font-semibold">Lastet fra lokal cache</span>}
+            </div>
+          </div>
           <div className="space-y-5">
             {[
               { key: 'user_gemini_api_key' as AiKeyName, label: 'Gemini API key', placeholder: 'AIza…', help: 'Brukes først for kvittering, kontoutskrift, dokumenter, kalender og AI-innsikt.' },
