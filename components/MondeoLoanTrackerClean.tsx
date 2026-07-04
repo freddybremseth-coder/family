@@ -386,10 +386,14 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       const { error: payErr } = await supabase.from('mondeo_loan_payments').insert({ id: newPayment.id, user_id: userId, date: newPayment.date, amount: newPayment.amount, note: newPayment.note ?? null, posted_transaction_id: interestTx.id });
       if (payErr) {
         console.error('[MondeoClean] mondeo_loan_payments insert failed', payErr);
-        alert('Klarte ikke lagre innbetaling: ' + (payErr.message || payErr.details || 'ukjent DB-feil') + '\n\nBeløpet er IKKE lagret. Prøv igjen eller sjekk konsollet.');
+        const msg = payErr.message || payErr.details || 'ukjent DB-feil';
+        if (msg.includes('business_financial_events')) {
+          alert('Databasen har en trigger som prøver å skrive til business_financial_events, men verdien blir avvist av en check-constraint.\n\nFeilmelding fra Postgres:\n' + msg + '\n\nLøsning: kjør denne SQL i Supabase for å fjerne den gamle trigger-en:\n\nDROP TRIGGER IF EXISTS mondeo_loan_payments_to_business_events ON family.mondeo_loan_payments;\n\n(eller tilsvarende navn — sjekk pg_trigger)\n\nInnbetalingen ble IKKE lagret.');
+        } else {
+          alert('Klarte ikke lagre innbetaling: ' + msg + '\n\nBeløpet er IKKE lagret. Prøv igjen eller sjekk konsollet.');
+        }
         return;
       }
-      await supabasePublic.from('business_financial_events').insert({ brand_id: 'mondeo', source_type: 'seller_credit', source_id: `mondeo:${newPayment.id}`, stream: 'mondeo_interest', direction: 'income', status: 'recognized', amount: interestTx.amount, currency: 'NOK', event_date: interestTx.date, description: interestTx.description, metadata: { source: 'family.mondeo', payment_id: newPayment.id, buyer: settings.buyerName, seller: settings.sellerEntity, min: minMonthly, annual_rate_pct: annualRate, principal_before: balanceBeforePayment } });
     }
 
     setPayments((prev) => [...prev, newPayment]);
