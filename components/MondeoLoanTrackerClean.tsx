@@ -188,7 +188,6 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       rows.push({ date: p.date, interest: monthlyInterestAtPayment, principalPart, paid: p.amount, balance, kind: 'payment' });
     }
     applyInterestUntil(now);
-    const accruedInterestSinceLast = balance - (sorted.length > 0 ? sorted[sorted.length - 1].amount + (rows[rows.length - 1]?.balance || 0) : cfg.principal);
     return { balance, rows, monthlyInterestNow: balance * monthlyR, nextPaymentDue: new Date(now.getFullYear(), now.getMonth() + 1, latePaymentDueDay).toISOString().slice(0, 10) };
   }, [frankConfig, frankPayments, latePaymentDueDay]);
 

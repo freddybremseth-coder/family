@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
 import { getBillsSmartAdvice } from '../services/geminiService';
+import { EXCHANGE_RATE_EUR_TO_NOK } from '../constants';
 import { detectRecurringBills, billFromSuggestion, BillSuggestion } from '../services/recurringBillsDetector';
 
 interface Props {
@@ -144,9 +145,12 @@ export const BillsManager: React.FC<Props> = ({ bills, setBills, transactions = 
     const paid = bills.filter(b => b.isPaid);
     const pending = bills.filter(b => !b.isPaid);
     const overdue = pending.filter(b => new Date(b.dueDate) < today);
-    const overdueSum = overdue.reduce((acc, b) => acc + b.amount, 0);
-    const paidSum = paid.reduce((acc, b) => acc + b.amount, 0);
-    const pendingSum = pending.reduce((acc, b) => acc + b.amount, 0);
+    // Normaliser til EUR før sum (UI viser i EUR)
+    const toEur = (amount: number, currency: Currency) =>
+      currency === 'NOK' ? Number(amount || 0) / EXCHANGE_RATE_EUR_TO_NOK : Number(amount || 0);
+    const overdueSum = overdue.reduce((acc, b) => acc + toEur(b.amount, b.currency), 0);
+    const paidSum = paid.reduce((acc, b) => acc + toEur(b.amount, b.currency), 0);
+    const pendingSum = pending.reduce((acc, b) => acc + toEur(b.amount, b.currency), 0);
     const progress = bills.length > 0 ? (paid.length / bills.length) * 100 : 0;
     
     return { 
