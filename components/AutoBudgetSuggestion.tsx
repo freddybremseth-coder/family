@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, TrendingUp, TrendingDown, Minus, Loader2, Store } from 'lucide-react';
+import { Sparkles, TrendingUp, TrendingDown, Minus, Loader2, Store, Pencil, Check, X } from 'lucide-react';
 import { Transaction } from '../types';
 import { suggestBudget, CategoryBudgetSuggestion } from '../services/spendingBudgetService';
 
@@ -16,9 +16,39 @@ const VAR_META = {
   high:   { label: 'Svingninger', icon: TrendingDown, color: 'rose' },
 } as const;
 
+const NOTES_KEY = 'familyhub_budget_category_notes';
+const DEFAULT_NOTES: Record<string, string> = {
+  Diverse: 'Daniel Gallardo Lope er utgifter for Dona Anna — bearbeiding av olivenlunden.',
+  Lønn: 'Maria Safrina Bialon = husleie for leilighet i Benidorm (ikke lønn).',
+  Mondeo: 'Daniel Gallardo Lope er utgifter for Dona Anna — bearbeiding av olivenlunden.',
+};
+
+function loadNotes(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // Første gang: sett inn defaults
+  try { localStorage.setItem(NOTES_KEY, JSON.stringify(DEFAULT_NOTES)); } catch {}
+  return { ...DEFAULT_NOTES };
+}
+
 export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) => {
   const [suggestions, setSuggestions] = useState<CategoryBudgetSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [notes, setNotes] = useState<Record<string, string>>(loadNotes);
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [draftNote, setDraftNote] = useState('');
+
+  const saveNote = (cat: string, text: string) => {
+    const next = { ...notes };
+    const trimmed = text.trim();
+    if (trimmed) next[cat] = trimmed;
+    else delete next[cat];
+    setNotes(next);
+    try { localStorage.setItem(NOTES_KEY, JSON.stringify(next)); } catch {}
+    setEditingCat(null);
+  };
 
   useEffect(() => {
     if (!userId || transactions.length === 0) return;
@@ -84,6 +114,30 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions }) 
                   <p className="text-lg font-black text-slate-900">{formatEUR(s.suggestedBudget)}</p>
                   {overSpent && <p className="text-[10px] text-rose-700 font-bold mt-0.5">Overtrukket snitt</p>}
                 </div>
+              </div>
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                {editingCat === s.category ? (
+                  <div className="flex items-start gap-2">
+                    <textarea
+                      value={draftNote}
+                      onChange={(e) => setDraftNote(e.target.value)}
+                      rows={2}
+                      placeholder="Forklar hvorfor disse leverandørene ligger under denne kategorien…"
+                      className="flex-1 rounded-lg border border-slate-300 bg-white p-2 text-xs text-slate-700 outline-none focus:border-indigo-400"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <button type="button" onClick={() => saveNote(s.category, draftNote)} className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white p-1.5" title="Lagre"><Check className="h-3 w-3" /></button>
+                      <button type="button" onClick={() => setEditingCat(null)} className="rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 p-1.5" title="Avbryt"><X className="h-3 w-3" /></button>
+                    </div>
+                  </div>
+                ) : notes[s.category] ? (
+                  <div className="flex items-start gap-2 group/note">
+                    <p className="flex-1 text-[11px] italic text-slate-600 leading-snug">📝 {notes[s.category]}</p>
+                    <button type="button" onClick={() => { setEditingCat(s.category); setDraftNote(notes[s.category] || ''); }} className="opacity-0 group-hover/note:opacity-100 transition text-slate-400 hover:text-indigo-600" title="Rediger note"><Pencil className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => { setEditingCat(s.category); setDraftNote(''); }} className="text-[10px] text-slate-400 hover:text-indigo-600 flex items-center gap-1"><Pencil className="h-2.5 w-2.5" /> Legg til note</button>
+                )}
               </div>
             </div>
           );
