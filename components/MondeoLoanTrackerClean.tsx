@@ -130,6 +130,68 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     try { localStorage.setItem('mondeo_income_account', JSON.stringify(next)); } catch {}
   };
 
+  // Frank-lån (annuitet: 5.44% p.a., 8208.15 kr/mnd, hovedstol 680 570.02)
+  interface FrankLoanConfig { principal: number; monthlyPayment: number; annualRatePct: number; asOfDate: string; }
+  interface FrankPayment { id: string; date: string; amount: number; postedTransactionId?: string; }
+  const DEFAULT_FRANK: FrankLoanConfig = { principal: 680570.02, monthlyPayment: 8208.15, annualRatePct: 5.44, asOfDate: '2026-07-01' };
+  const [frankConfig, setFrankConfigState] = useState<FrankLoanConfig>(() => {
+    try {
+      const stored = localStorage.getItem('mondeo_frank_config');
+      if (stored) return { ...DEFAULT_FRANK, ...JSON.parse(stored) };
+    } catch {}
+    return DEFAULT_FRANK;
+  });
+  const setFrankConfig = (next: FrankLoanConfig) => {
+    setFrankConfigState(next);
+    try { localStorage.setItem('mondeo_frank_config', JSON.stringify(next)); } catch {}
+  };
+  const [frankPayments, setFrankPaymentsState] = useState<FrankPayment[]>(() => {
+    try {
+      const stored = localStorage.getItem('mondeo_frank_payments');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
+  const setFrankPayments = (next: FrankPayment[]) => {
+    setFrankPaymentsState(next);
+    try { localStorage.setItem('mondeo_frank_payments', JSON.stringify(next)); } catch {}
+  };
+
+  // Annuitets-simulering: fra asOfDate til i dag, akkumuler rente + trekk betalinger i kronologisk rekkefølge
+  const frankStatus = useMemo(() => {
+    const cfg = frankConfig;
+    const monthlyR = cfg.annualRatePct / 100 / 12;
+    const sorted = [...frankPayments].sort((a, b) => a.date.localeCompare(b.date));
+    let balance = cfg.principal;
+    let cursor = new Date(cfg.asOfDate);
+    const now = new Date();
+    const rows: Array<{ date: string; interest: number; principalPart: number; paid: number; balance: number; kind: 'payment' | 'accrual' }> = [];
+    const applyInterestUntil = (target: Date) => {
+      while (cursor < target) {
+        const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+        const to = monthEnd < target ? monthEnd : target;
+        const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+        const segDays = Math.max(0, Math.round((to.getTime() - cursor.getTime()) / 86400000));
+        if (segDays > 0) {
+          const monthlyInterest = balance * monthlyR;
+          balance += monthlyInterest * (segDays / daysInMonth);
+        }
+        cursor = to;
+      }
+    };
+    for (const p of sorted) {
+      const pDate = new Date(p.date);
+      applyInterestUntil(pDate);
+      const monthlyInterestAtPayment = balance * monthlyR;
+      const interestPortion = Math.min(p.amount, monthlyInterestAtPayment);
+      const principalPart = p.amount - interestPortion;
+      balance -= p.amount;
+      rows.push({ date: p.date, interest: monthlyInterestAtPayment, principalPart, paid: p.amount, balance, kind: 'payment' });
+    }
+    applyInterestUntil(now);
+    const accruedInterestSinceLast = balance - (sorted.length > 0 ? sorted[sorted.length - 1].amount + (rows[rows.length - 1]?.balance || 0) : cfg.principal);
+    return { balance, rows, monthlyInterestNow: balance * monthlyR, nextPaymentDue: new Date(now.getFullYear(), now.getMonth() + 1, latePaymentDueDay).toISOString().slice(0, 10) };
+  }, [frankConfig, frankPayments, latePaymentDueDay]);
+
   const annualRate = useMemo(() => {
     if (settings.useFixedRate) return Number(settings.fixedAnnualRatePct ?? DEFAULT_FIXED_RATE);
     return Number(settings.norgesBankRatePct || 0) + Number(settings.marginPct || 0);
@@ -531,6 +593,32 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     await persistCharges(charges.filter(c => c.id !== id));
   };
 
+  // Frank-avdrag: registrer betaling → oppretter Transaction som utgift fra DNB Mondeo-konto
+  const addFrankPayment = (date: string, amount: number) => {
+    if (!date || amount <= 0) return;
+    const p: FrankPayment = { id: createId(), date, amount };
+    const tx: Transaction = {
+      id: `tx-frank-${p.id}`,
+      date,
+      amount: Math.round(amount * 100) / 100,
+      currency: 'NOK',
+      description: `Avdrag lån Frank (fra ${mondeoAccount.bankName} ${mondeoAccount.accountNumber})`,
+      category: 'Renteutgift',
+      type: TransactionType.EXPENSE,
+      paymentMethod: 'Bank' as any,
+      isAccrual: false,
+    };
+    p.postedTransactionId = tx.id;
+    setFrankPayments([...frankPayments, p]);
+    setTransactions?.((prev) => [tx, ...prev]);
+  };
+
+  const deleteFrankPayment = (id: string) => {
+    const p = frankPayments.find(x => x.id === id);
+    setFrankPayments(frankPayments.filter(x => x.id !== id));
+    if (p?.postedTransactionId) setTransactions?.((prev) => prev.filter(t => t.id !== p.postedTransactionId));
+  };
+
   // KPI
   const addKpiAdjustment = async () => {
     const pct = Number(kpiPct || 0);
@@ -711,6 +799,47 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
                 <Field label="IBAN" value={mondeoAccount.iban} onChange={(v) => setMondeoAccount({ ...mondeoAccount, iban: String(v) })} />
               </div>
               <p className="text-[11px] text-slate-500 italic">Denne kontoen brukes til å motta månedlige renteinntekter fra Odin Jacobsen / Nordic Invest AS. Lån fra Frank trekkes fra samme konto.</p>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-widest text-rose-700">Lån Frank (annuitet — trekkes fra {mondeoAccount.bankName} {mondeoAccount.accountNumber})</p>
+                <p className="text-sm font-mono font-bold text-rose-800">Saldo nå: {formatNOK(frankStatus.balance)}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Hovedstol pr dato (NOK)" type="number" step="0.01" value={frankConfig.principal} onChange={(v) => setFrankConfig({ ...frankConfig, principal: Number(v) })} />
+                <Field label="Pr dato" type="date" value={frankConfig.asOfDate} onChange={(v) => setFrankConfig({ ...frankConfig, asOfDate: String(v) })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Månedlig avdrag (NOK)" type="number" step="0.01" value={frankConfig.monthlyPayment} onChange={(v) => setFrankConfig({ ...frankConfig, monthlyPayment: Number(v) })} />
+                <Field label="Årlig rente %" type="number" step="0.01" value={frankConfig.annualRatePct} onChange={(v) => setFrankConfig({ ...frankConfig, annualRatePct: Number(v) })} />
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div><span className="text-slate-500">Månedlig rente nå:</span><br /><span className="font-mono font-bold">{formatNOK(frankStatus.monthlyInterestNow)}</span></div>
+                <div><span className="text-slate-500">Neste forfall:</span><br /><span className="font-mono font-bold">{frankStatus.nextPaymentDue}</span></div>
+                <div><span className="text-slate-500">Antall avdrag:</span><br /><span className="font-mono font-bold">{frankPayments.length}</span></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => addFrankPayment(todayISO(), frankConfig.monthlyPayment)}
+                className="w-full rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black uppercase tracking-widest py-2.5"
+              >
+                Bokfør månedens avdrag ({formatNOK(frankConfig.monthlyPayment)}) — {todayISO()}
+              </button>
+              {frankPayments.length > 0 && (
+                <div className="text-[11px]">
+                  <p className="font-semibold text-slate-600 mb-1">Registrerte avdrag ({frankPayments.length}):</p>
+                  <ul className="space-y-1 max-h-40 overflow-y-auto">
+                    {[...frankPayments].sort((a, b) => b.date.localeCompare(a.date)).map(p => (
+                      <li key={p.id} className="flex justify-between items-center border-b border-rose-100 py-1">
+                        <span className="font-mono">{p.date}</span>
+                        <span className="font-mono">{formatNOK(p.amount)}</span>
+                        <button type="button" onClick={() => deleteFrankPayment(p.id)} className="text-rose-600 hover:text-rose-800 text-[10px]">Slett</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
