@@ -98,6 +98,41 @@ export const fileToBase64 = async (file: File): Promise<string> => new Promise((
   reader.readAsDataURL(file);
 });
 
+/**
+ * SaaS-hjelper: kaller AI-proxy hvis brukeren har opt-in på «innebygd AI»,
+ * ellers direkte via Gemini SDK med brukerens egen nøkkel.
+ * Returnerer parsed JSON.
+ */
+async function callProxyOrDirect(opts: {
+  task: string;
+  prompt: string;
+  model?: string;
+  image?: string;
+  mimeType?: string;
+  directFallback: () => Promise<any>;
+}): Promise<any> {
+  const { isBuiltinAiEnabled, callAiProxy } = await import('./aiProxyService');
+  if (isBuiltinAiEnabled()) {
+    try {
+      const res = await callAiProxy({
+        provider: 'gemini',
+        task: opts.task,
+        model: opts.model || GEMINI_FLASH,
+        prompt: opts.prompt,
+        image: opts.image,
+        mimeType: opts.mimeType,
+      });
+      const jsonMatch = res.text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      const raw = jsonMatch ? jsonMatch[0] : res.text;
+      return JSON.parse(raw);
+    } catch (err: any) {
+      if (err?.name === 'AiProxyQuotaError') throw err;
+      console.warn(`[${opts.task}] proxy feilet, faller tilbake til direkte:`, err?.message);
+    }
+  }
+  return opts.directFallback();
+}
+
 export const analyzeFamilyDocument = async (b64: string, mimeType = 'image/jpeg') => safeGeminiJson(async () => {
   const ai = getAi();
   const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: `Analyser dette familiedokumentet. Hent ut forslag til metadata for FamilieHub. Svar på norsk. Ikke inkluder sensitive personnummer i notat. Hvis du ikke finner dato eller kategori, bruk tom verdi.` }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, category: { type: Type.STRING, enum: ['Forsikring', 'Bolig', 'Bil', 'Helse', 'Barn', 'Kontrakt', 'Garanti', 'Annet'] }, owner: { type: Type.STRING }, expiryDate: { type: Type.STRING }, note: { type: Type.STRING }, summary: { type: Type.STRING } }, required: ['title', 'category', 'owner', 'note'] } } });
@@ -279,27 +314,35 @@ function isOverloadError(err: any): boolean {
   return raw.includes('503') || raw.includes('unavailable') || raw.includes('overload') || raw.includes('spikes in demand') || raw.includes('busy');
 }
 
-export const analyzeFridge = async (b64: string) => safeGeminiJson(async () => {
-  const attempts = [
-    { model: GEMINI_PRO, delay: 0, label: 'Pro' },
-    { model: GEMINI_FLASH, delay: 0, label: 'Flash' },
-    { model: GEMINI_FLASH, delay: 3000, label: 'Flash (retry etter 3s)' },
-    { model: GEMINI_PRO, delay: 5000, label: 'Pro (retry etter 5s)' },
-  ];
-  let lastErr: any;
-  for (const { model, delay, label } of attempts) {
-    try {
-      if (delay > 0) await sleep(delay);
-      console.log(`[analyzeFridge] Prøver ${label}...`);
-      return await analyzeFridgeInternal(b64, model);
-    } catch (err: any) {
-      lastErr = err;
-      console.warn(`[analyzeFridge] ${label} feilet:`, err?.message);
-      if (!isOverloadError(err)) throw err; // Andre feil bør ikke retryes
-    }
-  }
-  throw lastErr || new Error('Alle Gemini-forsøk feilet.');
-});
+export const analyzeFridge = async (b64: string) =>
+  callProxyOrDirect({
+    task: 'analyzeFridge',
+    prompt: FRIDGE_PROMPT + '\n\nSvar KUN med gyldig JSON: {identifiedItems: [{name, category, quantity?, location?}], recipes: [{name, ingredients: [], instructions: []}]}',
+    model: GEMINI_PRO,
+    image: b64,
+    mimeType: 'image/jpeg',
+    directFallback: () => safeGeminiJson(async () => {
+      const attempts = [
+        { model: GEMINI_PRO, delay: 0, label: 'Pro' },
+        { model: GEMINI_FLASH, delay: 0, label: 'Flash' },
+        { model: GEMINI_FLASH, delay: 3000, label: 'Flash (retry etter 3s)' },
+        { model: GEMINI_PRO, delay: 5000, label: 'Pro (retry etter 5s)' },
+      ];
+      let lastErr: any;
+      for (const { model, delay, label } of attempts) {
+        try {
+          if (delay > 0) await sleep(delay);
+          console.log(`[analyzeFridge] Prøver ${label}...`);
+          return await analyzeFridgeInternal(b64, model);
+        } catch (err: any) {
+          lastErr = err;
+          console.warn(`[analyzeFridge] ${label} feilet:`, err?.message);
+          if (!isOverloadError(err)) throw err;
+        }
+      }
+      throw lastErr || new Error('Alle Gemini-forsøk feilet.');
+    }),
+  });
 
 export const generateSmartMenu = async (inv: string[], cra: string) => safeGeminiJson(async () => {
   const ai = getAi();
@@ -322,37 +365,29 @@ Pr varelinje, hent så mye du kan lese:
 
 Svar KUN med gyldig JSON på formatet: {vendor, date, totalAmount, currency, category, paymentMethod?, confidence?, note?, items: [{name, amount, quantity?, unit?, pricePerUnit?, barcode?, category?}]}`;
 
-export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') => {
-  // SaaS-modus: rutet gjennom sentral AI-proxy hvis feature-flag er på
-  const { isBuiltinAiEnabled, callAiProxy } = await import('./aiProxyService');
-  if (isBuiltinAiEnabled()) {
-    try {
-      const res = await callAiProxy({
-        provider: 'gemini', task: 'analyzeReceipt', model: GEMINI_FLASH,
-        prompt: RECEIPT_PROMPT, image: b64, mimeType,
-      });
-      // Trekk ut JSON fra teksten (kan være wrapped i markdown)
-      const jsonMatch = res.text.match(/\{[\s\S]*\}/);
-      const raw = jsonMatch ? jsonMatch[0] : res.text;
-      return JSON.parse(raw);
-    } catch (err: any) {
-      if (err?.name === 'AiProxyQuotaError') throw err;
-      console.warn('[analyzeReceipt] proxy feilet, faller tilbake til direkte:', err?.message);
-    }
-  }
-
-  return safeGeminiJson(async () => {
-    const ai = getAi();
-    const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: RECEIPT_PROMPT }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { vendor: { type: Type.STRING }, date: { type: Type.STRING }, totalAmount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] }, paymentMethod: { type: Type.STRING }, confidence: { type: Type.NUMBER }, note: { type: Type.STRING }, items: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.NUMBER }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, pricePerUnit: { type: Type.NUMBER }, barcode: { type: Type.STRING }, category: { type: Type.STRING } } } } }, required: ['vendor', 'date', 'totalAmount', 'currency', 'category'] } } });
-    return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
+export const analyzeReceipt = async (b64: string, mimeType = 'image/jpeg') =>
+  callProxyOrDirect({
+    task: 'analyzeReceipt',
+    prompt: RECEIPT_PROMPT,
+    image: b64,
+    mimeType,
+    directFallback: () => safeGeminiJson(async () => {
+      const ai = getAi();
+      const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: RECEIPT_PROMPT }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { vendor: { type: Type.STRING }, date: { type: Type.STRING }, totalAmount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, category: { type: Type.STRING, enum: ['Dagligvarer', 'Restaurant', 'Transport', 'Bolig', 'Bil', 'Barn', 'Helse', 'Klær', 'Reise', 'Business', 'Annet'] }, paymentMethod: { type: Type.STRING }, confidence: { type: Type.NUMBER }, note: { type: Type.STRING }, items: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.NUMBER }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, pricePerUnit: { type: Type.NUMBER }, barcode: { type: Type.STRING }, category: { type: Type.STRING } } } } }, required: ['vendor', 'date', 'totalAmount', 'currency', 'category'] } } });
+      return JSON.parse(response.text || '{"vendor":"Ukjent butikk","date":"","totalAmount":0,"currency":"NOK","category":"Annet"}');
+    }),
   });
-};
 
-export const getBillsSmartAdvice = async (bills: Bill[]) => safeGeminiJson(async () => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: `Analyser disse regningene: ${JSON.stringify(bills)}. Svar på norsk.`, config: { responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { insight: { type: Type.STRING }, action: { type: Type.STRING }, severity: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] } }, required: ['insight', 'action', 'severity'] } } } });
-  return JSON.parse(response.text || '[]');
-});
+export const getBillsSmartAdvice = async (bills: Bill[]) =>
+  callProxyOrDirect({
+    task: 'getBillsSmartAdvice',
+    prompt: `Analyser disse regningene: ${JSON.stringify(bills)}. Svar på norsk. Returner JSON-array: [{insight, action, severity: 'Low'|'Medium'|'High'}]`,
+    directFallback: () => safeGeminiJson(async () => {
+      const ai = getAi();
+      const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: `Analyser disse regningene: ${JSON.stringify(bills)}. Svar på norsk.`, config: { responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { insight: { type: Type.STRING }, action: { type: Type.STRING }, severity: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] } }, required: ['insight', 'action', 'severity'] } } } });
+      return JSON.parse(response.text || '[]');
+    }),
+  });
 
 export const estimateAssetGrowth = async (type: string, loc: string) => safeGeminiJson(async () => {
   const ai = getAi();
@@ -366,11 +401,20 @@ export const getFarmYieldForecast = async (profile: FarmProfile) => safeGeminiJs
   return JSON.parse(response.text || '{}');
 });
 
-export const analyzeBankStatement = async (b64: string, mimeType = 'image/jpeg') => safeGeminiJson(async () => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: `Analyser kontoutskriften eller kontooversikten. Returner alle synlige transaksjonslinjer, ikke bare saldo. Tabellen har ofte egne kolonner for penger inn, penger ut og saldo. Beløp i UT/debet/trekk skal være EXPENSE. Beløp i INN/kredit/innbetaling/kontantinnskudd skal være INCOME. Saldo skal ikke returneres som transaksjon. Matvarer, regninger, kortkjøp, abonnement, drivstoff og restaurant er normalt EXPENSE selv om beløpet står uten minus. Lønn, refusjon, kontantinnskudd og innbetalinger til konto er INCOME. Hvis dato mangler år, bruk mest sannsynlig år fra dokumentet. Valuta må være NOK eller EUR. Returner kun gyldig JSON med feltene balance, currency og transactions.` }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { balance: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, transactions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, description: { type: Type.STRING }, amount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] }, confidence: { type: Type.NUMBER } }, required: ['date', 'description', 'amount', 'type'] } } }, required: ['balance', 'transactions'] } } });
-  return JSON.parse(response.text || '{"balance": 0, "transactions": []}');
-});
+const BANK_STATEMENT_PROMPT = `Analyser kontoutskriften eller kontooversikten. Returner alle synlige transaksjonslinjer, ikke bare saldo. Tabellen har ofte egne kolonner for penger inn, penger ut og saldo. Beløp i UT/debet/trekk skal være EXPENSE. Beløp i INN/kredit/innbetaling/kontantinnskudd skal være INCOME. Saldo skal ikke returneres som transaksjon. Matvarer, regninger, kortkjøp, abonnement, drivstoff og restaurant er normalt EXPENSE selv om beløpet står uten minus. Lønn, refusjon, kontantinnskudd og innbetalinger til konto er INCOME. Hvis dato mangler år, bruk mest sannsynlig år fra dokumentet. Valuta må være NOK eller EUR. Returner KUN gyldig JSON: {balance, currency, transactions: [{date, description, amount, currency, type: 'INCOME'|'EXPENSE'|'TRANSFER', confidence?}]}`;
+
+export const analyzeBankStatement = async (b64: string, mimeType = 'image/jpeg') =>
+  callProxyOrDirect({
+    task: 'analyzeBankStatement',
+    prompt: BANK_STATEMENT_PROMPT,
+    image: b64,
+    mimeType,
+    directFallback: () => safeGeminiJson(async () => {
+      const ai = getAi();
+      const response = await ai.models.generateContent({ model: GEMINI_FLASH, contents: [{ inlineData: { mimeType, data: b64 } }, { text: BANK_STATEMENT_PROMPT }], config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { balance: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, transactions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, description: { type: Type.STRING }, amount: { type: Type.NUMBER }, currency: { type: Type.STRING, enum: ['NOK', 'EUR'] }, type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'TRANSFER'] }, confidence: { type: Type.NUMBER } }, required: ['date', 'description', 'amount', 'type'] } } }, required: ['balance', 'transactions'] } } });
+      return JSON.parse(response.text || '{"balance": 0, "transactions": []}');
+    }),
+  });
 
 export const generateZenEcoGuide = async () => safeGeminiJson(async () => {
   const ai = getAi();
