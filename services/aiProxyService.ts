@@ -58,13 +58,19 @@ export async function callAiProxy(req: ProxyRequest): Promise<ProxyResponse> {
     // Sjekk om det er rate limit
     const anyErr = error as any;
     if (anyErr?.status === 429 || anyErr?.context?.status === 429) {
-      // Hent detaljer fra response body
-      throw new AiProxyQuotaError(
+      const quotaErr = new AiProxyQuotaError(
         'Daglig AI-kvote nådd — oppgrader plan for høyere grense',
         anyErr?.context?.used ?? 0,
         anyErr?.context?.limit ?? 0,
         anyErr?.context?.plan ?? 'unknown',
       );
+      // Global event så UI kan åpne upgrade-modal automatisk
+      try {
+        window.dispatchEvent(new CustomEvent('familyhub-ai-quota-reached', {
+          detail: { used: quotaErr.used, limit: quotaErr.limit, plan: quotaErr.plan },
+        }));
+      } catch {}
+      throw quotaErr;
     }
     throw new Error(error.message || 'ai-proxy feilet');
   }

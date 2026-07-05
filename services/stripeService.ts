@@ -49,3 +49,28 @@ export const openCustomerPortal = async (userId: string) => {
     alert('Could not open billing portal.');
   }
 };
+
+// ═══════════════════════════════════════════════════════════
+// NY SaaS-flyt via Supabase edge function (stripe-checkout).
+// Bruker Stripe Checkout Session med JWT-autentisering.
+// ═══════════════════════════════════════════════════════════
+
+import { supabase, isSupabaseConfigured } from '../supabase';
+import type { PlanId } from './subscriptionPlans';
+
+export async function startPlanCheckout(planId: PlanId): Promise<void> {
+  if (planId === 'free') return;
+  if (planId === 'advisor') {
+    window.location.href = 'mailto:mail@extrade.es?subject=FamilyHub Advisor-plan';
+    return;
+  }
+  if (!isSupabaseConfigured()) throw new Error('Supabase ikke konfigurert');
+
+  const { data, error } = await supabase.functions.invoke('stripe-checkout', {
+    method: 'POST',
+    body: { planId },
+  });
+  if (error) throw new Error(error.message || 'Checkout feilet');
+  if (!data?.url) throw new Error('Ingen checkout-URL mottatt fra Stripe');
+  window.location.href = data.url;
+}
