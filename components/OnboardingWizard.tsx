@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sparkles, Users, MapPin, Coins, Zap, CheckCircle2, ArrowRight } from 'lucide-react';
 import { UserConfig, Currency, Language } from '../types';
 import { setBuiltinAiEnabled } from '../services/aiProxyService';
+import { translations } from '../translations';
 
 interface Props {
   currentConfig: UserConfig;
@@ -22,6 +23,7 @@ export function markOnboardingComplete() {
 }
 
 export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, onSkip }) => {
+  const t = translations[currentConfig.language] || translations['no'];
   const [step, setStep] = useState<Step>(1);
   const [familyName, setFamilyName] = useState(currentConfig.familyName || '');
   const [location, setLocation] = useState<'Norge' | 'Spania' | 'Annet'>(
@@ -61,11 +63,11 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Velkommen — steg {step} av 3</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{t.onboarding_welcome || 'Velkommen'} — {t.onboarding_step || 'steg'} {step} {t.of || 'av'} 3</p>
               <h2 className="text-2xl font-black text-slate-900">
-                {step === 1 && 'Fortell oss om familien'}
-                {step === 2 && 'Hvor bor dere, hvilken valuta?'}
-                {step === 3 && 'Vil du bruke innebygd AI?'}
+                {step === 1 && (t.onboarding_step_1_title || 'Fortell oss om familien')}
+                {step === 2 && (t.onboarding_step_2_title || 'Hvor bor dere, hvilken valuta?')}
+                {step === 3 && (t.onboarding_step_3_title || 'Vil du bruke innebygd AI?')}
               </h2>
             </div>
           </div>
@@ -73,19 +75,19 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
           {step === 1 && (
             <div className="space-y-5">
               <div>
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><Users className="h-4 w-4" /> Familienavn</label>
+                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><Users className="h-4 w-4" /> {t.onboarding_family_name || 'Familienavn'}</label>
                 <input
                   type="text"
                   value={familyName}
                   onChange={e => setFamilyName(e.target.value)}
-                  placeholder="F.eks. Familien Bremseth"
+                  placeholder={t.onboarding_family_placeholder || 'F.eks. Familien Bremseth'}
                   className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-indigo-400"
                   autoFocus
                 />
-                <p className="mt-1.5 text-xs text-slate-500">Vises i toppen av appen og på PDF-utskrifter.</p>
+                <p className="mt-1.5 text-xs text-slate-500">{t.onboarding_family_help || 'Vises i toppen av appen og på PDF-utskrifter.'}</p>
               </div>
               <div>
-                <label className="text-sm font-bold text-slate-700">Foretrukket språk</label>
+                <label className="text-sm font-bold text-slate-700">{t.onboarding_language || 'Foretrukket språk'}</label>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {[
                     { code: 'no' as Language, label: '🇳🇴 Norsk' },
@@ -109,7 +111,7 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
           {step === 2 && (
             <div className="space-y-5">
               <div>
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><MapPin className="h-4 w-4" /> Hvor er dere basert?</label>
+                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {t.onboarding_where || 'Hvor er dere basert?'}</label>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {(['Norge', 'Spania', 'Annet'] as const).map(loc => (
                     <button
@@ -124,7 +126,7 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
                 </div>
               </div>
               <div>
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><Coins className="h-4 w-4" /> Hovedvaluta</label>
+                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><Coins className="h-4 w-4" /> {t.onboarding_currency || 'Hovedvaluta'}</label>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   {(['NOK', 'EUR'] as Currency[]).map(cur => (
                     <button
@@ -133,11 +135,11 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
                       onClick={() => setCurrency(cur)}
                       className={`rounded-xl border-2 px-4 py-3 text-sm font-bold transition ${currency === cur ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
                     >
-                      {cur === 'NOK' ? '🇳🇴 Norske kroner (kr)' : '🇪🇺 Euro (€)'}
+                      {cur === 'NOK' ? '🇳🇴 NOK (kr)' : '🇪🇺 EUR (€)'}
                     </button>
                   ))}
                 </div>
-                <p className="mt-1.5 text-xs text-slate-500">Beløp i annen valuta konverteres automatisk til din hovedvaluta.</p>
+                <p className="mt-1.5 text-xs text-slate-500">{t.onboarding_currency_help || 'Beløp i annen valuta konverteres automatisk til din hovedvaluta.'}</p>
               </div>
             </div>
           )}
@@ -148,14 +150,12 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
                 <div className="flex items-start gap-3">
                   <Zap className="mt-0.5 h-5 w-5 text-indigo-600 shrink-0" />
                   <div className="flex-1">
-                    <p className="font-black text-indigo-900">Innebygd AI (anbefalt)</p>
-                    <p className="mt-1 text-sm text-indigo-800">
-                      Kvitteringsscan, kjøleskap-scanning og bank-utskrifter fungerer ut av boksen. Ingen API-nøkler å håndtere. Kvote inkludert i planen.
-                    </p>
+                    <p className="font-black text-indigo-900">{t.ai_builtin_title || 'Innebygd AI'}</p>
+                    <p className="mt-1 text-sm text-indigo-800">{t.ai_builtin_wizard_desc || 'Kvitteringsscan, kjøleskap-scanning og bank-utskrifter fungerer ut av boksen.'}</p>
                     <ul className="mt-3 space-y-1.5 text-sm text-indigo-800">
-                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Fungerer umiddelbart</li>
-                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Trial-plan: 50 AI-kall per dag</li>
-                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Skru av senere hvis du vil bruke egne nøkler</li>
+                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t.ai_builtin_feature_1 || 'Fungerer umiddelbart'}</li>
+                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t.ai_builtin_feature_2 || 'Trial-plan: 50 AI-kall per dag'}</li>
+                      <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t.ai_builtin_feature_3 || 'Skru av senere hvis du vil bruke egne nøkler'}</li>
                     </ul>
                     <div className="mt-4 flex items-center gap-3">
                       <button
@@ -166,18 +166,18 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
                         <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${useBuiltinAi ? 'translate-x-8' : 'translate-x-1'}`} />
                       </button>
                       <span className="text-sm font-bold text-indigo-900">
-                        {useBuiltinAi ? 'Skru på (anbefalt)' : 'Skru av — jeg bruker egne API-nøkler'}
+                        {useBuiltinAi ? (t.ai_builtin_on || 'Skru på (anbefalt)') : (t.ai_builtin_off || 'Skru av — jeg bruker egne API-nøkler')}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                <p className="font-semibold">Neste steg etter oppsett:</p>
+                <p className="font-semibold">{t.onboarding_next_steps || 'Neste steg etter oppsett:'}</p>
                 <ol className="mt-2 space-y-1 list-decimal list-inside text-slate-600">
-                  <li>Legg til familiemedlemmer under «Bosatte»</li>
-                  <li>Koble til bankkontoer under «Bank»</li>
-                  <li>Prøv å scanne en kvittering på Handleliste-fanen</li>
+                  <li>{t.onboarding_next_1 || 'Legg til familiemedlemmer under «Bosatte»'}</li>
+                  <li>{t.onboarding_next_2 || 'Koble til bankkontoer under «Bank»'}</li>
+                  <li>{t.onboarding_next_3 || 'Prøv å scanne en kvittering på Handleliste-fanen'}</li>
                 </ol>
               </div>
             </div>
@@ -186,39 +186,22 @@ export const OnboardingWizard: React.FC<Props> = ({ currentConfig, onComplete, o
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-8 py-4">
-          <button
-            type="button"
-            onClick={onSkip}
-            className="text-sm font-semibold text-slate-500 hover:text-slate-700"
-          >
-            Hopp over
+          <button type="button" onClick={onSkip} className="text-sm font-semibold text-slate-500 hover:text-slate-700">
+            {t.onboarding_skip || 'Hopp over'}
           </button>
           <div className="flex items-center gap-2">
             {step > 1 && (
-              <button
-                type="button"
-                onClick={prev}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                Tilbake
+              <button type="button" onClick={prev} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                {t.onboarding_back || 'Tilbake'}
               </button>
             )}
             {step < 3 ? (
-              <button
-                type="button"
-                onClick={next}
-                disabled={step === 1 && !familyName.trim()}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2 text-sm font-bold text-white flex items-center gap-1.5"
-              >
-                Neste <ArrowRight className="h-4 w-4" />
+              <button type="button" onClick={next} disabled={step === 1 && !familyName.trim()} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2 text-sm font-bold text-white flex items-center gap-1.5">
+                {t.onboarding_next || 'Neste'} <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={finish}
-                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-6 py-2 text-sm font-black text-white flex items-center gap-1.5"
-              >
-                <CheckCircle2 className="h-4 w-4" /> Ferdig
+              <button type="button" onClick={finish} className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-6 py-2 text-sm font-black text-white flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" /> {t.onboarding_done || 'Ferdig'}
               </button>
             )}
           </div>
