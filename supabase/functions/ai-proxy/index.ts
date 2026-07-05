@@ -16,16 +16,16 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Plan = 'free' | 'trial' | 'family' | 'business' | 'advisor' | 'lifetime';
+type Plan = 'free' | 'trial' | 'basic' | 'basic_cancelled' | 'lifetime';
 type Provider = 'gemini' | 'openai' | 'claude';
 
-const DAILY_LIMITS: Record<Plan, number> = {
-  free: 5,
-  trial: 50,
-  family: 100,
-  business: 1000,
-  advisor: 5000,
-  lifetime: 10000,
+// Månedskvoter (nullstilles 1. i mnd)
+const MONTHLY_QUOTAS: Record<string, number> = {
+  free: 20,
+  trial: 100,
+  basic: 200,
+  basic_cancelled: 200,
+  lifetime: 999999,
 };
 
 function requiredEnv(name: string) {
@@ -38,16 +38,30 @@ function optionalEnv(name: string) {
   return Deno.env.get(name) || '';
 }
 
-async function checkRateLimit(admin: any, userId: string, plan: Plan): Promise<{ ok: boolean; used: number; limit: number }> {
-  const today = new Date().toISOString().slice(0, 10);
-  const { data } = await admin
+async function checkQuotaAndCredits(admin: any, userId: string, plan: Plan): Promise<{ ok: boolean; monthlyUsed: number; monthlyLimit: number; extraCredits: number; useCredit: boolean }> {
+  // Månedskvote: tell alle vellykkede kall dette kalenderår-månedet
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const { data: usage } = await admin
     .from('ai_usage_log')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .gte('created_at', `${today}T00:00:00Z`);
-  const used = (data as any)?.count ?? 0;
-  const limit = DAILY_LIMITS[plan] ?? 50;
-  return { ok: used < limit, used, limit };
+    .eq('ok', true)
+    .gte('created_at', monthStart);
+  const monthlyUsed = (usage as any)?.count ?? 0;
+  const monthlyLimit = MONTHLY_QUOTAS[plan] ?? 20;
+
+  // Extra credits (top-up-pakker)
+  const { data: bal } = await admin
+    .from('ai_credit_balance')
+    .select('credits')
+    .eq('user_id', userId)
+    .maybeSingle();
+  const extraCredits = bal?.credits ?? 0;
+
+  if (monthlyUsed < monthlyLimit) return { ok: true, monthlyUsed, monthlyLimit, extraCredits, useCredit: false };
+  if (extraCredits > 0) return { ok: true, monthlyUsed, monthlyLimit, extraCredits, useCredit: true };
+  return { ok: false, monthlyUsed, monthlyLimit, extraCredits, useCredit: false };
 }
 
 async function logUsage(admin: any, userId: string, provider: Provider, task: string, ok: boolean, error?: string) {
@@ -141,15 +155,18 @@ serve(async (req) => {
     const { data: profile } = await admin.from('user_profiles').select('subscription_status').eq('id', userId).maybeSingle();
     const plan = (profile?.subscription_status ?? 'free') as Plan;
 
-    // Rate limit
-    const rl = await checkRateLimit(admin, userId, plan);
+    // Sjekk månedskvote + extra credits
+    const rl = await checkQuotaAndCredits(admin, userId, plan);
     if (!rl.ok) {
       return new Response(JSON.stringify({
-        error: 'Daglig AI-kvote nådd',
-        used: rl.used,
-        limit: rl.limit,
+        error: 'AI-kvote for denne måneden er brukt opp',
+        monthlyUsed: rl.monthlyUsed,
+        monthlyLimit: rl.monthlyLimit,
+        extraCredits: rl.extraCredits,
         plan,
-        upgradeHint: 'Oppgrader plan for høyere kvote',
+        upgradeHint: plan === 'free' || plan === 'trial'
+          ? 'Oppgrader til Basic (4 €/mnd) for 200 AI-kall/mnd'
+          : 'Kjøp AI-tilleggspakke for å fortsette denne måneden',
       }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -176,8 +193,27 @@ serve(async (req) => {
       throw e;
     }
 
+    // Trekk ekstra-kreditt hvis månedskvote var brukt
+    if (rl.useCredit) {
+      const { data: consumed } = await admin.rpc('consume_ai_credit', { p_user_id: userId });
+      if (!consumed) {
+        // Race-condition — kreditt ble borte samtidig. Vi lot kallet gå gjennom
+        // fordi det ville vært verre å nekte etter at API-en er kjørt.
+        console.warn('[ai-proxy] consume_ai_credit returned false — proceeding');
+      }
+    }
+
     await logUsage(admin, userId, provider, task, true);
-    return new Response(JSON.stringify({ text: result, usage: { used: rl.used + 1, limit: rl.limit, plan } }), {
+    return new Response(JSON.stringify({
+      text: result,
+      usage: {
+        monthlyUsed: rl.monthlyUsed + (rl.useCredit ? 0 : 1),
+        monthlyLimit: rl.monthlyLimit,
+        extraCredits: rl.extraCredits - (rl.useCredit ? 1 : 0),
+        plan,
+        usedCredit: rl.useCredit,
+      },
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err: any) {

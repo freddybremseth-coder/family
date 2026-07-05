@@ -1,13 +1,14 @@
-// Stripe checkout session-creator for FamilyHub abonnement.
-// Klient POST-er { planId: 'family'|'business'|'advisor' } med JWT.
+// Stripe checkout session-creator for FamilyHub.
+// Klient POST-er { productId: 'basic' | 'ai_pack_small' | ...} med JWT.
 // Returnerer { url } for redirect til Stripe Checkout.
 //
 // Kreves env-vars i Supabase:
 //   STRIPE_SECRET_KEY (sk_live_… eller sk_test_…)
-//   STRIPE_PRICE_ID_FAMILY (price_…)
-//   STRIPE_PRICE_ID_BUSINESS
-//   STRIPE_PRICE_ID_ADVISOR
-//   PUBLIC_APP_URL (f.eks. https://family.chatgenius.pro) — for redirect etter payment
+//   STRIPE_PRICE_ID_BASIC          (recurring, 4 EUR/mnd)
+//   STRIPE_PRICE_ID_AI_PACK_SMALL  (one-time, 2 EUR, 50 kall)
+//   STRIPE_PRICE_ID_AI_PACK_MEDIUM (one-time, 6 EUR, 200 kall)
+//   STRIPE_PRICE_ID_AI_PACK_LARGE  (one-time, 12 EUR, 500 kall)
+//   PUBLIC_APP_URL (f.eks. https://family.chatgenius.pro)
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
@@ -24,10 +25,12 @@ function requiredEnv(name: string) {
   return v;
 }
 
-const PRICE_IDS: Record<string, string | undefined> = {
-  family: Deno.env.get('STRIPE_PRICE_ID_FAMILY'),
-  business: Deno.env.get('STRIPE_PRICE_ID_BUSINESS'),
-  advisor: Deno.env.get('STRIPE_PRICE_ID_ADVISOR'),
+// Type: subscription (recurring) eller payment (engangs)
+const PRODUCTS: Record<string, { priceEnv: string; mode: 'subscription' | 'payment'; credits?: number }> = {
+  basic:           { priceEnv: 'STRIPE_PRICE_ID_BASIC',          mode: 'subscription' },
+  ai_pack_small:   { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_SMALL',  mode: 'payment', credits: 50 },
+  ai_pack_medium:  { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_MEDIUM', mode: 'payment', credits: 200 },
+  ai_pack_large:   { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_LARGE',  mode: 'payment', credits: 500 },
 };
 
 async function stripeApi(path: string, params: URLSearchParams) {
@@ -61,27 +64,35 @@ serve(async (req) => {
     const user = userData.user;
 
     const body = await req.json().catch(() => ({}));
-    const planId = String(body.planId || '').toLowerCase();
-    const priceId = PRICE_IDS[planId];
+    // Støtt både gammelt {planId} og nytt {productId}
+    const productId = String(body.productId || body.planId || '').toLowerCase();
+    const product = PRODUCTS[productId];
+    if (!product) {
+      return new Response(JSON.stringify({ error: `Ukjent produkt: ${productId}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const priceId = Deno.env.get(product.priceEnv);
     if (!priceId) {
-      return new Response(JSON.stringify({ error: `Ukjent plan: ${planId}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: `${product.priceEnv} er ikke satt i env-vars` }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const appUrl = requiredEnv('PUBLIC_APP_URL').replace(/\/$/, '');
 
-    // Opprett Stripe Checkout Session
+    // Opprett Stripe Checkout Session (subscription eller payment)
     const params = new URLSearchParams();
-    params.set('mode', 'subscription');
+    params.set('mode', product.mode);
     params.set('customer_email', user.email || '');
     params.set('client_reference_id', user.id);
     params.set('line_items[0][price]', priceId);
     params.set('line_items[0][quantity]', '1');
-    params.set('success_url', `${appUrl}/?checkout=success&plan=${planId}`);
+    params.set('success_url', `${appUrl}/?checkout=success&product=${productId}`);
     params.set('cancel_url', `${appUrl}/?checkout=cancel`);
     params.set('metadata[user_id]', user.id);
-    params.set('metadata[plan]', planId);
-    params.set('subscription_data[metadata][user_id]', user.id);
-    params.set('subscription_data[metadata][plan]', planId);
+    params.set('metadata[product]', productId);
+    if (product.credits) params.set('metadata[credits]', String(product.credits));
+    if (product.mode === 'subscription') {
+      params.set('subscription_data[metadata][user_id]', user.id);
+      params.set('subscription_data[metadata][product]', productId);
+    }
     params.set('allow_promotion_codes', 'true');
 
     const session = await stripeApi('checkout/sessions', params);

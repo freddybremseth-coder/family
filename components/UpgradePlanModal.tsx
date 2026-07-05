@@ -1,30 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { X, Check, Sparkles, Zap, Building2, Users, Loader2 } from 'lucide-react';
-import { PLANS, Plan, PlanId } from '../services/subscriptionPlans';
-import { startPlanCheckout } from '../services/stripeService';
+import { X, Check, Sparkles, Zap, Loader2, Package } from 'lucide-react';
+import { SUBSCRIPTIONS, AI_PACKS, Subscription, AiPack } from '../services/subscriptionPlans';
+import { startProductCheckout } from '../services/stripeService';
 import { translations } from '../translations';
 import { Language } from '../types';
 
 interface Props {
   open: boolean;
-  currentPlan?: string;
-  triggerReason?: string; // f.eks. 'AI-kvote nådd'
+  currentPlan?: string;    // 'free' | 'basic' | 'trial' | 'lifetime' etc.
+  triggerReason?: string;  // f.eks. 'AI-kvote nådd'
   lang?: Language;
   onClose: () => void;
 }
 
-const planIcon = (id: PlanId) => {
-  switch (id) {
-    case 'free': return <Users className="h-5 w-5" />;
-    case 'family': return <Sparkles className="h-5 w-5" />;
-    case 'business': return <Building2 className="h-5 w-5" />;
-    case 'advisor': return <Zap className="h-5 w-5" />;
-  }
-};
-
 export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerReason, lang = 'no', onClose }) => {
   const t = translations[lang] || translations['no'];
-  const [processing, setProcessing] = useState<PlanId | null>(null);
+  const [processing, setProcessing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,12 +24,13 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
 
   if (!open) return null;
 
-  const handleSelect = async (plan: Plan) => {
-    if (plan.id === (currentPlan as PlanId)) return;
-    setProcessing(plan.id);
+  const isSubscribed = currentPlan === 'basic' || currentPlan === 'lifetime' || currentPlan === 'basic_cancelled';
+
+  const handleSelect = async (productId: string) => {
+    setProcessing(productId);
     setError(null);
     try {
-      await startPlanCheckout(plan.id);
+      await startProductCheckout(productId);
     } catch (err: any) {
       setError(err?.message || 'Kunne ikke starte checkout');
       setProcessing(null);
@@ -47,7 +39,7 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
 
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-5xl my-8 rounded-3xl bg-white shadow-2xl">
+      <div className="relative w-full max-w-3xl my-8 rounded-3xl bg-white shadow-2xl">
         <button
           type="button"
           onClick={onClose}
@@ -65,10 +57,12 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
               </div>
             )}
             <h2 className="text-3xl md:text-4xl font-black text-slate-900">
-              {t.upgrade_title || 'Velg planen som passer familien'}
+              {isSubscribed ? 'Kjøp ekstra AI-kall' : (t.upgrade_title || 'Oppgrader til Basic')}
             </h2>
             <p className="mt-2 text-slate-600 max-w-2xl mx-auto">
-              {t.upgrade_subtitle || 'Oppgrader for høyere AI-kvote, flere brukere og pro-funksjoner.'}
+              {isSubscribed
+                ? 'Din månedskvote er brukt opp. Kjøp en tilleggspakke — gjelder til den er brukt.'
+                : 'Full app-tilgang for 4 €/mnd. Inkludert AI-kvote. Kan sies opp når som helst.'}
             </p>
           </div>
 
@@ -78,66 +72,92 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {PLANS.map(plan => {
-              const isCurrent = plan.id === currentPlan;
-              const isProcessing = processing === plan.id;
-              return (
-                <div
-                  key={plan.id}
-                  className={`relative rounded-2xl border-2 p-5 flex flex-col ${
-                    plan.recommended ? 'border-indigo-500 shadow-xl bg-gradient-to-br from-indigo-50 to-white' : 'border-slate-200 bg-white'
-                  } ${isCurrent ? 'ring-2 ring-emerald-500' : ''}`}
-                >
-                  {plan.recommended && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                      {t.upgrade_recommended || 'Anbefalt'}
+          {/* Basic-abonnement — vises hvis ikke allerede abonnent */}
+          {!isSubscribed && (
+            <div className="mb-6">
+              {SUBSCRIPTIONS.filter(s => s.id === 'basic').map((sub: Subscription) => (
+                <div key={sub.id} className="relative rounded-2xl border-2 border-indigo-500 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-xl">
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                    {t.upgrade_recommended || 'Anbefalt'}
+                  </span>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 text-slate-700">
+                        <Sparkles className="h-5 w-5 text-indigo-600" />
+                        <h3 className="text-2xl font-black">{sub.name}</h3>
+                      </div>
+                      <div className="mt-2">
+                        <span className="text-4xl font-black text-slate-900">{sub.priceMonthly} €</span>
+                        <span className="text-slate-500 font-bold">/mnd</span>
+                      </div>
+                      <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                        {sub.highlights.map(h => (
+                          <li key={h} className="flex items-start gap-2 text-sm text-slate-700">
+                            <Check className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                            <span>{h}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect('basic')}
+                      disabled={processing !== null}
+                      className="rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 px-6 py-3 text-sm font-black uppercase tracking-wide text-white whitespace-nowrap"
+                    >
+                      {processing === 'basic' ? (
+                        <span className="inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> {t.upgrade_opening_stripe || 'Åpner Stripe…'}</span>
+                      ) : sub.cta}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* AI-tilleggspakker */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Package className="h-5 w-5 text-slate-600" />
+              <h3 className="text-lg font-black text-slate-900">
+                {isSubscribed ? 'AI-tilleggspakker' : 'Trenger mer AI? Kjøp en pakke i tillegg'}
+              </h3>
+              <span className="text-xs text-slate-500">(engangs, ikke abonnement)</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {AI_PACKS.map((pack: AiPack) => (
+                <div key={pack.id} className={`relative rounded-xl border-2 p-4 flex flex-col ${pack.bestValue ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200 bg-white'}`}>
+                  {pack.bestValue && (
+                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest">
+                      Beste verdi
                     </span>
                   )}
-                  {isCurrent && (
-                    <span className="absolute -top-3 right-4 rounded-full bg-emerald-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                      {t.upgrade_current_plan || 'Din plan'}
-                    </span>
-                  )}
-
-                  <div className="flex items-center gap-2 text-slate-700">
-                    {planIcon(plan.id)}
-                    <h3 className="text-lg font-black">{plan.name}</h3>
-                  </div>
-
-                  <div className="mt-3">
-                    <span className="text-4xl font-black text-slate-900">{plan.priceMonthly}</span>
-                    <span className="text-slate-500 font-bold"> {t.upgrade_per_month || 'kr/mnd'}</span>
-                  </div>
-
-                  <ul className="mt-5 space-y-2 flex-1">
-                    {plan.highlights.map(h => (
-                      <li key={h} className="flex items-start gap-2 text-sm text-slate-700">
-                        <Check className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                        <span>{h}</span>
-                      </li>
-                    ))}
-                  </ul>
-
+                  <p className="text-xs uppercase font-bold text-slate-500 tracking-widest">{pack.name}</p>
+                  <p className="mt-2">
+                    <span className="text-3xl font-black text-slate-900">{pack.price} €</span>
+                  </p>
+                  <p className="mt-1 text-sm text-slate-700 font-semibold">{pack.credits} AI-kall</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">({(pack.pricePerCall * 100).toFixed(1)} øre/kall)</p>
                   <button
                     type="button"
-                    onClick={() => handleSelect(plan)}
-                    disabled={isCurrent || isProcessing}
-                    className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-black uppercase tracking-wide transition ${
-                      isCurrent
-                        ? 'bg-emerald-100 text-emerald-800 cursor-default'
-                        : plan.recommended
-                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                    } disabled:opacity-70`}
+                    onClick={() => handleSelect(pack.id)}
+                    disabled={processing !== null || !isSubscribed}
+                    className={`mt-3 w-full rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wide transition ${
+                      pack.bestValue ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
                   >
-                    {isProcessing ? (
-                      <span className="inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> {t.upgrade_opening_stripe || 'Åpner Stripe…'}</span>
-                    ) : isCurrent ? (t.upgrade_current_plan_short || 'Din nåværende plan') : plan.cta}
+                    {processing === pack.id ? (
+                      <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Stripe…</span>
+                    ) : 'Kjøp pakke'}
                   </button>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            {!isSubscribed && (
+              <p className="mt-3 text-xs text-slate-500 italic">
+                💡 AI-pakker krever aktivt Basic-abonnement. Abonner først, så kan du legge til flere kall etter behov.
+              </p>
+            )}
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-500">

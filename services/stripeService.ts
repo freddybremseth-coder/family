@@ -51,26 +51,25 @@ export const openCustomerPortal = async (userId: string) => {
 };
 
 // ═══════════════════════════════════════════════════════════
-// NY SaaS-flyt via Supabase edge function (stripe-checkout).
+// SaaS-flyt via Supabase edge function (stripe-checkout).
 // Bruker Stripe Checkout Session med JWT-autentisering.
+// Støtter både Basic-abonnement og engangs AI-tilleggspakker.
 // ═══════════════════════════════════════════════════════════
 
 import { supabase, isSupabaseConfigured } from '../supabase';
-import type { PlanId } from './subscriptionPlans';
 
-export async function startPlanCheckout(planId: PlanId): Promise<void> {
-  if (planId === 'free') return;
-  if (planId === 'advisor') {
-    window.location.href = 'mailto:mail@extrade.es?subject=FamilyHub Advisor-plan';
-    return;
-  }
+export async function startProductCheckout(productId: string): Promise<void> {
+  if (!productId || productId === 'free') return;
   if (!isSupabaseConfigured()) throw new Error('Supabase ikke konfigurert');
 
   const { data, error } = await supabase.functions.invoke('stripe-checkout', {
     method: 'POST',
-    body: { planId },
+    body: { productId },
   });
   if (error) throw new Error(error.message || 'Checkout feilet');
   if (!data?.url) throw new Error('Ingen checkout-URL mottatt fra Stripe');
   window.location.href = data.url;
 }
+
+// Bakover-kompatibilitet — gammelt navn brukt av UpgradePlanModal
+export const startPlanCheckout = startProductCheckout;
