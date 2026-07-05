@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { X, Check, Sparkles, Zap, Building2, Users, Loader2 } from 'lucide-react';
 import { PLANS, Plan, PlanId } from '../services/subscriptionPlans';
 import { startPlanCheckout } from '../services/stripeService';
+import { translations } from '../translations';
+import { Language } from '../types';
 
 interface Props {
   open: boolean;
   currentPlan?: string;
   triggerReason?: string; // f.eks. 'AI-kvote nådd'
+  lang?: Language;
   onClose: () => void;
 }
 
@@ -19,7 +22,8 @@ const planIcon = (id: PlanId) => {
   }
 };
 
-export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerReason, onClose }) => {
+export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerReason, lang = 'no', onClose }) => {
+  const t = translations[lang] || translations['no'];
   const [processing, setProcessing] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +52,7 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
           type="button"
           onClick={onClose}
           className="absolute top-4 right-4 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          aria-label="Lukk"
+          aria-label={t.upgrade_close || 'Lukk'}
         >
           <X className="h-5 w-5" />
         </button>
@@ -61,10 +65,10 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
               </div>
             )}
             <h2 className="text-3xl md:text-4xl font-black text-slate-900">
-              Velg planen som passer familien
+              {t.upgrade_title || 'Velg planen som passer familien'}
             </h2>
             <p className="mt-2 text-slate-600 max-w-2xl mx-auto">
-              Oppgrader for høyere AI-kvote, flere brukere og pro-funksjoner. Alle abonnement kan sies opp når som helst.
+              {t.upgrade_subtitle || 'Oppgrader for høyere AI-kvote, flere brukere og pro-funksjoner.'}
             </p>
           </div>
 
@@ -87,12 +91,12 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
                 >
                   {plan.recommended && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                      Anbefalt
+                      {t.upgrade_recommended || 'Anbefalt'}
                     </span>
                   )}
                   {isCurrent && (
                     <span className="absolute -top-3 right-4 rounded-full bg-emerald-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                      Din plan
+                      {t.upgrade_current_plan || 'Din plan'}
                     </span>
                   )}
 
@@ -103,7 +107,7 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
 
                   <div className="mt-3">
                     <span className="text-4xl font-black text-slate-900">{plan.priceMonthly}</span>
-                    <span className="text-slate-500 font-bold"> kr/mnd</span>
+                    <span className="text-slate-500 font-bold"> {t.upgrade_per_month || 'kr/mnd'}</span>
                   </div>
 
                   <ul className="mt-5 space-y-2 flex-1">
@@ -128,8 +132,8 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
                     } disabled:opacity-70`}
                   >
                     {isProcessing ? (
-                      <span className="inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Åpner Stripe…</span>
-                    ) : isCurrent ? 'Din nåværende plan' : plan.cta}
+                      <span className="inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> {t.upgrade_opening_stripe || 'Åpner Stripe…'}</span>
+                    ) : isCurrent ? (t.upgrade_current_plan_short || 'Din nåværende plan') : plan.cta}
                   </button>
                 </div>
               );
@@ -137,7 +141,7 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-500">
-            Sikker betaling via Stripe. Ingen bindingstid. Kan sies opp når som helst fra Innstillinger.
+            {t.upgrade_footer || 'Sikker betaling via Stripe. Ingen bindingstid. Kan sies opp når som helst fra Innstillinger.'}
           </p>
         </div>
       </div>

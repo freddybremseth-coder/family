@@ -200,6 +200,17 @@ export const translations: Record<Language, any> = {
     ai_builtin_feature_3: "Skru av senere hvis du vil bruke egne nøkler",
     ai_builtin_on: "Skru på (anbefalt)",
     ai_builtin_off: "Skru av — jeg bruker egne API-nøkler",
+
+    // Upgrade-modal
+    upgrade_title: "Velg planen som passer familien",
+    upgrade_subtitle: "Oppgrader for høyere AI-kvote, flere brukere og pro-funksjoner. Alle abonnement kan sies opp når som helst.",
+    upgrade_recommended: "Anbefalt",
+    upgrade_current_plan: "Din plan",
+    upgrade_current_plan_short: "Din nåværende plan",
+    upgrade_opening_stripe: "Åpner Stripe…",
+    upgrade_footer: "Sikker betaling via Stripe. Ingen bindingstid. Kan sies opp når som helst fra Innstillinger.",
+    upgrade_per_month: "kr/mnd",
+    upgrade_close: "Lukk",
   },
 
   en: {
@@ -390,6 +401,16 @@ export const translations: Record<Language, any> = {
     ai_builtin_feature_3: "Turn off later if you want your own keys",
     ai_builtin_on: "Turn on (recommended)",
     ai_builtin_off: "Turn off — I'll use my own API keys",
+
+    upgrade_title: "Choose the plan that fits your family",
+    upgrade_subtitle: "Upgrade for higher AI quota, more users and pro features. Cancel any time.",
+    upgrade_recommended: "Recommended",
+    upgrade_current_plan: "Your plan",
+    upgrade_current_plan_short: "Your current plan",
+    upgrade_opening_stripe: "Opening Stripe…",
+    upgrade_footer: "Secure payment via Stripe. No lock-in. Cancel any time from Settings.",
+    upgrade_per_month: "NOK/mo",
+    upgrade_close: "Close",
   },
 
   es: {
@@ -580,6 +601,16 @@ export const translations: Record<Language, any> = {
     ai_builtin_feature_3: "Desactiva si prefieres usar tus propias claves",
     ai_builtin_on: "Activar (recomendado)",
     ai_builtin_off: "Desactivar — usaré mis propias claves",
+
+    upgrade_title: "Elige el plan que encaja con tu familia",
+    upgrade_subtitle: "Actualiza para mayor cuota IA, más usuarios y funciones pro. Cancela cuando quieras.",
+    upgrade_recommended: "Recomendado",
+    upgrade_current_plan: "Tu plan",
+    upgrade_current_plan_short: "Tu plan actual",
+    upgrade_opening_stripe: "Abriendo Stripe…",
+    upgrade_footer: "Pago seguro con Stripe. Sin permanencia. Cancela cuando quieras desde Ajustes.",
+    upgrade_per_month: "NOK/mes",
+    upgrade_close: "Cerrar",
   },
 
   ru: {

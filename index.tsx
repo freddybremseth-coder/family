@@ -360,6 +360,7 @@ const App = () => {
       open={showUpgrade}
       currentPlan={subscriptionStatus === 'trial' ? 'free' : subscriptionStatus}
       triggerReason={upgradeReason}
+      lang={userConfig.language}
       onClose={() => setShowUpgrade(false)}
     />
   </div>;
