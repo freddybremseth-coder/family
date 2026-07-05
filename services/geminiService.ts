@@ -156,7 +156,7 @@ export const analyzeWeeklyTasks = async (
     .map(t => `${t.date} · ${t.description} · ansvarlig: ${t.assignedTo || 'ingen'} · ${t.isComplete ? 'FERDIG' : 'ÅPEN'}${t.recurrence ? ` · gjentakelse: ${t.recurrence}` : ''}`)
     .join('\n');
 
-  const prompt = `Du er «familieoppgave-sjefen» for BREMSETH-familien. Familiemedlemmer: ${memberNames}.
+  const prompt = `Du er «familieoppgave-sjefen». Familiemedlemmer: ${memberNames}.
 
 Ukens oppgaver (fra i dag):
 ${context || '(Ingen oppgaver denne uken)'}

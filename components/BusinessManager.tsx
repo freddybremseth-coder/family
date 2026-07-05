@@ -643,7 +643,7 @@ export const BusinessManager: React.FC<Props> = ({
                   <Users className="w-4 h-4" /> Utbyggere
                 </button>
                 <button onClick={() => setReSubTab('mondeo')} className={`px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide transition-all flex items-center gap-2 shrink-0 ${reSubTab === 'mondeo' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-lg shadow-amber-500/10' : 'text-slate-400 hover:text-amber-300 border border-transparent ring-1 ring-amber-500/20'}`}>
-                  <Calculator className="w-4 h-4" /> Mondeo Lån
+                  <Calculator className="w-4 h-4" /> Selgerkreditt
                   <span className="ml-1 px-1.5 py-0.5 text-[9px] font-black bg-amber-500 text-black rounded">NY</span>
                 </button>
              </div>

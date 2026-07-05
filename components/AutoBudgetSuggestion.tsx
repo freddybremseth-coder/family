@@ -19,27 +19,18 @@ const VAR_META = {
 } as const;
 
 const NOTES_KEY = 'familyhub_budget_category_notes';
-const DEFAULT_NOTES: Record<string, string> = {
-  Diverse: 'Daniel Gallardo Lope er utgifter for Dona Anna — bearbeiding av olivenlunden.',
-  Lønn: 'Maria Safrina Bialon = husleie for leilighet i Benidorm (ikke lønn).',
-  Mondeo: 'Daniel Gallardo Lope er utgifter for Dona Anna — bearbeiding av olivenlunden.',
-};
 
 function loadNotes(): Record<string, string> {
   try {
     const raw = localStorage.getItem(NOTES_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  // Første gang: sett inn defaults
-  try { localStorage.setItem(NOTES_KEY, JSON.stringify(DEFAULT_NOTES)); } catch {}
-  return { ...DEFAULT_NOTES };
+  return {};
 }
 
-const KNOWN_VENDOR_RULES: Array<{ match: RegExp; category: string; label: string }> = [
-  { match: /daniel\s*gallardo/i, category: 'Dona Anna', label: 'Daniel Gallardo → Dona Anna' },
-  { match: /maria\s*safrina\s*bialon/i, category: 'Husleie', label: 'Maria Safrina Bialon → Husleie' },
-  { match: /agrodisa/i, category: 'Dona Anna', label: 'AGRODISA → Dona Anna' },
-];
+// Ingen forhåndsdefinerte vendor-regler i SaaS-produktet.
+// Brukere legger inn egne regler pr leverandør via kategori-picker på hver chip.
+const KNOWN_VENDOR_RULES: Array<{ match: RegExp; category: string; label: string }> = [];
 
 export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions, setTransactions }) => {
   const [suggestions, setSuggestions] = useState<CategoryBudgetSuggestion[]>([]);
@@ -126,7 +117,7 @@ export const AutoBudgetSuggestion: React.FC<Props> = ({ userId, transactions, se
         </div>
       </div>
 
-      {setTransactions && (
+      {setTransactions && KNOWN_VENDOR_RULES.length > 0 && (
         <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs text-indigo-900">
             <p className="font-bold flex items-center gap-1.5"><ArrowRightLeft className="h-3.5 w-3.5" /> Reklassifiser kjente feil-kategoriserte leverandører</p>

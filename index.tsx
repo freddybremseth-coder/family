@@ -270,7 +270,7 @@ const App = () => {
 
   useEffect(() => {
     try {
-      if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([{ id: 'fm-1', name: 'Freddy', birthDate: '1975-04-12', monthlySalary: 45000, monthlyBenefits: 0, monthlyChildBenefit: 0, salaryDay: 25 }, { id: 'fm-2', name: 'Anna', birthDate: '1980-08-25', monthlySalary: 32000, monthlyBenefits: 5000, monthlyChildBenefit: 0, salaryDay: 25 }]); return; }
+      if (!isSupabaseConfigured()) { setLoading(false); setPersistentReady(true); setFamilyMembers([]); return; }
       let cancelled = false;
       const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false); }, 3500);
       supabase.auth.getSession().then(({ data: { session } }) => {

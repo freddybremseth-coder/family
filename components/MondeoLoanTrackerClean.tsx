@@ -20,10 +20,12 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 // Avtale-defaults — overstyres av lagrede verdier i Supabase
-const DEFAULT_PRINCIPAL = 4_800_000;
-const DEFAULT_MIN_MONTHLY = 33_000;
-const DEFAULT_FIXED_RATE = 9;
-const DEFAULT_INTEREST_START = '2026-06-01';
+// Generiske defaults — nye kunder starter tomme og fyller inn selv.
+// Eksisterende brukere (som deg) har egne verdier i Supabase mondeo_loan_settings.
+const DEFAULT_PRINCIPAL = 0;
+const DEFAULT_MIN_MONTHLY = 0;
+const DEFAULT_FIXED_RATE = 5; // 5% p.a. som nøytralt utgangspunkt
+const DEFAULT_INTEREST_START = new Date().toISOString().slice(0, 10);
 
 const formatNOK = (value: number) =>
   new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -35,19 +37,19 @@ const formatDate = (iso?: string) => {
 };
 
 const defaultSettings: MondeoLoanSettings = {
-  id: 'mondeo-default',
+  id: 'seller-credit-default',
   initialPrincipal: DEFAULT_PRINCIPAL,
   startDate: todayISO(),
-  marginPct: 6,
+  marginPct: 0,
   norgesBankRatePct: 4.5,
   fixedAnnualRatePct: DEFAULT_FIXED_RATE,
   useFixedRate: true,
   interestStartDate: DEFAULT_INTEREST_START,
   minMonthlyPayment: DEFAULT_MIN_MONTHLY,
-  buyerName: 'Odin Jacobsen',
-  buyerCompany: 'Nordic Invest AS',
-  sellerEntity: 'Extrade Holding AS',
-  notes: 'Selgerkreditt fra Extrade Holding AS til Odin Jacobsen / Nordic Invest AS for aksjene i Mondeo Eiendom AS. Fast rente 9 % p.a. fra 1. juni 2026. Minimum 33 000 kr/mnd; differansen øker hovedstolen. Restgjeld KPI-justeres årlig 1. januar.',
+  buyerName: '',
+  buyerCompany: '',
+  sellerEntity: '',
+  notes: '',
 };
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -109,13 +111,14 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     try { localStorage.setItem('mondeo_late_due_day', String(day)); } catch {}
   };
 
-  // Mondeo-inntektskonto (DNB) — persisteres i localStorage
+  // Bankkonto for renteinntekter — persisteres i localStorage.
+  // Nye kunder starter tomme og legger inn sine egne bankdetaljer.
   interface MondeoBankInfo { bankName: string; accountName: string; accountNumber: string; iban: string; currency: string; }
   const DEFAULT_MONDEO_ACCOUNT: MondeoBankInfo = {
-    bankName: 'DNB',
-    accountName: 'Mondeo Eiendom AS',
-    accountNumber: '1503 58 84251',
-    iban: 'NO4015035884251',
+    bankName: '',
+    accountName: '',
+    accountNumber: '',
+    iban: '',
     currency: 'NOK',
   };
   const [mondeoAccount, setMondeoAccountState] = useState<MondeoBankInfo>(() => {
@@ -130,10 +133,10 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     try { localStorage.setItem('mondeo_income_account', JSON.stringify(next)); } catch {}
   };
 
-  // Frank-lån (annuitet: 5.44% p.a., 8208.15 kr/mnd, hovedstol 680 570.02)
+  // Privatlån-modul (annuitetslån). Nye kunder starter tomme.
   interface FrankLoanConfig { principal: number; monthlyPayment: number; annualRatePct: number; asOfDate: string; }
   interface FrankPayment { id: string; date: string; amount: number; postedTransactionId?: string; }
-  const DEFAULT_FRANK: FrankLoanConfig = { principal: 680570.02, monthlyPayment: 8208.15, annualRatePct: 5.44, asOfDate: '2026-07-01' };
+  const DEFAULT_FRANK: FrankLoanConfig = { principal: 0, monthlyPayment: 0, annualRatePct: 0, asOfDate: new Date().toISOString().slice(0, 10) };
   const [frankConfig, setFrankConfigState] = useState<FrankLoanConfig>(() => {
     try {
       const stored = localStorage.getItem('mondeo_frank_config');
@@ -214,11 +217,11 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
           useFixedRate: settingsRow.use_fixed_rate ?? true,
           interestStartDate: settingsRow.interest_start_date ?? DEFAULT_INTEREST_START,
           minMonthlyPayment: Number(settingsRow.min_monthly_payment ?? DEFAULT_MIN_MONTHLY),
-          buyerName: settingsRow.buyer_name ?? 'Odin Jacobsen',
-          buyerCompany: settingsRow.buyer_company ?? 'Nordic Invest AS',
+          buyerName: settingsRow.buyer_name ?? '',
+          buyerCompany: settingsRow.buyer_company ?? '',
           buyerOrgNumber: settingsRow.buyer_org_number ?? undefined,
           buyerEmail: settingsRow.buyer_email ?? undefined,
-          sellerEntity: settingsRow.seller_entity ?? 'Extrade Holding AS',
+          sellerEntity: settingsRow.seller_entity ?? '',
           sellerOrgNumber: settingsRow.seller_org_number ?? undefined,
           contractStoragePath: settingsRow.contract_storage_path ?? undefined,
           contractFileName: settingsRow.contract_file_name ?? undefined,
@@ -554,7 +557,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     // Hele innbetalingen registreres som renteinntekt (ingen avdrag på hovedstol).
     const interestTx: Transaction = {
       id: `tx-mondeo-${newPayment.id}`, date: paymentDate, amount: Math.round(requested), currency: 'NOK',
-      description: `Renteinntekt Mondeo Eiendom AS${paymentNote ? ` – ${paymentNote}` : ''} (inn på ${mondeoAccount.bankName} ${mondeoAccount.accountNumber})`,
+      description: `Renteinntekt ${settings.sellerEntity || 'selgerkreditt'}${paymentNote ? ` – ${paymentNote}` : ''}${mondeoAccount.bankName ? ` (inn på ${mondeoAccount.bankName} ${mondeoAccount.accountNumber})` : ''}`,
       category: 'Renteinntekt', type: TransactionType.INCOME, paymentMethod: paymentMethod as any, isAccrual: false,
     };
     newPayment.postedTransactionId = interestTx.id;
@@ -739,7 +742,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         <div>
           <div className="mb-2 flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white"><Building2 className="h-5 w-5" /></div>
-            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Mondeo Eiendom AS</span>
+            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{settings.sellerEntity || 'Selgerkreditt'}</span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight md:text-5xl">Rente- og avregningsdashboard</h1>
           <p className="mt-3 max-w-3xl text-base text-slate-600 md:text-lg">{headerSubtitle}</p>
@@ -813,7 +816,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
               <Field label={`Forfallsdag (dag i mnd) — ${annualRate}% rente på utestående / 365 pr dag forsinket`} type="number" value={latePaymentDueDay} onChange={(v) => { const n = Math.max(1, Math.min(28, Number(v) || 1)); setLatePaymentDueDay(n); }} />
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">Bankkonto for renteinntekt (Mondeo Eiendom AS)</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">Bankkonto for renteinntekt{settings.sellerEntity ? ` (${settings.sellerEntity})` : ''}</p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Bank" value={mondeoAccount.bankName} onChange={(v) => setMondeoAccount({ ...mondeoAccount, bankName: String(v) })} />
                 <Field label="Kontohaver" value={mondeoAccount.accountName} onChange={(v) => setMondeoAccount({ ...mondeoAccount, accountName: String(v) })} />
@@ -822,12 +825,12 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
                 <Field label="Kontonummer" value={mondeoAccount.accountNumber} onChange={(v) => setMondeoAccount({ ...mondeoAccount, accountNumber: String(v) })} />
                 <Field label="IBAN" value={mondeoAccount.iban} onChange={(v) => setMondeoAccount({ ...mondeoAccount, iban: String(v) })} />
               </div>
-              <p className="text-[11px] text-slate-500 italic">Denne kontoen brukes til å motta månedlige renteinntekter fra Odin Jacobsen / Nordic Invest AS. Lån fra Frank trekkes fra samme konto.</p>
+              <p className="text-[11px] text-slate-500 italic">Denne kontoen brukes til å motta månedlige renteinntekter fra kjøper. Eventuelle privatlån-avdrag trekkes normalt fra samme konto.</p>
             </div>
 
             <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-widest text-rose-700">Lån Frank (annuitet — trekkes fra {mondeoAccount.bankName} {mondeoAccount.accountNumber})</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-rose-700">Privatlån (annuitet{mondeoAccount.bankName ? ` — trekkes fra ${mondeoAccount.bankName} ${mondeoAccount.accountNumber}` : ''})</p>
                 <p className="text-sm font-mono font-bold text-rose-800">Saldo nå: {formatNOK(frankStatus.balance)}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -888,11 +891,11 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         <Card>
           <div className="space-y-4 p-5">
             <div><h2 className="text-xl font-bold flex items-center gap-2"><Users className="h-5 w-5 text-slate-500" /> Parter</h2><p className="mt-1 text-sm text-slate-500">Selger og kjøper i kontrakten.</p></div>
-            <Field label="Selger (entitet)" value={settings.sellerEntity ?? ''} onChange={(v) => persistSettings({ ...settings, sellerEntity: v })} placeholder="Extrade Holding AS" />
+            <Field label="Selger (entitet)" value={settings.sellerEntity ?? ''} onChange={(v) => persistSettings({ ...settings, sellerEntity: v })} placeholder="F.eks. Ditt Selskap AS" />
             <Field label="Selger org.nr" value={settings.sellerOrgNumber ?? ''} onChange={(v) => persistSettings({ ...settings, sellerOrgNumber: v })} placeholder="9xx xxx xxx" />
             <div className="border-t border-slate-200 my-2" />
-            <Field label="Kjøper" value={settings.buyerName ?? ''} onChange={(v) => persistSettings({ ...settings, buyerName: v })} placeholder="Odin Jacobsen" />
-            <Field label="Kjøper selskap" value={settings.buyerCompany ?? ''} onChange={(v) => persistSettings({ ...settings, buyerCompany: v })} placeholder="Nordic Invest AS" />
+            <Field label="Kjøper" value={settings.buyerName ?? ''} onChange={(v) => persistSettings({ ...settings, buyerName: v })} placeholder="F.eks. Ola Nordmann" />
+            <Field label="Kjøper selskap" value={settings.buyerCompany ?? ''} onChange={(v) => persistSettings({ ...settings, buyerCompany: v })} placeholder="F.eks. Kjøper AS" />
             <div className="grid grid-cols-2 gap-3">
               <Field label="Org.nr" value={settings.buyerOrgNumber ?? ''} onChange={(v) => persistSettings({ ...settings, buyerOrgNumber: v })} placeholder="9xx xxx xxx" />
               <Field label="E-post" value={settings.buyerEmail ?? ''} onChange={(v) => persistSettings({ ...settings, buyerEmail: v })} placeholder="odin@…" />
@@ -1077,7 +1080,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
 
       {/* SKJULT UTSKRIFTSOMRÅDE */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
-        <h1>Mondeo Eiendom AS · Salgskontrakt — Regnskap</h1>
+        <h1>{settings.sellerEntity || 'Selgerkreditt'} · Regnskap</h1>
         <p className="meta">Utskrift: {new Date().toLocaleString('nb-NO')} · {settings.sellerEntity} → {settings.buyerName} ({settings.buyerCompany}) · v5 (kontrakt-avregning: terminbeløp {formatNOK(settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY)}, forfall {latePaymentDueDay}., forsinkelsesrente {annualRate}%/365)</p>
         <p className="meta">Innbetalinger til: {mondeoAccount.bankName} · {mondeoAccount.accountName} · {mondeoAccount.accountNumber} · {mondeoAccount.iban} · {mondeoAccount.currency}</p>
 

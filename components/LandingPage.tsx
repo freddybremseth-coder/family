@@ -116,7 +116,7 @@ const AppPreview = () => (
       {/* Greeting */}
       <div>
         <p className="text-xs text-slate-500 font-medium">Lørdag 26. februar</p>
-        <h3 className="text-lg font-bold text-slate-800">God morgen, Familie Bremseth! 👋</h3>
+        <h3 className="text-lg font-bold text-slate-800">God morgen! 👋</h3>
       </div>
 
       {/* Quick stats */}
