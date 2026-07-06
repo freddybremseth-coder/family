@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../supabase';
+import { supabaseFamilyData as supabase, isSupabaseConfigured } from '../supabase';
 
 export type DocumentCategory = 'Forsikring' | 'Bolig' | 'Bil' | 'Helse' | 'Barn' | 'Kontrakt' | 'Garanti' | 'Annet';
 
