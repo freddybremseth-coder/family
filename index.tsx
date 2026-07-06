@@ -312,6 +312,30 @@ const App = () => {
     return { ok: true };
   };
 
+  const handleMagicLink = async (
+    email: string,
+    metadata?: { familyName?: string; familyLocation?: string; isTrial?: boolean; demoMode?: 'empty' | 'demo' },
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase ikke konfigurert' };
+    const trialExpiresAt = metadata?.isTrial ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : undefined;
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin,
+        data: {
+          family_name: metadata?.familyName || '',
+          family_location: metadata?.familyLocation || '',
+          demo_data_mode: metadata?.demoMode || 'empty',
+          is_trial: !!metadata?.isTrial,
+          trial_expires_at: trialExpiresAt,
+        },
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  };
+
   const handleLogout = async () => { if (isSupabaseConfigured()) await supabase.auth.signOut(); setPersistentReady(false); setSession(null); setEffectiveUserId(null); setTransactions([]); setFamilyMembers([]); setAssets([]); setBankAccounts([]); setBills([]); };
   const handleNewScannedReceipt = async (data: any, imageUrl: string) => { const txId = `tx-rcpt-${Date.now()}`; const receiptId = `receipt-${Date.now()}`; const smartCategory = inferTransactionCategory({ vendor: data.vendor, description: data.vendor || 'Kvittering', category: data.category, amount: data.totalAmount, items: data.items }); const tx: Transaction = { id: txId, date: data.date || new Date().toISOString().split('T')[0], amount: Number(data.totalAmount || 0), currency: data.currency || userConfig.preferredCurrency, description: data.vendor || 'Kvittering', category: smartCategory, type: TransactionType.EXPENSE, paymentMethod: 'Bank', isAccrual: false, verificationSource: 'receipt', matchedReceiptId: receiptId }; if (isSupabaseConfigured() && session?.user) await supabase.from('transactions').insert([{ ...tx, user_id: session.user.id, payment_method: tx.paymentMethod }]); const receipt: ScannedReceipt = { id: receiptId, imageUrl, vendor: tx.description, date: tx.date, amount: tx.amount, currency: tx.currency, category: tx.category, confidence: Number(data.confidence || 0.75), linkedTransactionId: txId }; setScannedReceipts(prev => [receipt, ...prev]); setTransactions(prev => [tx, ...prev]); setCashBalance(prev => prev - tx.amount); setActiveTab('transactions'); };
   const navigate = (tab: string) => { if (!isModuleVisibleForUser(tab as any, userEmail)) return setActiveTab('dashboard'); setActiveTab(tab); setSidebarOpen(false); };
@@ -339,7 +363,7 @@ const App = () => {
   };
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4"><div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm"><Heart className="w-7 h-7 text-white" /></div><Loader2 className="w-6 h-6 text-slate-500 animate-spin" /><p className="text-sm text-slate-500 font-medium">Laster FamilieHub...</p></div>;
-  if (!session) return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
+  if (!session) return <div className="min-h-screen bg-white"><LandingPage onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onMagicLink={handleMagicLink} lang={userConfig.language} setLang={(l) => setUserConfig({ ...userConfig, language: l })} /></div>;
   const pageTitle = activeTab === 'superadmin' ? 'Admin' : labelFor(activeTab, visibleNavigation.find(n => n.id === activeTab)?.label || '');
 
   return <div className="flex min-h-screen bg-slate-50">
