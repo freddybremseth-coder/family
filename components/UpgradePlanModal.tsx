@@ -24,7 +24,8 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
 
   if (!open) return null;
 
-  const isSubscribed = currentPlan === 'basic' || currentPlan === 'lifetime' || currentPlan === 'basic_cancelled';
+  const paidPlans = new Set(['basic', 'business', 'advisor', 'lifetime', 'basic_cancelled', 'business_cancelled', 'advisor_cancelled']);
+  const isSubscribed = paidPlans.has(currentPlan || '');
 
   const handleSelect = async (productId: string) => {
     setProcessing(productId);
@@ -39,7 +40,7 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
 
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-3xl my-8 rounded-3xl bg-white shadow-2xl">
+      <div className="relative w-full max-w-5xl my-8 rounded-3xl bg-white shadow-2xl">
         <button
           type="button"
           onClick={onClose}
@@ -72,48 +73,56 @@ export const UpgradePlanModal: React.FC<Props> = ({ open, currentPlan, triggerRe
             </div>
           )}
 
-          {/* Basic-abonnement — vises hvis ikke allerede abonnent */}
-          {!isSubscribed && (
-            <div className="mb-6">
-              {SUBSCRIPTIONS.filter(s => s.id === 'basic').map((sub: Subscription) => (
-                <div key={sub.id} className="relative rounded-2xl border-2 border-indigo-500 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-xl">
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                    {t.upgrade_recommended || 'Anbefalt'}
-                  </span>
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <Sparkles className="h-5 w-5 text-indigo-600" />
-                        <h3 className="text-2xl font-black">{sub.name}</h3>
-                      </div>
-                      <div className="mt-2">
-                        <span className="text-4xl font-black text-slate-900">{sub.priceMonthly} €</span>
-                        <span className="text-slate-500 font-bold">/mnd</span>
-                      </div>
-                      <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-                        {sub.highlights.map(h => (
-                          <li key={h} className="flex items-start gap-2 text-sm text-slate-700">
-                            <Check className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                            <span>{h}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSelect('basic')}
-                      disabled={processing !== null}
-                      className="rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 px-6 py-3 text-sm font-black uppercase tracking-wide text-white whitespace-nowrap"
-                    >
-                      {processing === 'basic' ? (
-                        <span className="inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> {t.upgrade_opening_stripe || 'Åpner Stripe…'}</span>
-                      ) : sub.cta}
-                    </button>
+          {/* Abonnement-planer (Basic + Business + Advisor) */}
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            {SUBSCRIPTIONS.filter(s => s.id !== 'free').map((sub: Subscription) => {
+              const isCurrentSub = currentPlan === sub.id || currentPlan === `${sub.id}_cancelled`;
+              return (
+                <div key={sub.id} className={`relative rounded-2xl border-2 p-5 flex flex-col ${sub.recommended ? 'border-indigo-500 bg-gradient-to-br from-indigo-50 to-white shadow-xl' : 'border-slate-200 bg-white'} ${isCurrentSub ? 'ring-2 ring-emerald-500' : ''}`}>
+                  {sub.recommended && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                      {t.upgrade_recommended || 'Anbefalt'}
+                    </span>
+                  )}
+                  {isCurrentSub && (
+                    <span className="absolute -top-3 right-4 rounded-full bg-emerald-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                      {t.upgrade_current_plan || 'Din plan'}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Sparkles className={`h-5 w-5 ${sub.recommended ? 'text-indigo-600' : 'text-slate-500'}`} />
+                    <h3 className="text-xl font-black">{sub.name}</h3>
                   </div>
+                  <div className="mt-2">
+                    <span className="text-3xl font-black text-slate-900">{sub.priceMonthly} €</span>
+                    <span className="text-slate-500 font-bold text-sm">/mnd</span>
+                  </div>
+                  <ul className="mt-3 space-y-1.5 flex-1">
+                    {sub.highlights.map(h => (
+                      <li key={h} className="flex items-start gap-2 text-xs text-slate-700">
+                        <Check className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                        <span>{h}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(sub.id)}
+                    disabled={processing !== null || isCurrentSub}
+                    className={`mt-4 w-full rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-wide transition ${
+                      isCurrentSub ? 'bg-emerald-100 text-emerald-800 cursor-default' :
+                      sub.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' :
+                      'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    } disabled:opacity-70`}
+                  >
+                    {processing === sub.id ? (
+                      <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t.upgrade_opening_stripe || 'Åpner Stripe…'}</span>
+                    ) : isCurrentSub ? (t.upgrade_current_plan_short || 'Din nåværende plan') : sub.cta}
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
 
           {/* AI-tilleggspakker */}
           <div>

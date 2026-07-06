@@ -12,8 +12,9 @@
  *   STRIPE_PRICE_ID_AI_PACK_LARGE  (one-time, 12 EUR, 500 kall)
  */
 
-export type SubscriptionId = 'free' | 'basic';
+export type SubscriptionId = 'free' | 'basic' | 'business' | 'advisor';
 export type AiPackId = 'ai_pack_small' | 'ai_pack_medium' | 'ai_pack_large';
+export type FeatureKey = 'contract_tracker' | 'multi_brand_deals' | 'pdf_export' | 'kpi_adjustment' | 'white_label' | 'multi_family';
 
 export interface Subscription {
   id: SubscriptionId;
@@ -21,6 +22,8 @@ export interface Subscription {
   priceMonthly: number;
   currency: 'EUR';
   aiCallsPerMonth: number; // Månedlig kvote inkludert i planen
+  familiesIncluded?: number; // For Advisor
+  features: FeatureKey[]; // Feature-gating
   highlights: string[];
   cta: string;
   recommended?: boolean;
@@ -46,7 +49,8 @@ export const SUBSCRIPTIONS: Subscription[] = [
     priceMonthly: 0,
     currency: 'EUR',
     aiCallsPerMonth: 20,
-    highlights: ['Prøv appen', 'Begrenset til 20 AI-kall/mnd', 'Ingen bank-import', 'Ingen kvitteringsscan'],
+    features: [],
+    highlights: ['Prøv appen', '20 AI-kall/mnd', 'Ingen bank-import', 'Ingen kvitteringsscan'],
     cta: 'Kom i gang',
   },
   {
@@ -55,19 +59,69 @@ export const SUBSCRIPTIONS: Subscription[] = [
     priceMonthly: 4,
     currency: 'EUR',
     aiCallsPerMonth: 200,
+    features: [],
     highlights: [
-      'Full app-tilgang',
+      'Full app-tilgang for familien',
       '200 AI-kall/mnd inkludert',
       'Kvitteringsscan + bank-import',
-      'Mondeo/Frank-lån-tracker',
-      'Kalender og oppgaver',
-      'PDF-eksport',
+      'Kalender, oppgaver, budsjett',
       'Delt husholdning (opp til 4 brukere)',
     ],
     cta: 'Start Basic — 4 €/mnd',
     recommended: true,
   },
+  {
+    id: 'business',
+    name: 'Business',
+    priceMonthly: 29,
+    currency: 'EUR',
+    aiCallsPerMonth: 500,
+    features: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment'],
+    highlights: [
+      'Alt i Basic +',
+      '500 AI-kall/mnd',
+      'Selgerkreditt- og privatlån-tracker',
+      'Multi-brand salg og provisjoner',
+      'PDF-regnskap (månedlig/årlig)',
+      'Årlig KPI-justering (SSB Boligprisindeks)',
+    ],
+    cta: 'Oppgrader til Business — 29 €/mnd',
+  },
+  {
+    id: 'advisor',
+    name: 'Advisor',
+    priceMonthly: 199,
+    currency: 'EUR',
+    aiCallsPerMonth: 5000,
+    familiesIncluded: 10,
+    features: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment', 'white_label', 'multi_family'],
+    highlights: [
+      'Alt i Business +',
+      '5 000 AI-kall/mnd',
+      'Opp til 10 klient-familier',
+      'White-label (egen logo/farge)',
+      'Prioritert support',
+    ],
+    cta: 'Kontakt oss — 199 €/mnd',
+  },
 ];
+
+// Feature-tilgang basert på plan
+export const PLAN_FEATURES: Record<string, FeatureKey[]> = {
+  free: [],
+  trial: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment'], // Trial får full smak
+  basic: [],
+  business: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment'],
+  business_cancelled: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment'],
+  advisor: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment', 'white_label', 'multi_family'],
+  advisor_cancelled: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment', 'white_label', 'multi_family'],
+  lifetime: ['contract_tracker', 'multi_brand_deals', 'pdf_export', 'kpi_adjustment', 'white_label', 'multi_family'],
+};
+
+export function hasFeature(planId: string | undefined, feature: FeatureKey): boolean {
+  if (!planId) return false;
+  return (PLAN_FEATURES[planId] || []).includes(feature);
+}
 
 // ═══════════════════════════════════════════════════════════
 // AI-tilleggspakker — engangskjøp når månedskvoten er brukt
@@ -89,7 +143,12 @@ export function aiPackById(id: string): AiPack | undefined {
 // Månedlig AI-kvote per plan (brukes av edge function ai-proxy)
 export const MONTHLY_AI_QUOTA: Record<string, number> = {
   free: 20,
-  trial: 100,     // 24-timers trial får mer for demo
+  trial: 100,
   basic: 200,
-  lifetime: 999999, // Admin har uendelig
+  basic_cancelled: 200,
+  business: 500,
+  business_cancelled: 500,
+  advisor: 5000,
+  advisor_cancelled: 5000,
+  lifetime: 999999,
 };

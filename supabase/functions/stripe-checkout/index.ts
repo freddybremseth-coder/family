@@ -28,6 +28,8 @@ function requiredEnv(name: string) {
 // Type: subscription (recurring) eller payment (engangs)
 const PRODUCTS: Record<string, { priceEnv: string; mode: 'subscription' | 'payment'; credits?: number }> = {
   basic:           { priceEnv: 'STRIPE_PRICE_ID_BASIC',          mode: 'subscription' },
+  business:        { priceEnv: 'STRIPE_PRICE_ID_BUSINESS',       mode: 'subscription' },
+  advisor:         { priceEnv: 'STRIPE_PRICE_ID_ADVISOR',        mode: 'subscription' },
   ai_pack_small:   { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_SMALL',  mode: 'payment', credits: 50 },
   ai_pack_medium:  { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_MEDIUM', mode: 'payment', credits: 200 },
   ai_pack_large:   { priceEnv: 'STRIPE_PRICE_ID_AI_PACK_LARGE',  mode: 'payment', credits: 500 },

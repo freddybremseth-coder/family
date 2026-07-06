@@ -89,9 +89,8 @@ serve(async (req) => {
         const product = session.metadata?.product || session.metadata?.plan; // legacy
         if (!userId || !product) break;
 
-        if (product === 'basic') {
-          // Abonnement aktivert
-          await setStatus(userId, 'basic', {
+        if (product === 'basic' || product === 'business' || product === 'advisor') {
+          await setStatus(userId, product, {
             stripe_customer_id: session.customer,
             stripe_subscription_id: session.subscription,
           });
@@ -107,8 +106,8 @@ serve(async (req) => {
         const userId = sub.metadata?.user_id;
         if (!userId) break;
         const product = sub.metadata?.product || sub.metadata?.plan;
-        if (product === 'basic') {
-          const newStatus = sub.cancel_at_period_end ? 'basic_cancelled' : sub.status === 'active' ? 'basic' : sub.status;
+        if (product === 'basic' || product === 'business' || product === 'advisor') {
+          const newStatus = sub.cancel_at_period_end ? `${product}_cancelled` : sub.status === 'active' ? product : sub.status;
           await setStatus(userId, newStatus);
         }
         break;

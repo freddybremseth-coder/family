@@ -16,7 +16,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Plan = 'free' | 'trial' | 'basic' | 'basic_cancelled' | 'lifetime';
+type Plan = 'free' | 'trial' | 'basic' | 'basic_cancelled' | 'business' | 'business_cancelled' | 'advisor' | 'advisor_cancelled' | 'lifetime';
 type Provider = 'gemini' | 'openai' | 'claude';
 
 // Månedskvoter (nullstilles 1. i mnd)
@@ -25,6 +25,10 @@ const MONTHLY_QUOTAS: Record<string, number> = {
   trial: 100,
   basic: 200,
   basic_cancelled: 200,
+  business: 500,
+  business_cancelled: 500,
+  advisor: 5000,
+  advisor_cancelled: 5000,
   lifetime: 999999,
 };
 
