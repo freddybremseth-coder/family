@@ -64,7 +64,7 @@ export const PaywallModal: React.FC<Props> = ({ userEmail, daysLeft, onClose, la
                 <Clock className="w-3.5 h-3.5" />
                 {t.trial_days_left.replace('{days}', String(daysLeft))}
               </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">{t.upgrade_title}</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">{t.paywall_upgrade_title || t.upgrade_title}</h2>
               <p className="text-slate-500 mt-1.5 text-sm">{t.upgrade_sub}</p>
             </>
           )}
