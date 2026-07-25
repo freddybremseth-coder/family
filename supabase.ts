@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 const env = import.meta.env;
 const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
 const PLACEHOLDER_KEY = 'placeholder-anon-key';
+const REQUIRED_SUPABASE_REF = 'ereapsfcsqtdmzosgnnn';
+const LEGACY_SUPABASE_REF = 'jvcdkclfcaccogmvvkrs';
 
 function cleanEnv(value: unknown): string {
   let cleaned = String(value || '').trim().replace(/^[']|[']$/g, '').replace(/^["]|["]$/g, '').trim();
@@ -17,6 +19,7 @@ function isValidHttpUrl(value: string): boolean {
   try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:'; } catch { return false; }
 }
 function firstClean(values: unknown[]): string { return values.map(cleanEnv).find(Boolean) || ''; }
+function hasProjectRef(value: string, ref: string): boolean { return String(value || '').includes(`${ref}.supabase.co`); }
 function safeSupabaseUrl(value: string): string { return isValidHttpUrl(value) ? value : PLACEHOLDER_URL; }
 function safeSupabaseKey(value: string): string { return cleanEnv(value) || PLACEHOLDER_KEY; }
 
@@ -24,15 +27,19 @@ const familySupabaseUrl = firstClean([env.VITE_SUPABASE_URL, env.VITE_FAMILY_SUP
 const familySupabaseAnonKey = firstClean([env.VITE_SUPABASE_ANON_KEY, env.VITE_FAMILY_SUPABASE_ANON_KEY, env.VITE_FAMILYHUB_SUPABASE_ANON_KEY, env.VITE_FAMILY_ANON_KEY]);
 const familyResolvedKeyName = cleanEnv(env.VITE_SUPABASE_ANON_KEY) ? 'VITE_SUPABASE_ANON_KEY' : cleanEnv(env.VITE_FAMILY_SUPABASE_ANON_KEY) ? 'VITE_FAMILY_SUPABASE_ANON_KEY' : cleanEnv(env.VITE_FAMILYHUB_SUPABASE_ANON_KEY) ? 'VITE_FAMILYHUB_SUPABASE_ANON_KEY' : cleanEnv(env.VITE_FAMILY_ANON_KEY) ? 'VITE_FAMILY_ANON_KEY' : '';
 
-const realtyflowSupabaseUrl = firstClean([env.VITE_REALTYFLOW_SUPABASE_URL, env.VITE_REALTYFLOW_URL, familySupabaseUrl, 'https://ereapsfcsqtdmzosgnnn.supabase.co']);
+const realtyflowSupabaseUrl = firstClean([env.VITE_REALTYFLOW_SUPABASE_URL, env.VITE_REALTYFLOW_URL, `https://${REQUIRED_SUPABASE_REF}.supabase.co`, familySupabaseUrl]);
 const realtyflowKeyCandidates: Record<string, string> = { VITE_REALTYFLOW_SUPABASE_ANON_KEY: cleanEnv(env.VITE_REALTYFLOW_SUPABASE_ANON_KEY), VITE_REALTYFLOW_ANON_KEY: cleanEnv(env.VITE_REALTYFLOW_ANON_KEY), VITE_REALTYFLOW_SUPABASE_KEY: cleanEnv(env.VITE_REALTYFLOW_SUPABASE_KEY), VITE_REALTYFLOW_KEY: cleanEnv(env.VITE_REALTYFLOW_KEY) };
 const realtyflowSupabaseAnonKey = Object.values(realtyflowKeyCandidates).find(Boolean) || familySupabaseAnonKey || '';
 const realtyflowResolvedKeyName = Object.entries(realtyflowKeyCandidates).find(([, value]) => !!value)?.[0] || (familySupabaseAnonKey ? 'FamilyHub key fallback' : '');
 
-const oliviaSupabaseUrl = firstClean([env.VITE_OLIVIA_SUPABASE_URL, env.VITE_DONAANNA_SUPABASE_URL, env.VITE_DONA_ANNA_SUPABASE_URL, 'https://jvcdkclfcaccogmvvkrs.supabase.co']);
+const oliviaConfiguredUrl = firstClean([env.VITE_OLIVIA_SUPABASE_URL, env.VITE_DONAANNA_SUPABASE_URL, env.VITE_DONA_ANNA_SUPABASE_URL]);
+const oliviaSupabaseUrl = firstClean([oliviaConfiguredUrl, realtyflowSupabaseUrl, `https://${REQUIRED_SUPABASE_REF}.supabase.co`]);
+const oliviaLegacyProjectDetected = hasProjectRef(oliviaSupabaseUrl, LEGACY_SUPABASE_REF);
+const oliviaExpectedProjectDetected = hasProjectRef(oliviaSupabaseUrl, REQUIRED_SUPABASE_REF);
+const oliviaEffectiveSupabaseUrl = oliviaLegacyProjectDetected ? '' : oliviaSupabaseUrl;
 const oliviaKeyCandidates: Record<string, string> = { VITE_OLIVIA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_OLIVIA_SUPABASE_ANON_KEY), VITE_OLIVIA_ANON_KEY: cleanEnv(env.VITE_OLIVIA_ANON_KEY), VITE_OLIVIA_SUPABASE_KEY: cleanEnv(env.VITE_OLIVIA_SUPABASE_KEY), VITE_DONAANNA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_DONAANNA_SUPABASE_ANON_KEY), VITE_DONA_ANNA_SUPABASE_ANON_KEY: cleanEnv(env.VITE_DONA_ANNA_SUPABASE_ANON_KEY), VITE_DONAANNA_ANON_KEY: cleanEnv(env.VITE_DONAANNA_ANON_KEY), VITE_DONA_ANNA_ANON_KEY: cleanEnv(env.VITE_DONA_ANNA_ANON_KEY) };
-const oliviaSupabaseAnonKey = Object.values(oliviaKeyCandidates).find(Boolean) || '';
-const oliviaResolvedKeyName = Object.entries(oliviaKeyCandidates).find(([, value]) => !!value)?.[0] || '';
+const oliviaSupabaseAnonKey = Object.values(oliviaKeyCandidates).find(Boolean) || realtyflowSupabaseAnonKey || familySupabaseAnonKey || '';
+const oliviaResolvedKeyName = Object.entries(oliviaKeyCandidates).find(([, value]) => !!value)?.[0] || (realtyflowSupabaseAnonKey ? realtyflowResolvedKeyName || 'RealtyFlow key fallback' : familySupabaseAnonKey ? 'FamilyHub key fallback' : '');
 
 export const supabase = createClient(safeSupabaseUrl(familySupabaseUrl), safeSupabaseKey(familySupabaseAnonKey), { db: { schema: 'family' } });
 
@@ -41,11 +48,11 @@ export const supabase = createClient(safeSupabaseUrl(familySupabaseUrl), safeSup
 export const supabaseFamilyData = createClient(safeSupabaseUrl(familySupabaseUrl), safeSupabaseKey(familySupabaseAnonKey), { db: { schema: 'public' } });
 
 export const supabasePublic = createClient(safeSupabaseUrl(realtyflowSupabaseUrl), safeSupabaseKey(realtyflowSupabaseAnonKey));
-export const supabaseDonaAnna = createClient(safeSupabaseUrl(oliviaSupabaseUrl), safeSupabaseKey(oliviaSupabaseAnonKey));
+export const supabaseDonaAnna = createClient(safeSupabaseUrl(oliviaEffectiveSupabaseUrl), safeSupabaseKey(oliviaSupabaseAnonKey), { db: { schema: 'olivia' } });
 
 export const isSupabaseConfigured = () => isValidHttpUrl(familySupabaseUrl) && !!familySupabaseAnonKey;
 export const isRealtyflowSupabaseConfigured = () => isValidHttpUrl(realtyflowSupabaseUrl) && !!realtyflowSupabaseAnonKey;
-export const isDonaAnnaSupabaseConfigured = () => isValidHttpUrl(oliviaSupabaseUrl) && !!oliviaSupabaseAnonKey;
+export const isDonaAnnaSupabaseConfigured = () => isValidHttpUrl(oliviaEffectiveSupabaseUrl) && !!oliviaSupabaseAnonKey;
 
 export const SUPABASE_REFS = { family: familySupabaseUrl, realtyflow: realtyflowSupabaseUrl, donaAnna: oliviaSupabaseUrl };
-export const SUPABASE_STATUS = { familyUrlConfigured: isValidHttpUrl(familySupabaseUrl), familyUrlRawPresent: !!familySupabaseUrl, familyKeyConfigured: !!familySupabaseAnonKey, familyResolvedKeyName, familyKeyLength: familySupabaseAnonKey.length, familyAcceptedKeyNames: ['VITE_SUPABASE_ANON_KEY', 'VITE_FAMILY_SUPABASE_ANON_KEY', 'VITE_FAMILYHUB_SUPABASE_ANON_KEY', 'VITE_FAMILY_ANON_KEY'], realtyflowUrlConfigured: isValidHttpUrl(realtyflowSupabaseUrl), realtyflowUrlRawPresent: !!realtyflowSupabaseUrl, realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey, realtyflowResolvedKeyName, realtyflowKeyLength: realtyflowSupabaseAnonKey.length, realtyflowAcceptedKeyNames: Object.keys(realtyflowKeyCandidates), donaAnnaUrlConfigured: isValidHttpUrl(oliviaSupabaseUrl), donaAnnaUrlRawPresent: !!oliviaSupabaseUrl, donaAnnaKeyConfigured: !!oliviaSupabaseAnonKey, donaAnnaResolvedKeyName: oliviaResolvedKeyName, donaAnnaKeyLength: oliviaSupabaseAnonKey.length, donaAnnaAcceptedKeyNames: Object.keys(oliviaKeyCandidates) };
+export const SUPABASE_STATUS = { familyUrlConfigured: isValidHttpUrl(familySupabaseUrl), familyUrlRawPresent: !!familySupabaseUrl, familyKeyConfigured: !!familySupabaseAnonKey, familyResolvedKeyName, familyKeyLength: familySupabaseAnonKey.length, familyAcceptedKeyNames: ['VITE_SUPABASE_ANON_KEY', 'VITE_FAMILY_SUPABASE_ANON_KEY', 'VITE_FAMILYHUB_SUPABASE_ANON_KEY', 'VITE_FAMILY_ANON_KEY'], realtyflowUrlConfigured: isValidHttpUrl(realtyflowSupabaseUrl), realtyflowUrlRawPresent: !!realtyflowSupabaseUrl, realtyflowKeyConfigured: !!realtyflowSupabaseAnonKey, realtyflowResolvedKeyName, realtyflowKeyLength: realtyflowSupabaseAnonKey.length, realtyflowAcceptedKeyNames: Object.keys(realtyflowKeyCandidates), donaAnnaUrlConfigured: isValidHttpUrl(oliviaEffectiveSupabaseUrl), donaAnnaUrlRawPresent: !!oliviaSupabaseUrl, donaAnnaKeyConfigured: !!oliviaSupabaseAnonKey, donaAnnaResolvedKeyName: oliviaResolvedKeyName, donaAnnaKeyLength: oliviaSupabaseAnonKey.length, donaAnnaAcceptedKeyNames: Object.keys(oliviaKeyCandidates), donaAnnaSchema: 'olivia', donaAnnaLegacyProjectDetected: oliviaLegacyProjectDetected, donaAnnaExpectedProjectDetected: oliviaExpectedProjectDetected };
