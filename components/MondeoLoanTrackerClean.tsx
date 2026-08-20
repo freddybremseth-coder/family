@@ -27,6 +27,12 @@ const DEFAULT_MIN_MONTHLY = 0;
 const DEFAULT_FIXED_RATE = 5; // 5% p.a. som nøytralt utgangspunkt
 const DEFAULT_INTEREST_START = new Date().toISOString().slice(0, 10);
 
+// Lokale dato-nøkler. IKKE bruk new Date(..).toISOString() på datoer bygget
+// fra lokale komponenter — i norsk tid (UTC+2) skyves 1. i mnd til forrige
+// måned, som forskjøv måneds-oversikten og skjulte inneværende måned.
+const ymKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const ymd = (d: Date) => `${ymKey(d)}-${String(d.getDate()).padStart(2, '0')}`;
+
 const formatNOK = (value: number) =>
   new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(Number(value || 0));
 const formatPercent = (value: number) =>
@@ -539,11 +545,11 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     const interestStart = settings.interestStartDate || settings.startDate;
     const start = new Date(interestStart);
     const now = new Date();
-    const currentKey = now.toISOString().slice(0, 7);
+    const currentKey = ymKey(now);
     const months: Array<{ key: string; sum: number; required: number; missing: number; dueDate: string; overdue: boolean; current: boolean }> = [];
     const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
     while (cursor <= now) {
-      const key = cursor.toISOString().slice(0, 7);
+      const key = ymKey(cursor);
       const sum = payments.filter((p) => p.date && p.date.slice(0, 7) === key).reduce((s, p) => s + Number(p.amount || 0), 0);
       const missing = Math.max(0, minMonthly - sum);
       const due = new Date(cursor.getFullYear(), cursor.getMonth(), latePaymentDueDay);
@@ -552,7 +558,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         sum,
         required: minMonthly,
         missing,
-        dueDate: due.toISOString().slice(0, 10),
+        dueDate: ymd(due),
         overdue: missing > 0 && now >= due, // forfallsdag passert uten full betaling
         current: key === currentKey,
       });
