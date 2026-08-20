@@ -335,7 +335,7 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     };
 
     // Bygg kronologisk liste av alle hendelser
-    interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end' | 'late-fee'; payload?: any; }
+    interface Event { date: string; kind: 'payment' | 'charge' | 'kpi' | 'month-end' | 'accrual-today' | 'late-fee'; payload?: any; }
     const events: Event[] = [];
     for (const p of payments) if (p.date) events.push({ date: p.date, kind: 'payment', payload: p });
     for (const c of charges) if (c.date) events.push({ date: c.date, kind: 'charge', payload: c });
@@ -351,6 +351,14 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         events.push({ date: monthEnd.toISOString().slice(0, 10), kind: 'month-end' });
       }
       cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    // Påløpt rente hittil i INNEVÆRENDE (ufullstendige) måned — daglig
+    // akkumulering fram til i dag, slik at saldoen alltid reflekterer reell
+    // gjeld per dagens dato («daglig rente») og ikke fryser til månedsslutt.
+    const lastDayThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    if (new Date(interestStart) <= now && now < lastDayThisMonth) {
+      events.push({ date: ymd(now), kind: 'accrual-today' });
     }
 
     // Forsinkelsesrente: minstebeløp × 9%/365 pr dag fra 1. i måneden (eller renteoppstart)
@@ -415,8 +423,8 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
       }
     }
 
-    // Sortering ved samme dato: kpi → payment → charge → month-end → late-fee
-    const kindOrder = { kpi: 0, payment: 1, charge: 2, 'month-end': 3, 'late-fee': 4 };
+    // Sortering ved samme dato: kpi → payment → charge → month-end → accrual-today → late-fee
+    const kindOrder = { kpi: 0, payment: 1, charge: 2, 'month-end': 3, 'accrual-today': 4, 'late-fee': 5 };
     events.sort((a, b) => {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return kindOrder[a.kind] - kindOrder[b.kind];
@@ -501,6 +509,43 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
             principalChange: -netChange,
             closingBalance: balance,
             status,
+          });
+        }
+      } else if (ev.kind === 'accrual-today') {
+        // Rente påløpt hittil i inneværende måned (pro-ratert daglig til i dag).
+        const y = now.getFullYear();
+        const mo = now.getMonth();
+        const monthStart = new Date(y, mo, 1);
+        const startInt = new Date(interestStart);
+        const accrualFrom = startInt > monthStart ? startInt : monthStart;
+        const daysInMonth = new Date(y, mo + 1, 0).getDate();
+        const daysAccrued = Math.max(0, now.getDate() - accrualFrom.getDate() + 1);
+        const accrued = balance * monthlyRate * (daysAccrued / daysInMonth);
+        const monthKey = ymKey(now);
+        const paidThisMonth = payments
+          .filter((p) => p.date && p.date.slice(0, 7) === monthKey)
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        const minMonthly = settings.minMonthlyPayment ?? DEFAULT_MIN_MONTHLY;
+        const termAmount = Math.min(paidThisMonth, minMonthly);
+        const extraPayment = Math.max(0, paidThisMonth - minMonthly);
+        const restInterest = Math.max(0, accrued - termAmount);
+        const termPrincipalReduction = Math.max(0, termAmount - accrued);
+        const netChange = restInterest - termPrincipalReduction - extraPayment;
+        if (Math.abs(netChange) > 0.01 || accrued > 0.01) {
+          const openingBalance = balance;
+          balance += netChange;
+          nr += 1;
+          const paidTxt = paidThisMonth > 0 ? `, betalt ${Math.round(paidThisMonth)}` : '';
+          rows.push({
+            id: `accrual-${ymd(now)}`, nr,
+            fromDate: lastDate, date: ymd(now),
+            openingBalance,
+            interestDue: accrued,
+            paid: paidThisMonth,
+            charges: 0,
+            principalChange: -netChange,
+            closingBalance: balance,
+            status: `Påløpt rente hittil (${daysAccrued} av ${daysInMonth} dager${paidTxt}) — kapitaliseres ved månedsslutt`,
           });
         }
       } else if (ev.kind === 'late-fee') {
