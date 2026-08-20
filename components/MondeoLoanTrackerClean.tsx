@@ -539,18 +539,31 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     const interestStart = settings.interestStartDate || settings.startDate;
     const start = new Date(interestStart);
     const now = new Date();
-    const months: Array<{ key: string; sum: number; required: number; missing: number }> = [];
+    const currentKey = now.toISOString().slice(0, 7);
+    const months: Array<{ key: string; sum: number; required: number; missing: number; dueDate: string; overdue: boolean; current: boolean }> = [];
     const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
     while (cursor <= now) {
       const key = cursor.toISOString().slice(0, 7);
       const sum = payments.filter((p) => p.date && p.date.slice(0, 7) === key).reduce((s, p) => s + Number(p.amount || 0), 0);
-      months.push({ key, sum, required: minMonthly, missing: Math.max(0, minMonthly - sum) });
+      const missing = Math.max(0, minMonthly - sum);
+      const due = new Date(cursor.getFullYear(), cursor.getMonth(), latePaymentDueDay);
+      months.push({
+        key,
+        sum,
+        required: minMonthly,
+        missing,
+        dueDate: due.toISOString().slice(0, 10),
+        overdue: missing > 0 && now >= due, // forfallsdag passert uten full betaling
+        current: key === currentKey,
+      });
       cursor.setMonth(cursor.getMonth() + 1);
     }
     const totalMissing = months.reduce((s, m) => s + m.missing, 0);
     const monthsBehind = months.filter((m) => m.missing > 0).length;
-    return { months, totalMissing, monthsBehind };
-  }, [payments, minMonthly, settings.interestStartDate, settings.startDate]);
+    const overdueMonths = months.filter((m) => m.overdue);
+    const overdueTotal = overdueMonths.reduce((s, m) => s + m.missing, 0);
+    return { months, totalMissing, monthsBehind, overdueMonths, overdueTotal };
+  }, [payments, minMonthly, settings.interestStartDate, settings.startDate, latePaymentDueDay]);
 
   const addPayment = async () => {
     const requested = Number(paymentAmount || 0);
@@ -845,6 +858,68 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
                 </div>
 
                 <p className="mt-3 text-xs text-slate-500">Slik stopper veksten: betal minst <strong>rente + tillegg</strong> for måneden. Betaling ut over dette reduserer hovedstolen.</p>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* MINSTEBELØP FORFALT — ikke betalt innen forfallsdag */}
+      {minPaymentStatus.overdueMonths.length > 0 && minMonthly > 0 && (() => {
+        const fmtMonth = (key: string) => {
+          const [y, mo] = key.split('-');
+          const d = new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
+          return d.charAt(0).toUpperCase() + d.slice(1);
+        };
+        const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+        const rows = minPaymentStatus.overdueMonths;
+        return (
+          <section className="rounded-2xl border border-rose-300 bg-rose-50 p-5 text-sm text-slate-800">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700"><AlertTriangle className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold text-slate-900">Minstebeløp forfalt — ikke betalt</p>
+                <p className="mt-1 text-slate-600">Terminbeløpet ({formatNOK(minMonthly)}/mnd, forfall den {latePaymentDueDay}.) er forfalt uten full betaling. Forsinkelsesrente ({annualRate} %/365 pr. dag) løper på det utestående og øker restgjelden til beløpet er betalt.</p>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-2xl font-bold text-rose-700">{formatNOK(minPaymentStatus.overdueTotal)}</span>
+                  <span className="text-slate-500">forfalt over {rows.length} {rows.length === 1 ? 'måned' : 'måneder'}</span>
+                </div>
+
+                <div className="mt-4 overflow-x-auto rounded-xl border border-rose-200 bg-white">
+                  <table className="w-full min-w-[560px] text-sm">
+                    <thead>
+                      <tr className="border-b border-rose-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2 font-semibold">Måned</th>
+                        <th className="px-3 py-2 font-semibold">Forfall</th>
+                        <th className="px-3 py-2 text-right font-semibold">Krav</th>
+                        <th className="px-3 py-2 text-right font-semibold">Betalt</th>
+                        <th className="px-3 py-2 text-right font-semibold">Mangler</th>
+                        <th className="px-3 py-2 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((m) => (
+                        <tr key={m.key} className="border-b border-slate-50 last:border-b-0">
+                          <td className="px-3 py-2 font-medium text-slate-900">{fmtMonth(m.key)}{m.current && <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">nå</span>}</td>
+                          <td className="px-3 py-2 text-slate-600">{fmtDay(m.dueDate)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatNOK(m.required)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{m.sum > 0 ? formatNOK(m.sum) : '–'}</td>
+                          <td className="px-3 py-2 text-right font-semibold tabular-nums text-rose-700">{formatNOK(m.missing)}</td>
+                          <td className="px-3 py-2">
+                            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-800">{m.sum > 0 ? 'Delvis betalt' : 'Ikke betalt'}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-rose-200 bg-rose-50/60">
+                        <td className="px-3 py-2 font-bold text-slate-900" colSpan={4}>Sum forfalt og ubetalt</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-700">{formatNOK(minPaymentStatus.overdueTotal)}</td>
+                        <td className="px-3 py-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
