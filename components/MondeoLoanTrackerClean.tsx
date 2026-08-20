@@ -523,7 +523,10 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
   }, [payments, charges, kpiAdjustments, settings.initialPrincipal, settings.interestStartDate, settings.startDate, monthlyRate, annualRate, latePaymentDueDay]);
 
   const currentBalance = ledger.length ? ledger[ledger.length - 1].closingBalance : Number(settings.initialPrincipal || 0);
-  const totalPaid = ledger.reduce((s, r) => s + r.paid, 0);
+  // Summer faktiske innbetalinger – IKKE ledger-radenes `paid`. Hver betaling
+  // finnes i to rader (informativ «Innbetaling mottatt» + månedsslutt-avregning),
+  // så en ledger-sum ville dobbelttalt (f.eks. 36 060 → 72 120).
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const totalInterest = ledger.reduce((s, r) => s + r.interestDue, 0);
   const totalPrincipalChange = ledger.reduce((s, r) => s + r.principalChange, 0);
   const estimatedMonthlyInterest = currentBalance * monthlyRate;
@@ -765,28 +768,83 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
         <MetricCard title="Ved minimum" value={monthlyDifferenceAtMinimum >= 0 ? `${formatNOK(monthlyDifferenceAtMinimum)} avdrag` : `${formatNOK(Math.abs(monthlyDifferenceAtMinimum))} økning`} symbol="±" hint={monthlyDifferenceAtMinimum < 0 ? `${formatNOK(annualNegativeAmortizationAtMinimum)} økning/år` : 'Positiv amortisering'} tone={monthlyDifferenceAtMinimum < 0 ? 'warning' : 'success'} />
       </section>
 
-      {/* RENTE KAPITALISERES / TILLEGG-VARSEL — basert på faktisk ledger */}
+      {/* RESTGJELDEN VOKSER — aggregert pr måned med synlig regnestykke */}
       {(() => {
-        const monthsWithGrowth = ledger.filter((r) => r.principalChange < 0 && r.status !== 'KPI-justering');
-        if (monthsWithGrowth.length === 0) return null;
-        const totalGrowth = monthsWithGrowth.reduce((s, r) => s + Math.abs(r.principalChange), 0);
+        // Aggreger rente + tillegg pr kalendermåned (ekskl. KPI-justering),
+        // og hent faktisk betalt fra innbetalingene (unngår dobbelttelling).
+        const monthMap = new Map<string, { rente: number; tillegg: number }>();
+        for (const r of ledger) {
+          if (r.status === 'KPI-justering') continue;
+          const key = r.date.slice(0, 7);
+          const m = monthMap.get(key) ?? { rente: 0, tillegg: 0 };
+          m.rente += r.interestDue;
+          m.tillegg += r.charges;
+          monthMap.set(key, m);
+        }
+        const growthRows = Array.from(monthMap.entries())
+          .map(([key, m]) => {
+            const betalt = payments
+              .filter((p) => p.date && p.date.slice(0, 7) === key)
+              .reduce((s, p) => s + Number(p.amount || 0), 0);
+            return { key, rente: m.rente, tillegg: m.tillegg, betalt, okning: m.rente + m.tillegg - betalt };
+          })
+          .filter((m) => m.okning > 0.5)
+          .sort((a, b) => (a.key < b.key ? -1 : 1));
+        if (growthRows.length === 0) return null;
+        const totalGrowth = growthRows.reduce((s, m) => s + m.okning, 0);
+        const sum = (pick: (m: (typeof growthRows)[number]) => number) => growthRows.reduce((s, m) => s + pick(m), 0);
+        const fmtMonth = (key: string) => {
+          const [y, mo] = key.split('-');
+          const d = new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('nb-NO', { month: 'short', year: 'numeric' });
+          return d.charAt(0).toUpperCase() + d.slice(1);
+        };
         return (
-          <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-            <div className="flex gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div className="flex-1">
-                <p className="font-bold">Hovedstolen vokser — rente kapitaliseres eller tillegg påløpt</p>
-                <p className="text-rose-800 mt-1">{monthsWithGrowth.length} {monthsWithGrowth.length === 1 ? 'måned' : 'måneder'} hvor påløpt rente + tillegg har vært større enn innbetalingen. Total økning: <strong>{formatNOK(totalGrowth)}</strong></p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-                  {monthsWithGrowth.slice(-8).map((r) => (
-                    <div key={r.id} className="rounded-xl bg-white border border-rose-200 p-2 text-xs">
-                      <p className="font-bold text-rose-700">{r.date.slice(0, 7)}</p>
-                      <p className="text-slate-700">Rente: {formatNOK(r.interestDue)}{r.charges ? ` + tillegg ${formatNOK(r.charges)}` : ''}</p>
-                      <p className="text-slate-700">Betalt: {formatNOK(r.paid)}</p>
-                      <p className="text-rose-700">Hovedstol +{formatNOK(Math.abs(r.principalChange))}</p>
-                    </div>
-                  ))}
+          <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-slate-800">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><AlertTriangle className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold text-slate-900">Restgjelden vokser</p>
+                <p className="mt-1 text-slate-600">I {growthRows.length} {growthRows.length === 1 ? 'måned' : 'måneder'} har rente + tillegg vært større enn innbetalingen. Differansen legges da til hovedstolen.</p>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-2xl font-bold text-rose-700">+ {formatNOK(totalGrowth)}</span>
+                  <span className="text-slate-500">samlet økning i restgjeld</span>
                 </div>
+
+                <div className="mt-4 overflow-x-auto rounded-xl border border-amber-200 bg-white">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead>
+                      <tr className="border-b border-amber-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2 font-semibold">Måned</th>
+                        <th className="px-3 py-2 text-right font-semibold">Rente</th>
+                        <th className="px-3 py-2 text-right font-semibold">+ Tillegg</th>
+                        <th className="px-3 py-2 text-right font-semibold">− Betalt</th>
+                        <th className="px-3 py-2 text-right font-semibold">= Økning</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {growthRows.map((m) => (
+                        <tr key={m.key} className="border-b border-slate-50 last:border-b-0">
+                          <td className="px-3 py-2 font-medium text-slate-900">{fmtMonth(m.key)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatNOK(m.rente)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">{m.tillegg > 0 ? formatNOK(m.tillegg) : '–'}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{m.betalt > 0 ? formatNOK(m.betalt) : '–'}</td>
+                          <td className="px-3 py-2 text-right font-semibold tabular-nums text-rose-700">+ {formatNOK(m.okning)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-amber-200 bg-amber-50/60">
+                        <td className="px-3 py-2 font-bold text-slate-900">Sum</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-700">{formatNOK(sum((m) => m.rente))}</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-700">{formatNOK(sum((m) => m.tillegg))}</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-emerald-700">{formatNOK(sum((m) => m.betalt))}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-700">+ {formatNOK(totalGrowth)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <p className="mt-3 text-xs text-slate-500">Slik stopper veksten: betal minst <strong>rente + tillegg</strong> for måneden. Betaling ut over dette reduserer hovedstolen.</p>
               </div>
             </div>
           </section>
