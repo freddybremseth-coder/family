@@ -616,6 +616,42 @@ export const MondeoLoanTrackerClean: React.FC<Props> = ({ userId, setTransaction
     return { months, totalMissing, monthsBehind, overdueMonths, overdueTotal };
   }, [payments, minMonthly, settings.interestStartDate, settings.startDate, latePaymentDueDay]);
 
+  const totalCharges = charges.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalLateFee = ledger
+    .filter((r) => typeof r.status === 'string' && r.status.startsWith('Forsinkelsesrente'))
+    .reduce((s, r) => s + r.interestDue, 0);
+
+  // Publiser family sin AUTORITATIVE ledger-tilstand til family.mondeo_ledger_snapshot,
+  // slik at RealtyFlow kan VISE family sine tall i stedet for å regne på nytt (ellers
+  // driver de to modellene fra hverandre). En DB-trigger speiler snapshot videre til
+  // public.business_financial_events. Feiler stille hvis tabellen ikke finnes ennå.
+  useEffect(() => {
+    if (!userId || !isSupabaseConfigured()) return;
+    const round = (n: number) => Math.round(Number(n) || 0);
+    const timer = setTimeout(() => {
+      supabase
+        .from('mondeo_ledger_snapshot')
+        .upsert(
+          {
+            user_id: userId,
+            as_of_date: todayISO(),
+            current_balance: round(currentBalance),
+            total_interest: round(totalInterest),
+            total_charges: round(totalCharges),
+            total_late_fee: round(totalLateFee),
+            total_paid: round(totalPaid),
+            arrears_total: round(minPaymentStatus.totalMissing),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+        .then(({ error }) => {
+          if (error) console.warn('[Mondeo] ledger-snapshot ikke lagret i Supabase', error.message);
+        });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [userId, currentBalance, totalInterest, totalCharges, totalLateFee, totalPaid, minPaymentStatus.totalMissing]);
+
   const addPayment = async () => {
     const requested = Number(paymentAmount || 0);
     if (!paymentDate || requested <= 0) return;
