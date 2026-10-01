@@ -5,6 +5,8 @@ on:
     paths:
       - 'components/**'
       - 'index.tsx'
+      - 'demo/**'
+      - 'vite.config.ts'
       - 'styles/**'
       - 'package.json'
       - 'package-lock.json'
@@ -14,6 +16,8 @@ on:
     paths:
       - 'components/**'
       - 'index.tsx'
+      - 'demo/**'
+      - 'vite.config.ts'
       - 'styles/**'
       - 'package.json'
       - 'package-lock.json'
