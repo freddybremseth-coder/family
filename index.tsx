@@ -9,6 +9,7 @@ import { CryptoManager } from './components/CryptoManager';
 import { OliveOilInventory } from './components/OliveOilInventory';
 import { GlobalSearch } from './components/GlobalSearch';
 import { Dashboard } from './components/Dashboard';
+import { DemoTour15s } from './components/DemoTour15s';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LiquidityForecastCard } from './components/LiquidityForecastCard';
 import { ShoppingList } from './components/ShoppingList';
@@ -392,7 +393,7 @@ const App = () => {
 
 const rootElement = document.getElementById('root');
 console.log('[FamilyHub] Build 2026-07-02-a — deploy-marker for cache-debugging');
-if (rootElement) createRoot(rootElement).render(<App />);
+if (rootElement) createRoot(rootElement).render(window.location.pathname === '/demo' || window.location.pathname === '/demo/' ? <DemoTour15s /> : <App />);
 
 // eruda: mobil-Console. Aktiveres med ?debug=1 i URL eller localStorage
 // Kan brukes uten kabel — bare skru på og se logger direkte på telefonen
