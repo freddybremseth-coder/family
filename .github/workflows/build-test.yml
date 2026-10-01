@@ -1,0 +1,33 @@
+name: FamilyHub build validation
+
+on:
+  pull_request:
+    paths:
+      - 'components/**'
+      - 'index.tsx'
+      - 'styles/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'components/**'
+      - 'index.tsx'
+      - 'styles/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-test.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
