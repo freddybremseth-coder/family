@@ -3,6 +3,8 @@ name: FamilyHub build validation
 on:
   pull_request:
     paths:
+      - 'index.html'
+      - 'scripts/test-public-entity-links.mjs'
       - 'components/**'
       - 'index.tsx'
       - 'demo/**'
@@ -14,6 +16,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'index.html'
+      - 'scripts/test-public-entity-links.mjs'
       - 'components/**'
       - 'index.tsx'
       - 'demo/**'
@@ -35,3 +39,4 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build
+      - run: node --test scripts/test-public-entity-links.mjs
